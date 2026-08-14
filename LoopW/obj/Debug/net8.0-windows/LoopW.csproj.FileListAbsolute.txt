@@ -21,3 +21,4 @@ C:\Users\5928008713\Important\projects\loop-w\LoopW\obj\Debug\net8.0-windows\Pre
 C:\Users\5928008713\Important\projects\loop-w\LoopW\obj\Debug\net8.0-windows\RadialOverlayWindow.baml
 C:\Users\5928008713\Important\projects\loop-w\LoopW\obj\Debug\net8.0-windows\PreviewOverlayWindow.g.cs
 C:\Users\5928008713\Important\projects\loop-w\LoopW\obj\Debug\net8.0-windows\RadialOverlayWindow.g.cs
+C:\Users\5928008713\Important\projects\loop-w\LoopW\obj\Debug\net8.0-windows\LoopW.sourcelink.json

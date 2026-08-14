@@ -14,6 +14,7 @@
         <SolidColorBrush x:Key="PanelBrush" Color="#151922" />
         <SolidColorBrush x:Key="MutedBrush" Color="#9199AA" />
         <SolidColorBrush x:Key="AccentBrush" Color="#A7F3D0" />
+        <SolidColorBrush x:Key="CapBrush" Color="#202735" />
         <Style x:Key="ActionButton" TargetType="Button">
             <Setter Property="Width" Value="112" />
             <Setter Property="Height" Value="112" />
@@ -110,11 +111,14 @@
             <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                 <TextBlock Text="Selected" Foreground="{StaticResource MutedBrush}" FontSize="12" />
                 <TextBlock x:Name="SelectedAction" Text="Center" FontSize="13" FontWeight="SemiBold" Margin="10,0,0,0" />
-                <TextBlock x:Name="TargetStatus" Text="  ·  No target captured — press Shift + Space while another app is focused" Foreground="{StaticResource MutedBrush}" FontSize="12" Margin="18,0,0,0" />
+                <TextBlock x:Name="TargetStatus" Text="  ·  No target captured — hold the trigger while another app is focused" Foreground="{StaticResource MutedBrush}" FontSize="12" Margin="18,0,0,0" />
             </StackPanel>
             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
                 <TextBlock Text="Trigger" Foreground="{StaticResource MutedBrush}" FontSize="12" VerticalAlignment="Center" />
-                <Border Background="#202735" CornerRadius="8" Padding="10,6" Margin="10,0,0,0"><TextBlock Text="Shift + Space" FontSize="12" /></Border>
+                <Border x:Name="TriggerCap" Background="#202735" BorderBrush="{StaticResource CapBrush}" BorderThickness="1" CornerRadius="8" Padding="10,6" Margin="10,0,0,0" Cursor="Hand" ToolTip="Click to rebind the trigger key" MouseLeftButtonUp="TriggerCap_MouseUp">
+                    <TextBlock x:Name="TriggerLabel" Text="Caps Lock" FontSize="12" />
+                </Border>
+                <TextBlock x:Name="RebindHint" Text="rebind" Foreground="{StaticResource AccentBrush}" FontSize="12" Cursor="Hand" Margin="10,0,0,0" VerticalAlignment="Center" MouseLeftButtonUp="RebindHint_MouseUp" />
             </StackPanel>
         </Grid>
     </Grid>

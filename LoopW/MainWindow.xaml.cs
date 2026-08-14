@@ -1,59 +1,132 @@
+using System;
+using System.Text;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Interop;
-using System.Text;
+using System.Windows.Input;
 
 namespace LoopW;
 
 public partial class MainWindow : Window
 {
-    private const int HotKeyId = 7001;
-    private HwndSource? _windowSource;
+    private readonly GlobalHotkey _hotkey = new();
     private IntPtr _targetWindow;
+    private RadialOverlayWindow? _activeOverlay;
+    private bool _capturing;
 
     public MainWindow()
     {
         InitializeComponent();
+        var settings = AppSettings.Load();
+        _hotkey.SetBinding(settings.TriggerModifiers, settings.TriggerVk);
     }
 
     private void Window_Loaded(object sender, RoutedEventArgs e)
     {
-        var helper = new WindowInteropHelper(this);
-        _windowSource = HwndSource.FromHwnd(helper.Handle);
-        _windowSource?.AddHook(WindowMessageHook);
+        _hotkey.TriggerPressed += Hotkey_TriggerPressed;
+        _hotkey.TriggerReleased += Hotkey_TriggerReleased;
+        _hotkey.KeyCaptured += Hotkey_KeyCaptured;
+        _hotkey.CaptureCancelled += Hotkey_CaptureCancelled;
+        _hotkey.CaptureRejected += Hotkey_CaptureRejected;
+        _hotkey.Start();
 
-        if (!NativeMethods.RegisterHotKey(helper.Handle, HotKeyId, NativeMethods.ModShift, NativeMethods.VkSpace))
+        UpdateTriggerLabel();
+        TargetStatus.Text = $"  ·  No target captured — hold {TriggerLabel.Text} while another app is focused";
+
+        if (!_hotkey.IsActive)
         {
-            TargetStatus.Text = "  ·  Shift + Space is unavailable — choose another trigger later";
+            TargetStatus.Text = "  ·  Could not install the global keyboard hook";
+            RebindHint.Text = "unavailable";
+            RebindHint.Cursor = Cursors.Arrow;
         }
     }
 
     private void Window_Closed(object? sender, EventArgs e)
     {
-        var handle = new WindowInteropHelper(this).Handle;
-        NativeMethods.UnregisterHotKey(handle, HotKeyId);
-        _windowSource?.RemoveHook(WindowMessageHook);
+        _hotkey.Dispose();
     }
 
-    private IntPtr WindowMessageHook(IntPtr hwnd, int message, IntPtr wParam, IntPtr lParam, ref bool handled)
+    private void Hotkey_TriggerPressed()
     {
-        if (message == NativeMethods.WmHotKey && wParam.ToInt32() == HotKeyId)
+        CaptureTargetWindow();
+    }
+
+    private void Hotkey_TriggerReleased()
+    {
+        if (_activeOverlay is { IsVisible: true } overlay)
         {
-            CaptureTargetWindow();
-            handled = true;
+            overlay.CommitOrClose();
+        }
+    }
+
+    private void Hotkey_KeyCaptured(uint modifiers, uint vk)
+    {
+        _capturing = false;
+        _hotkey.SetBinding(modifiers, vk);
+        new AppSettings { TriggerModifiers = modifiers, TriggerVk = vk }.Save();
+        SetCapturingUi(false);
+        TargetStatus.Text = $"  ·  Trigger set to {HotkeyNames.For(modifiers, vk)}";
+        Keyboard.ClearFocus();
+    }
+
+    private void Hotkey_CaptureCancelled()
+    {
+        _capturing = false;
+        SetCapturingUi(false);
+        TargetStatus.Text = "  ·  Rebind cancelled";
+    }
+
+    private void Hotkey_CaptureRejected()
+    {
+        _capturing = false;
+        SetCapturingUi(false);
+        TargetStatus.Text = "  ·  That key is reserved by the OS — try another (Caps Lock is a good one)";
+    }
+
+    private void TriggerCap_MouseUp(object sender, MouseButtonEventArgs e) => BeginRebind();
+
+    private void RebindHint_MouseUp(object sender, MouseButtonEventArgs e) => BeginRebind();
+
+    private void BeginRebind()
+    {
+        if (_capturing || !_hotkey.IsActive)
+        {
+            return;
         }
 
-        return IntPtr.Zero;
+        _capturing = true;
+        _hotkey.BeginCapture();
+        SetCapturingUi(true);
+        TargetStatus.Text = "  ·  Press any key, or a combo like Ctrl + B — Esc to cancel";
+        Keyboard.ClearFocus();
+    }
+
+    private void SetCapturingUi(bool capturing)
+    {
+        TriggerLabel.Text = capturing ? "Press a key…" : HotkeyNames.For(_hotkey.TriggerModifiers, _hotkey.TriggerVk);
+        RebindHint.Text = capturing ? "Esc to cancel" : "rebind";
+        TriggerCap.BorderBrush = capturing
+            ? (System.Windows.Media.Brush)FindResource("AccentBrush")
+            : (System.Windows.Media.Brush)FindResource("CapBrush");
+    }
+
+    private void UpdateTriggerLabel()
+    {
+        TriggerLabel.Text = HotkeyNames.For(_hotkey.TriggerModifiers, _hotkey.TriggerVk);
     }
 
     private void CaptureTargetWindow()
     {
+        if (_activeOverlay is { IsVisible: true })
+        {
+            return;
+        }
+
         var foreground = NativeMethods.GetForegroundWindow();
-        var ownWindow = new WindowInteropHelper(this).Handle;
+        var ownWindow = new System.Windows.Interop.WindowInteropHelper(this).Handle;
 
         if (foreground == IntPtr.Zero || foreground == ownWindow)
         {
-            TargetStatus.Text = "  ·  Focus another app, then press Shift + Space";
+            TargetStatus.Text = $"  ·  Focus another app, then press {TriggerLabel.Text}";
             return;
         }
 
@@ -62,6 +135,8 @@ public partial class MainWindow : Window
         NativeMethods.GetWindowText(_targetWindow, title, title.Capacity);
         TargetStatus.Text = $"  ·  Target: {(title.Length > 0 ? title.ToString() : "active window")}";
         var overlay = new RadialOverlayWindow(_targetWindow, CommitOverlayAction);
+        _activeOverlay = overlay;
+        overlay.Closed += (_, _) => _activeOverlay = null;
         overlay.ShowAtCursor();
     }
 
@@ -77,14 +152,8 @@ public partial class MainWindow : Window
         };
 
         SelectedAction.Text = label;
-        if (WindowActionService.ApplyHalf(_targetWindow, action, out var error))
-        {
-            TargetStatus.Text = $"  ·  Applied {label.ToLowerInvariant()} to target window";
-        }
-        else
-        {
-            TargetStatus.Text = $"  ·  {error}";
-        }
+        WindowActionService.ApplyHalf(_targetWindow, action, out var message);
+        TargetStatus.Text = $"  ·  {message}";
     }
 
     private void Action_Click(object sender, RoutedEventArgs e)
@@ -95,14 +164,14 @@ public partial class MainWindow : Window
         }
     }
 
-    private void Window_KeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+    private void Window_KeyDown(object sender, KeyEventArgs e)
     {
         var action = e.Key switch
         {
-            System.Windows.Input.Key.Left => "Left",
-            System.Windows.Input.Key.Right => "Right",
-            System.Windows.Input.Key.Up => "Top",
-            System.Windows.Input.Key.Down => "Bottom",
+            Key.Left => "Left",
+            Key.Right => "Right",
+            Key.Up => "Top",
+            Key.Down => "Bottom",
             _ => string.Empty
         };
 
@@ -119,7 +188,7 @@ public partial class MainWindow : Window
 
         if (_targetWindow == IntPtr.Zero)
         {
-            TargetStatus.Text = "  ·  Capture a target first with Shift + Space";
+            TargetStatus.Text = $"  ·  Capture a target first with {TriggerLabel.Text}";
             return;
         }
 
@@ -132,13 +201,7 @@ public partial class MainWindow : Window
             _ => WindowHalf.Left
         };
 
-        if (!WindowActionService.ApplyHalf(_targetWindow, half, out var error))
-        {
-            TargetStatus.Text = $"  ·  {error}";
-        }
-        else
-        {
-            TargetStatus.Text = $"  ·  Applied {SelectedAction.Text.ToLowerInvariant()} to target window";
-        }
+        WindowActionService.ApplyHalf(_targetWindow, half, out var message);
+        TargetStatus.Text = $"  ·  {message}";
     }
 }
