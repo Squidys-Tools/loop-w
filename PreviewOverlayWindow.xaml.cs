@@ -133,6 +133,7 @@ public partial class PreviewOverlayWindow : Window
 
     private void CaptureFullBackdrop(NativeMethods.Rect workArea, double dpiX, double dpiY)
     {
+        _backdrop = null;
         try
         {
             var source = ScreenCapture.CaptureRegion(workArea.Left, workArea.Top, workArea.Width, workArea.Height);
@@ -160,6 +161,7 @@ public partial class PreviewOverlayWindow : Window
     {
         if (_backdrop == null)
         {
+            BackdropImage.Source = null;
             return;
         }
 
