@@ -1,0 +1,71 @@
+<Window x:Class="LoopW.RadialOverlayWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Width="520" Height="520"
+        WindowStyle="None"
+        AllowsTransparency="True"
+        Background="Transparent"
+        ShowInTaskbar="False"
+        ShowActivated="False"
+        Topmost="True"
+        ResizeMode="NoResize"
+        Loaded="Overlay_Loaded"
+        MouseMove="Overlay_MouseMove"
+        MouseLeftButtonUp="Overlay_MouseLeftButtonUp"
+        KeyDown="Overlay_KeyDown">
+    <Window.Resources>
+        <SolidColorBrush x:Key="AccentBrush" Color="#A7F3D0" />
+        <Style x:Key="RadialAction" TargetType="Button">
+            <Setter Property="Width" Value="100" />
+            <Setter Property="Height" Value="100" />
+            <Setter Property="Background" Value="#EA1B202B" />
+            <Setter Property="BorderBrush" Value="#435065" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Foreground" Value="#F5F7FB" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="22">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Background" Value="#EA304153" />
+                                <Setter Property="BorderBrush" Value="#A7F3D0" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+
+    <Grid x:Name="OverlaySurface" Opacity="0" RenderTransformOrigin="0.5,0.5">
+        <Grid.RenderTransform>
+            <ScaleTransform ScaleX="0.9" ScaleY="0.9" />
+        </Grid.RenderTransform>
+        <Ellipse Fill="#E80D1016" Stroke="#526078" StrokeThickness="1" />
+        <Ellipse Width="326" Height="326" Fill="#D9161B25" Stroke="#303B4D" StrokeThickness="1" />
+        <Button x:Name="TopButton" RenderTransformOrigin="0.5,0.5" Style="{StaticResource RadialAction}" Tag="Top" Click="Action_Click" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,30,0,0">
+            <StackPanel><TextBlock Text="↑" FontSize="28" HorizontalAlignment="Center"/><TextBlock Text="Top half" HorizontalAlignment="Center" Margin="0,4,0,0"/></StackPanel>
+        </Button>
+        <Button x:Name="RightButton" RenderTransformOrigin="0.5,0.5" Style="{StaticResource RadialAction}" Tag="Right" Click="Action_Click" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,30,0">
+            <StackPanel><TextBlock Text="→" FontSize="28" HorizontalAlignment="Center"/><TextBlock Text="Right half" HorizontalAlignment="Center" Margin="0,4,0,0"/></StackPanel>
+        </Button>
+        <Button x:Name="BottomButton" RenderTransformOrigin="0.5,0.5" Style="{StaticResource RadialAction}" Tag="Bottom" Click="Action_Click" HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,30">
+            <StackPanel><TextBlock Text="↓" FontSize="28" HorizontalAlignment="Center"/><TextBlock Text="Bottom half" HorizontalAlignment="Center" Margin="0,4,0,0"/></StackPanel>
+        </Button>
+        <Button x:Name="LeftButton" RenderTransformOrigin="0.5,0.5" Style="{StaticResource RadialAction}" Tag="Left" Click="Action_Click" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="30,0,0,0">
+            <StackPanel><TextBlock Text="←" FontSize="28" HorizontalAlignment="Center"/><TextBlock Text="Left half" HorizontalAlignment="Center" Margin="0,4,0,0"/></StackPanel>
+        </Button>
+        <Border Width="116" Height="116" Background="{StaticResource AccentBrush}" CornerRadius="58" HorizontalAlignment="Center" VerticalAlignment="Center">
+            <StackPanel VerticalAlignment="Center">
+                <TextBlock Text="⌁" FontSize="26" Foreground="#0D1714" HorizontalAlignment="Center" />
+                <TextBlock x:Name="SelectionLabel" Text="Move" FontSize="12" FontWeight="SemiBold" Foreground="#0D1714" HorizontalAlignment="Center" />
+            </StackPanel>
+        </Border>
+        <TextBlock Text="Release to commit  ·  Esc to cancel" HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,10" FontSize="11" Foreground="#AAB4C5" />
+    </Grid>
+</Window>
