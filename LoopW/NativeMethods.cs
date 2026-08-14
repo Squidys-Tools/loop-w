@@ -32,6 +32,8 @@ internal static class NativeMethods
     public const int MdEffectiveDpi = 0;
     public const int GwlExStyle = -20;
     public const int WsExTransparent = 0x00000020;
+    public const int DwmwaUseImmersiveDarkMode = 20;
+    public const int DwmwaUseImmersiveDarkModeBefore20h1 = 19;
     public const uint SrcCopy = 0x00CC0020;
 
     public static readonly IntPtr HwndTop = IntPtr.Zero;
@@ -110,6 +112,9 @@ internal static class NativeMethods
 
     [DllImport("user32.dll")]
     public static extern IntPtr GetForegroundWindow();
+
+    [DllImport("dwmapi.dll")]
+    public static extern int DwmSetWindowAttribute(IntPtr hwnd, int attribute, ref int value, int size);
 
     [DllImport("user32.dll", SetLastError = true)]
     public static extern bool GetWindowRect(IntPtr hWnd, out Rect rect);

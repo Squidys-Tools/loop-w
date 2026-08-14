@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("LoopW")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+b5720e810126b7b589f471a1820db584500c65ad")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+f0224e195cea63a4f65315175fe306d3fbd790d5")]
 [assembly: System.Reflection.AssemblyProductAttribute("LoopW")]
 [assembly: System.Reflection.AssemblyTitleAttribute("LoopW")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

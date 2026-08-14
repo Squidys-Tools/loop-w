@@ -3,11 +3,17 @@ using System.Text;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Media;
+using System.Windows.Media.Animation;
 
 namespace LoopW;
 
 public partial class MainWindow : Window
 {
+    private const double RadialCenter = 91.2;
+    private const double RadialOuterRadius = 91.2;
+    private const double RadialInnerRadius = 57.76;
+
     private readonly GlobalHotkey _hotkey = new();
     private IntPtr _targetWindow;
     private RadialOverlayWindow? _activeOverlay;
@@ -22,6 +28,8 @@ public partial class MainWindow : Window
 
     private void Window_Loaded(object sender, RoutedEventArgs e)
     {
+        BuildRadialGeometry();
+        AnimateRadialMenuIn();
         _hotkey.TriggerPressed += Hotkey_TriggerPressed;
         _hotkey.TriggerReleased += Hotkey_TriggerReleased;
         _hotkey.KeyCaptured += Hotkey_KeyCaptured;
@@ -43,6 +51,45 @@ public partial class MainWindow : Window
     private void Window_Closed(object? sender, EventArgs e)
     {
         _hotkey.Dispose();
+    }
+
+    private void BuildRadialGeometry()
+    {
+        RadialRing.Data = RadialGeometry.BuildAnnulus(RadialCenter, RadialOuterRadius, RadialInnerRadius);
+        TopWedge.Data = RadialGeometry.BuildWedge(RadialCenter, RadialOuterRadius, RadialInnerRadius, -135, -45);
+        RightWedge.Data = RadialGeometry.BuildWedge(RadialCenter, RadialOuterRadius, RadialInnerRadius, -45, 45);
+        BottomWedge.Data = RadialGeometry.BuildWedge(RadialCenter, RadialOuterRadius, RadialInnerRadius, 45, 135);
+        LeftWedge.Data = RadialGeometry.BuildWedge(RadialCenter, RadialOuterRadius, RadialInnerRadius, 135, 225);
+    }
+
+    private void AnimateRadialMenuIn()
+    {
+        RadialPanel.Opacity = 0;
+        var ease = new CubicEase { EasingMode = EasingMode.EaseOut };
+        var duration = new Duration(TimeSpan.FromMilliseconds(260));
+        RadialPanel.BeginAnimation(UIElement.OpacityProperty, new DoubleAnimation(0, 1, duration) { EasingFunction = ease });
+        RadialPanelScale.BeginAnimation(ScaleTransform.ScaleXProperty, new DoubleAnimation(0.96, 1, duration) { EasingFunction = ease });
+        RadialPanelScale.BeginAnimation(ScaleTransform.ScaleYProperty, new DoubleAnimation(0.96, 1, duration) { EasingFunction = ease });
+    }
+
+    private void Window_SourceInitialized(object? sender, EventArgs e)
+    {
+        var hwnd = new System.Windows.Interop.WindowInteropHelper(this).Handle;
+        if (hwnd == IntPtr.Zero)
+        {
+            return;
+        }
+
+        // 20 is the immersive dark-mode attribute on Windows 11 / 10 2004+;
+        // 19 covers Windows 10 1903–1909.
+        foreach (var attribute in new[] { NativeMethods.DwmwaUseImmersiveDarkMode, NativeMethods.DwmwaUseImmersiveDarkModeBefore20h1 })
+        {
+            var enabled = 1;
+            if (NativeMethods.DwmSetWindowAttribute(hwnd, attribute, ref enabled, sizeof(int)) == 0)
+            {
+                break;
+            }
+        }
     }
 
     private void Hotkey_TriggerPressed()
@@ -154,14 +201,6 @@ public partial class MainWindow : Window
         SelectedAction.Text = label;
         WindowActionService.ApplyHalf(_targetWindow, action, out var message);
         TargetStatus.Text = $"  ·  {message}";
-    }
-
-    private void Action_Click(object sender, RoutedEventArgs e)
-    {
-        if (sender is Button button && button.Tag is string action)
-        {
-            ApplyAction(action);
-        }
     }
 
     private void Window_KeyDown(object sender, KeyEventArgs e)

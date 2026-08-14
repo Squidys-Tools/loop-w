@@ -3,15 +3,19 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
+using System.Windows.Media.Imaging;
 
 namespace LoopW;
 
 public partial class PreviewOverlayWindow : Window
 {
+    private const double BlurMargin = 21;
+
     private double _workLeft;
     private double _workTop;
     private double _workWidth;
     private double _workHeight;
+    private BitmapSource? _backdrop;
 
     public PreviewOverlayWindow()
     {
@@ -34,7 +38,9 @@ public partial class PreviewOverlayWindow : Window
         var monitor = NativeMethods.MonitorFromRect(ref frame, NativeMethods.MonitorDefaultToNearest);
         var scaleX = 1.0;
         var scaleY = 1.0;
-        if (NativeMethods.TryGetMonitorDpi(monitor, out var dpiX, out var dpiY))
+        var dpiX = 96.0;
+        var dpiY = 96.0;
+        if (NativeMethods.TryGetMonitorDpi(monitor, out dpiX, out dpiY))
         {
             scaleX = 96.0 / dpiX;
             scaleY = 96.0 / dpiY;
@@ -47,14 +53,24 @@ public partial class PreviewOverlayWindow : Window
         var targetWidth = Math.Max(frame.Width * scaleX, 1);
         var targetHeight = Math.Max(frame.Height * scaleY, 1);
 
-        ActionLabel.Text = action switch
+        // The window is sized to the work area, which never leaves the screen.
+        // Clamp the surface into it so a few pixels of rounding (or a frame that
+        // lands flush against a screen edge) can't push the preview off-screen.
+        targetWidth = Math.Min(targetWidth, Math.Max(_workWidth - localX, 1));
+        targetHeight = Math.Min(targetHeight, Math.Max(_workHeight - localY, 1));
+        localX = Math.Max(0, Math.Min(localX, Math.Max(_workWidth - targetWidth, 0)));
+        localY = Math.Max(0, Math.Min(localY, Math.Max(_workHeight - targetHeight, 0)));
+
+        if (!IsVisible)
         {
-            WindowHalf.Left => "Left half",
-            WindowHalf.Right => "Right half",
-            WindowHalf.Top => "Top half",
-            WindowHalf.Bottom => "Bottom half",
-            _ => "Preview"
-        };
+            // The window isn't on screen yet, so this snapshot can't capture the
+            // preview's own surface. Capture once and crop from it below.
+            CaptureFullBackdrop(workArea, dpiX, dpiY);
+        }
+
+        BackdropImage.Clip = new RectangleGeometry(
+            new Rect(BlurMargin, BlurMargin, Math.Max(targetWidth, 1), Math.Max(targetHeight, 1)), 11, 11);
+        UpdateBackdrop(frame, workArea, dpiX, dpiY);
 
         if (!IsVisible)
         {
@@ -103,6 +119,7 @@ public partial class PreviewOverlayWindow : Window
         };
         animation.Completed += (_, _) =>
         {
+            _backdrop = null;
             if (destroy)
             {
                 Close();
@@ -113,6 +130,48 @@ public partial class PreviewOverlayWindow : Window
             }
         };
         PreviewSurface.BeginAnimation(UIElement.OpacityProperty, animation);
+    }
+
+    private void CaptureFullBackdrop(NativeMethods.Rect workArea, double dpiX, double dpiY)
+    {
+        try
+        {
+            var source = ScreenCapture.CaptureRegion(workArea.Left, workArea.Top, workArea.Width, workArea.Height);
+            if (source != null)
+            {
+                source.Freeze();
+                _backdrop = source;
+            }
+        }
+        catch
+        {
+            // blur is decorative; the preview still renders without a backdrop
+        }
+    }
+
+    private void UpdateBackdrop(NativeMethods.Rect frame, NativeMethods.Rect workArea, double dpiX, double dpiY)
+    {
+        if (_backdrop == null)
+        {
+            return;
+        }
+
+        var marginX = (int)Math.Round(BlurMargin * dpiX / 96);
+        var marginY = (int)Math.Round(BlurMargin * dpiY / 96);
+
+        var x = Math.Max(0, frame.Left - marginX - workArea.Left);
+        var y = Math.Max(0, frame.Top - marginY - workArea.Top);
+        var width = Math.Max(1, Math.Min(frame.Width + marginX * 2, _backdrop.PixelWidth - x));
+        var height = Math.Max(1, Math.Min(frame.Height + marginY * 2, _backdrop.PixelHeight - y));
+
+        try
+        {
+            BackdropImage.Source = new CroppedBitmap(_backdrop, new Int32Rect(x, y, width, height));
+        }
+        catch
+        {
+            // blur is decorative; the preview still renders without a backdrop
+        }
     }
 
     private void EnsureWindowCovering(NativeMethods.Rect workArea, double scaleX, double scaleY)

@@ -4,47 +4,29 @@
         Title="LoopW — Window management, in flow"
         Height="760" Width="1180"
         MinHeight="650" MinWidth="980"
-        Background="#0D0F14"
-        Foreground="#F5F7FB"
+        Background="#1E1E1E"
+        Foreground="#CCCCCC"
         WindowStartupLocation="CenterScreen"
         Loaded="Window_Loaded"
+        SourceInitialized="Window_SourceInitialized"
         Closed="Window_Closed"
         KeyDown="Window_KeyDown">
     <Window.Resources>
-        <SolidColorBrush x:Key="PanelBrush" Color="#151922" />
-        <SolidColorBrush x:Key="MutedBrush" Color="#9199AA" />
-        <SolidColorBrush x:Key="AccentBrush" Color="#A7F3D0" />
-        <SolidColorBrush x:Key="CapBrush" Color="#202735" />
-        <Style x:Key="ActionButton" TargetType="Button">
-            <Setter Property="Width" Value="112" />
-            <Setter Property="Height" Value="112" />
-            <Setter Property="Background" Value="#1B202B" />
-            <Setter Property="BorderBrush" Value="#303747" />
-            <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="Foreground" Value="#F5F7FB" />
-            <Setter Property="FontSize" Value="13" />
-            <Setter Property="Cursor" Value="Hand" />
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="Button">
-                        <Border Background="{TemplateBinding Background}"
-                                BorderBrush="{TemplateBinding BorderBrush}"
-                                BorderThickness="{TemplateBinding BorderThickness}"
-                                CornerRadius="24">
-                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
-                        </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter Property="Background" Value="#293342" />
-                                <Setter Property="BorderBrush" Value="#A7F3D0" />
-                            </Trigger>
-                            <Trigger Property="IsPressed" Value="True">
-                                <Setter Property="Background" Value="#354556" />
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
+        <SolidColorBrush x:Key="PanelBrush" Color="#252526" />
+        <SolidColorBrush x:Key="MutedBrush" Color="#858585" />
+        <SolidColorBrush x:Key="AccentBrush" Color="#007AFF" />
+        <SolidColorBrush x:Key="CapBrush" Color="#333333" />
+        <Style x:Key="WedgeStyle" TargetType="Path">
+            <Setter Property="Fill" Value="#B61E1E1E" />
+            <Setter Property="Stroke" Value="#00000000" />
+            <Setter Property="StrokeThickness" Value="0" />
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Fill" Value="#7A007AFF" />
+                    <Setter Property="Stroke" Value="#F0007AFF" />
+                    <Setter Property="StrokeThickness" Value="1.5" />
+                </Trigger>
+            </Style.Triggers>
         </Style>
     </Window.Resources>
 
@@ -61,7 +43,7 @@
                 <TextBlock Text="Window management, in flow." FontSize="30" FontWeight="SemiBold" Margin="0,8,0,0" />
                 <TextBlock Text="Hold your trigger. Move with intent. Release to commit." FontSize="14" Foreground="{StaticResource MutedBrush}" Margin="0,8,0,0" />
             </StackPanel>
-            <Border HorizontalAlignment="Right" VerticalAlignment="Top" Background="#151922" CornerRadius="18" Padding="16,10">
+            <Border HorizontalAlignment="Right" VerticalAlignment="Top" Background="#252526" CornerRadius="18" Padding="16,10">
                 <StackPanel Orientation="Horizontal">
                     <Ellipse Width="8" Height="8" Fill="{StaticResource AccentBrush}" Margin="0,0,9,0" />
                     <TextBlock Text="Prototype mode" Foreground="{StaticResource MutedBrush}" FontSize="12" />
@@ -69,41 +51,35 @@
             </Border>
         </Grid>
 
-        <Border Grid.Row="1" Background="{StaticResource PanelBrush}" CornerRadius="32" BorderBrush="#242B38" BorderThickness="1">
-            <Grid>
-                <TextBlock Text="ACTIVE WINDOW" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,28,0,0" FontSize="10" FontWeight="Bold" Foreground="#687286" />
-                <Border Width="360" Height="230" Background="#202735" BorderBrush="#435065" BorderThickness="1" CornerRadius="14" HorizontalAlignment="Center" VerticalAlignment="Center">
-                    <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
-                        <Border Width="46" Height="46" Background="#354156" CornerRadius="12" HorizontalAlignment="Center">
-                            <TextBlock Text="⌘" FontSize="22" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="{StaticResource AccentBrush}" />
-                        </Border>
-                        <TextBlock Text="Your active window" FontSize="18" FontWeight="SemiBold" HorizontalAlignment="Center" Margin="0,16,0,0" />
-                        <TextBlock Text="Preview target" FontSize="12" Foreground="{StaticResource MutedBrush}" HorizontalAlignment="Center" Margin="0,6,0,0" />
-                    </StackPanel>
-                </Border>
+        <Border Grid.Row="1" Background="{StaticResource PanelBrush}" CornerRadius="32" BorderBrush="#3C3C3C" BorderThickness="1">
+            <Grid x:Name="RadialPanel" Width="334.4" Height="334.4" HorizontalAlignment="Center" VerticalAlignment="Center" RenderTransformOrigin="0.5,0.5">
+                <Grid.RenderTransform>
+                    <ScaleTransform x:Name="RadialPanelScale" ScaleX="0.96" ScaleY="0.96" />
+                </Grid.RenderTransform>
+                <Canvas Width="334.4" Height="334.4">
+                    <Path x:Name="RadialRing" Width="182.4" Height="182.4" Canvas.Left="76" Canvas.Top="76" Fill="#B61E1E1E" />
+                    <Path x:Name="TopWedge" Width="182.4" Height="182.4" Canvas.Left="76" Canvas.Top="76" Style="{StaticResource WedgeStyle}" />
+                    <Path x:Name="RightWedge" Width="182.4" Height="182.4" Canvas.Left="76" Canvas.Top="76" Style="{StaticResource WedgeStyle}" />
+                    <Path x:Name="BottomWedge" Width="182.4" Height="182.4" Canvas.Left="76" Canvas.Top="76" Style="{StaticResource WedgeStyle}" />
+                    <Path x:Name="LeftWedge" Width="182.4" Height="182.4" Canvas.Left="76" Canvas.Top="76" Style="{StaticResource WedgeStyle}" />
+                </Canvas>
 
-                <Grid Width="460" Height="460" HorizontalAlignment="Center" VerticalAlignment="Center">
-                    <Ellipse Fill="#0D0F14" Stroke="#2C3544" StrokeThickness="1" />
-                    <Ellipse Width="300" Height="300" Fill="#151B25" Stroke="#273140" StrokeThickness="1" />
-                    <Button Style="{StaticResource ActionButton}" Click="Action_Click" Tag="Top" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,18,0,0">
-                        <StackPanel><TextBlock Text="↑" FontSize="28" HorizontalAlignment="Center"/><TextBlock Text="Top half" HorizontalAlignment="Center" Margin="0,5,0,0"/></StackPanel>
-                    </Button>
-                    <Button Style="{StaticResource ActionButton}" Click="Action_Click" Tag="Right" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,18,0">
-                        <StackPanel><TextBlock Text="→" FontSize="28" HorizontalAlignment="Center"/><TextBlock Text="Right half" HorizontalAlignment="Center" Margin="0,5,0,0"/></StackPanel>
-                    </Button>
-                    <Button Style="{StaticResource ActionButton}" Click="Action_Click" Tag="Bottom" HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,18">
-                        <StackPanel><TextBlock Text="↓" FontSize="28" HorizontalAlignment="Center"/><TextBlock Text="Bottom half" HorizontalAlignment="Center" Margin="0,5,0,0"/></StackPanel>
-                    </Button>
-                    <Button Style="{StaticResource ActionButton}" Click="Action_Click" Tag="Left" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="18,0,0,0">
-                        <StackPanel><TextBlock Text="←" FontSize="28" HorizontalAlignment="Center"/><TextBlock Text="Left half" HorizontalAlignment="Center" Margin="0,5,0,0"/></StackPanel>
-                    </Button>
-                    <Border Width="116" Height="116" Background="#A7F3D0" CornerRadius="58" HorizontalAlignment="Center" VerticalAlignment="Center">
-                        <StackPanel VerticalAlignment="Center">
-                            <TextBlock Text="⌁" FontSize="26" Foreground="#0D1714" HorizontalAlignment="Center" />
-                            <TextBlock Text="center" FontSize="12" FontWeight="SemiBold" Foreground="#0D1714" HorizontalAlignment="Center" />
-                        </StackPanel>
-                    </Border>
-                </Grid>
+                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,4,0,0" IsHitTestVisible="False">
+                    <TextBlock Text="↑" FontSize="18" HorizontalAlignment="Center" Foreground="{StaticResource AccentBrush}" />
+                    <TextBlock Text="Top half" FontSize="12" HorizontalAlignment="Center" Margin="0,2,0,0" />
+                </StackPanel>
+                <StackPanel HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,12,0" IsHitTestVisible="False">
+                    <TextBlock Text="→" FontSize="18" HorizontalAlignment="Center" Foreground="{StaticResource AccentBrush}" />
+                    <TextBlock Text="Right half" FontSize="12" HorizontalAlignment="Center" Margin="0,2,0,0" />
+                </StackPanel>
+                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,4" IsHitTestVisible="False">
+                    <TextBlock Text="↓" FontSize="18" HorizontalAlignment="Center" Foreground="{StaticResource AccentBrush}" />
+                    <TextBlock Text="Bottom half" FontSize="12" HorizontalAlignment="Center" Margin="0,2,0,0" />
+                </StackPanel>
+                <StackPanel HorizontalAlignment="Left" VerticalAlignment="Center" Margin="12,0,0,0" IsHitTestVisible="False">
+                    <TextBlock Text="←" FontSize="18" HorizontalAlignment="Center" Foreground="{StaticResource AccentBrush}" />
+                    <TextBlock Text="Left half" FontSize="12" HorizontalAlignment="Center" Margin="0,2,0,0" />
+                </StackPanel>
             </Grid>
         </Border>
 
@@ -115,7 +91,7 @@
             </StackPanel>
             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
                 <TextBlock Text="Trigger" Foreground="{StaticResource MutedBrush}" FontSize="12" VerticalAlignment="Center" />
-                <Border x:Name="TriggerCap" Background="#202735" BorderBrush="{StaticResource CapBrush}" BorderThickness="1" CornerRadius="8" Padding="10,6" Margin="10,0,0,0" Cursor="Hand" ToolTip="Click to rebind the trigger key" MouseLeftButtonUp="TriggerCap_MouseUp">
+                <Border x:Name="TriggerCap" Background="#333333" BorderBrush="{StaticResource CapBrush}" BorderThickness="1" CornerRadius="8" Padding="10,6" Margin="10,0,0,0" Cursor="Hand" ToolTip="Click to rebind the trigger key" MouseLeftButtonUp="TriggerCap_MouseUp">
                     <TextBlock x:Name="TriggerLabel" Text="Caps Lock" FontSize="12" />
                 </Border>
                 <TextBlock x:Name="RebindHint" Text="rebind" Foreground="{StaticResource AccentBrush}" FontSize="12" Cursor="Hand" Margin="10,0,0,0" VerticalAlignment="Center" MouseLeftButtonUp="RebindHint_MouseUp" />

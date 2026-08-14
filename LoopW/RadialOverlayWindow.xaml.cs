@@ -4,7 +4,6 @@ using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
-using System.Windows.Media.Imaging;
 using System.Windows.Shapes;
 using System.Windows.Threading;
 
@@ -12,11 +11,11 @@ namespace LoopW;
 
 public partial class RadialOverlayWindow : Window
 {
-    private const double Center = 200;
-    private const double OuterRadius = 176;
-    private const double InnerRadius = 64;
-    private const double DeadZoneRadius = 64;
-    private const double BlurMargin = 48;
+    private const double Center = 76;
+    private const double OuterRadius = 66.88;
+    private const double InnerRadius = 42.56;
+    private const double DeadZoneRadius = 42.56;
+    private const double BlurMargin = 18.24;
 
     private readonly IntPtr _targetWindow;
     private readonly Action<WindowHalf> _commit;
@@ -47,57 +46,13 @@ public partial class RadialOverlayWindow : Window
 
     private void BuildGeometry()
     {
-        var annulus = BuildAnnulus(Center);
-        Ring.Data = annulus;
-        BackdropImage.Clip = BuildAnnulus(Center + BlurMargin);
-        TopWedge.Data = BuildWedge(-135, -45);
-        RightWedge.Data = BuildWedge(-45, 45);
-        BottomWedge.Data = BuildWedge(45, 135);
-        LeftWedge.Data = BuildWedge(135, 225);
+        Ring.Data = RadialGeometry.BuildAnnulus(Center, OuterRadius, InnerRadius);
+        BackdropImage.Clip = RadialGeometry.BuildAnnulus(Center + BlurMargin, OuterRadius, InnerRadius);
+        TopWedge.Data = RadialGeometry.BuildWedge(Center, OuterRadius, InnerRadius, -135, -45);
+        RightWedge.Data = RadialGeometry.BuildWedge(Center, OuterRadius, InnerRadius, -45, 45);
+        BottomWedge.Data = RadialGeometry.BuildWedge(Center, OuterRadius, InnerRadius, 45, 135);
+        LeftWedge.Data = RadialGeometry.BuildWedge(Center, OuterRadius, InnerRadius, 135, 225);
     }
-
-    private static PathGeometry BuildAnnulus(double center)
-    {
-        var ring = new PathGeometry { FillRule = FillRule.EvenOdd };
-        ring.Figures.Add(BuildCircle(center, OuterRadius));
-        ring.Figures.Add(BuildCircle(center, InnerRadius));
-        return ring;
-    }
-
-    private static PathFigure BuildCircle(double center, double radius)
-    {
-        var start = Polar(center, radius, 0);
-        var figure = new PathFigure { StartPoint = start, IsClosed = true, IsFilled = true };
-        figure.Segments.Add(new ArcSegment(Polar(center, radius, Math.PI), new Size(radius, radius), 0, false, SweepDirection.Clockwise, true));
-        figure.Segments.Add(new ArcSegment(start, new Size(radius, radius), 0, false, SweepDirection.Clockwise, true));
-        return figure;
-    }
-
-    private static PathGeometry BuildWedge(double fromDeg, double toDeg)
-    {
-        var from = DegToRad(fromDeg);
-        var to = DegToRad(toDeg);
-
-        var figure = new PathFigure
-        {
-            StartPoint = Polar(Center, OuterRadius, from),
-            IsClosed = true,
-            IsFilled = true
-        };
-        figure.Segments.Add(new LineSegment(Polar(Center, InnerRadius, from), true));
-        figure.Segments.Add(new ArcSegment(Polar(Center, InnerRadius, to), new Size(InnerRadius, InnerRadius), 0, false, SweepDirection.Clockwise, true));
-        figure.Segments.Add(new LineSegment(Polar(Center, OuterRadius, to), true));
-        figure.Segments.Add(new ArcSegment(Polar(Center, OuterRadius, from), new Size(OuterRadius, OuterRadius), 0, false, SweepDirection.Counterclockwise, true));
-
-        var geometry = new PathGeometry();
-        geometry.Figures.Add(figure);
-        return geometry;
-    }
-
-    private static double DegToRad(double deg) => deg * Math.PI / 180;
-
-    private static Point Polar(double center, double radius, double angleRad) =>
-        new(center + radius * Math.Cos(angleRad), center + radius * Math.Sin(angleRad));
 
     private void Overlay_Loaded(object sender, RoutedEventArgs e)
     {
@@ -166,7 +121,7 @@ public partial class RadialOverlayWindow : Window
             var width = (int)Math.Round(Width * dpiX / 96) + margin * 2;
             var height = (int)Math.Round(Height * dpiY / 96) + margin * 2;
 
-            var source = CaptureScreenRegion(left, top, width, height);
+            var source = ScreenCapture.CaptureRegion(left, top, width, height);
             if (source != null)
             {
                 source.Freeze();
@@ -177,33 +132,6 @@ public partial class RadialOverlayWindow : Window
         {
             // blur is decorative; the ring still renders without a backdrop
         }
-    }
-
-    private static BitmapSource? CaptureScreenRegion(int left, int top, int width, int height)
-    {
-        if (width <= 0 || height <= 0)
-        {
-            return null;
-        }
-
-        var hdcSrc = NativeMethods.GetDC(IntPtr.Zero);
-        var hdcMem = NativeMethods.CreateCompatibleDC(hdcSrc);
-        var hbmp = NativeMethods.CreateCompatibleBitmap(hdcSrc, width, height);
-        if (hbmp == IntPtr.Zero)
-        {
-            NativeMethods.DeleteDC(hdcMem);
-            NativeMethods.ReleaseDC(IntPtr.Zero, hdcSrc);
-            return null;
-        }
-
-        var previous = NativeMethods.SelectObject(hdcMem, hbmp);
-        NativeMethods.BitBlt(hdcMem, 0, 0, width, height, hdcSrc, left, top, NativeMethods.SrcCopy);
-        NativeMethods.SelectObject(hdcMem, previous);
-        var source = Imaging.CreateBitmapSourceFromHBitmap(hbmp, IntPtr.Zero, Int32Rect.Empty, BitmapSizeOptions.FromEmptyOptions());
-        NativeMethods.DeleteObject(hbmp);
-        NativeMethods.DeleteDC(hdcMem);
-        NativeMethods.ReleaseDC(IntPtr.Zero, hdcSrc);
-        return source;
     }
 
     /// <summary>
