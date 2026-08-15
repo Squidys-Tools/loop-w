@@ -32,6 +32,7 @@ public sealed class GlobalHotkey : IDisposable
     private uint _triggerModifiers;
     private bool _triggerDown;
     private bool _capturing;
+    private readonly HashSet<uint> _pressedKeybinds = new();
     private List<Keybind> _keybinds = new();
     private Action<uint, uint>? _captureTarget;
     private Action? _captureCancelled;
@@ -172,6 +173,13 @@ public sealed class GlobalHotkey : IDisposable
 
     private bool TryMatchKeybind(uint vk)
     {
+        // Low-level hooks receive repeated WM_KEYDOWN messages while a key is
+        // held. A cycle advances per physical press, not per repeat tick.
+        if (_pressedKeybinds.Contains(vk))
+        {
+            return true;
+        }
+
         for (var i = 0; i < _keybinds.Count; i++)
         {
             var keybind = _keybinds[i];
@@ -181,6 +189,7 @@ public sealed class GlobalHotkey : IDisposable
             }
 
             var captured = keybind;
+            _pressedKeybinds.Add(vk);
             Dispatch(() => KeybindPressed?.Invoke(captured));
             return true;
         }
@@ -190,6 +199,8 @@ public sealed class GlobalHotkey : IDisposable
 
     private bool HandleKeyUp(uint vk)
     {
+        _pressedKeybinds.Remove(vk);
+
         if (_capturing)
         {
             return false;

@@ -68,9 +68,13 @@ Loop: trigger + any key → immediate action, fully configurable.
 
 Repeat the same trigger+key (or left-click) to step through action variations.
 
-- [ ] Cycle chains (e.g. right-half → right-third → right-two-thirds → cycle).
-- [ ] Repeat detection on trigger re-press without full release (and with).
-- [ ] Configurable per keybind; opt-out per action.
+- [x] Cycle chains for left/right/top/bottom sizing (half → third → two-thirds → cycle).
+- [x] Repeat detection for repeated trigger + key presses, with keyboard auto-repeat suppressed.
+- [x] Configurable per keybind with a Cycle toggle; radial directional commits cycle by default.
+
+Notes: Cycle.cs keeps the last successful position per target and requested action.
+The first use keeps the configured action, then repeated uses advance through its
+directional chain. A failed window placement does not consume a step.
 
 ---
 
@@ -88,24 +92,25 @@ Hide windows at the screen edge to declutter; reveal on hover or keybind.
 ## 5. Settings UI
 
 Loop has a Settings window with tabs (Behavior / Radial / Preview / Keybinds / Theming).
-Currently the only screen is the demo radial panel + trigger chip.
+The settings window now exposes the stored behavior, radial, preview, keybind,
+and theme options.
 
-- [ ] Settings window with tabbed layout.
-- [ ] Behavior: trigger key, launch at login, run in tray.
-- [ ] Radial: enabled toggle, cursor-interaction toggle, width/shape/colors.
-- [ ] Preview: padding, corner radius, border color, border width, enabled toggle.
-- [ ] Keybinds tab (wires into #2).
-- [ ] Persistence model for all of the above (extend `Settings.cs`).
+- [x] Settings window with tabbed layout.
+- [x] Behavior: trigger key and launch at login. Run-in-tray stays with resident-app plumbing (#7).
+- [x] Radial: enabled toggle, cursor-interaction toggle, radius controls, and colors.
+- [x] Preview: padding, corner radius, border color, border width, enabled toggle.
+- [x] Keybinds tab (wires into #2).
+- [x] Persistence model for all of the above (extend `Settings.cs`).
 
 ---
 
 ## 6. Theming
 
-- [ ] Radial menu colors (accent, ring, sector fill/stroke).
-- [ ] Radial geometry controls (outer/inner radius, gap/width) — `RadialGeometry.cs` is
-      parameterized already, just needs settings input.
-- [ ] Toggle radial menu off entirely (keybinds still work).
-- [ ] Preview theming per #5.
+- [x] Radial menu colors (accent, ring, sector fill/stroke).
+- [x] Radial geometry controls (outer/inner radius) — `RadialGeometry.cs` receives
+      settings input.
+- [x] Toggle radial menu off entirely (keybinds still work).
+- [x] Preview theming per #5.
 
 ---
 
@@ -190,3 +195,7 @@ Track decisions and progress here as work happens.
   list/add/rebind/delete with action dropdown) opened via "settings" link in main
   window. `MainWindow.Hotkey_KeybindPressed` applies the action to the captured
   target. App launches clean; smoke-tested.
+- **2026-08-15** — Feature #5: replaced the keybind-only screen with Behavior,
+  Radial, Preview, Keybinds, and Theme tabs. Added validated persistence for the
+  new settings, launch-at-login registration, live visual updates, and radial/
+  preview options.

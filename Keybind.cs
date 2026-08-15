@@ -12,6 +12,12 @@ public sealed class Keybind
 
     public WindowAction Action { get; set; }
 
+    /// <summary>
+    /// Repeating this trigger + key advances through the action's directional
+    /// cycle. Missing values in older settings files keep this default.
+    /// </summary>
+    public bool CycleEnabled { get; set; } = true;
+
     public Keybind()
     {
     }

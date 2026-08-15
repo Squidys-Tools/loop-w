@@ -27,9 +27,9 @@
             </Image.Effect>
         </Image>
         <Path x:Name="Ring" Fill="#B61E1E1E" />
-        <Path x:Name="TopWedge" Opacity="0" Fill="{StaticResource SectorFill}" Stroke="{StaticResource SectorStroke}" StrokeThickness="1.5" />
-        <Path x:Name="RightWedge" Opacity="0" Fill="{StaticResource SectorFill}" Stroke="{StaticResource SectorStroke}" StrokeThickness="1.5" />
-        <Path x:Name="BottomWedge" Opacity="0" Fill="{StaticResource SectorFill}" Stroke="{StaticResource SectorStroke}" StrokeThickness="1.5" />
-        <Path x:Name="LeftWedge" Opacity="0" Fill="{StaticResource SectorFill}" Stroke="{StaticResource SectorStroke}" StrokeThickness="1.5" />
+        <Path x:Name="TopWedge" Opacity="0" Fill="{DynamicResource SectorFillBrush}" Stroke="{DynamicResource SectorStrokeBrush}" StrokeThickness="1.5" />
+        <Path x:Name="RightWedge" Opacity="0" Fill="{DynamicResource SectorFillBrush}" Stroke="{DynamicResource SectorStrokeBrush}" StrokeThickness="1.5" />
+        <Path x:Name="BottomWedge" Opacity="0" Fill="{DynamicResource SectorFillBrush}" Stroke="{DynamicResource SectorStrokeBrush}" StrokeThickness="1.5" />
+        <Path x:Name="LeftWedge" Opacity="0" Fill="{DynamicResource SectorFillBrush}" Stroke="{DynamicResource SectorStrokeBrush}" StrokeThickness="1.5" />
     </Grid>
 </Window>

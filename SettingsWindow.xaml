@@ -3,8 +3,8 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:local="clr-namespace:LoopW"
         Title="LoopW Settings"
-        Height="520" Width="640"
-        MinHeight="420" MinWidth="520"
+        Height="620" Width="760"
+        MinHeight="520" MinWidth="640"
         Background="#1E1E1E"
         Foreground="#CCCCCC"
         WindowStartupLocation="CenterScreen"
@@ -15,57 +15,178 @@
         <SolidColorBrush x:Key="MutedBrush" Color="#858585" />
         <SolidColorBrush x:Key="AccentBrush" Color="#007AFF" />
         <SolidColorBrush x:Key="CapBrush" Color="#333333" />
+        <Style TargetType="TextBox">
+            <Setter Property="Background" Value="#333333" />
+            <Setter Property="Foreground" Value="#EEEEEE" />
+            <Setter Property="BorderBrush" Value="#4A4A4A" />
+            <Setter Property="Padding" Value="8,5" />
+        </Style>
+        <Style TargetType="ComboBox">
+            <Setter Property="Background" Value="#333333" />
+            <Setter Property="Foreground" Value="#EEEEEE" />
+            <Setter Property="BorderBrush" Value="#4A4A4A" />
+        </Style>
     </Window.Resources>
 
     <Grid Margin="28">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
-            <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <TextBlock Text="Settings" FontSize="24" FontWeight="SemiBold" Grid.Row="0" />
+        <StackPanel Grid.Row="0" Margin="0,0,0,18">
+            <TextBlock Text="Settings" FontSize="24" FontWeight="SemiBold" />
+            <TextBlock Text="Shape the trigger, menu, preview, and shortcuts around how you work."
+                       FontSize="12" Foreground="{StaticResource MutedBrush}" Margin="0,5,0,0" />
+        </StackPanel>
 
-        <Grid Grid.Row="1" Margin="0,16,0,8">
-            <StackPanel>
-                <TextBlock Text="KEYBINDS" FontSize="12" FontWeight="Bold" Foreground="{StaticResource AccentBrush}" />
-                <TextBlock Text="Hold the trigger, then press the bound key to apply an action instantly." FontSize="12" Foreground="{StaticResource MutedBrush}" Margin="0,3,0,0" />
-            </StackPanel>
-        </Grid>
-
-        <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto">
-            <ItemsControl x:Name="KeybindList">
-                <ItemsControl.ItemTemplate>
-                    <DataTemplate>
-                        <Border Background="{StaticResource PanelBrush}" CornerRadius="10" Padding="12,10" Margin="0,4" BorderBrush="#3C3C3C" BorderThickness="1">
-                            <Grid>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
-                                <Border Background="#333333" CornerRadius="8" Padding="12,6" Cursor="Hand" ToolTip="Click to rebind the key">
-                                    <TextBlock Text="{Binding Display}" FontSize="12" MouseLeftButtonUp="KeyChip_MouseLeftButtonUp" />
+        <TabControl x:Name="Tabs" Grid.Row="1" Background="Transparent" BorderThickness="0">
+            <TabItem Header="Behavior">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="0,18,8,0">
+                    <StackPanel>
+                        <TextBlock Text="TRIGGER" FontSize="12" FontWeight="Bold" Foreground="{StaticResource AccentBrush}" />
+                        <TextBlock Text="The trigger is held while you choose an action, or before pressing a keybind."
+                                   FontSize="12" Foreground="{StaticResource MutedBrush}" Margin="0,4,0,14" />
+                        <Grid Background="{StaticResource PanelBrush}" Margin="0,0,0,18">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Margin="14,12">
+                                <TextBlock Text="Trigger key" FontWeight="SemiBold" />
+                                <TextBlock Text="Click rebind, then press a key or combination." FontSize="12" Foreground="{StaticResource MutedBrush}" Margin="0,3,0,0" />
+                            </StackPanel>
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,14,0">
+                                <Border Background="{StaticResource CapBrush}" CornerRadius="8" Padding="12,7" Cursor="Hand" MouseLeftButtonUp="Trigger_MouseLeftButtonUp">
+                                    <TextBlock x:Name="TriggerLabel" />
                                 </Border>
-                                <ComboBox Grid.Column="1" Margin="12,0,12,0" VerticalAlignment="Center"
-                                          ItemsSource="{x:Static local:SettingsWindow.ActionChoices}"
-                                          SelectedValuePath="Key" DisplayMemberPath="Value"
-                                          SelectedValue="{Binding Keybind.Action}"
-                                          SelectionChanged="Action_SelectionChanged" />
-                                <Button Grid.Column="2" Content="✕" Background="Transparent" Foreground="{StaticResource MutedBrush}" BorderThickness="0" Cursor="Hand" ToolTip="Delete" Click="Delete_Click" />
-                            </Grid>
-                        </Border>
-                    </DataTemplate>
-                </ItemsControl.ItemTemplate>
-            </ItemsControl>
-        </ScrollViewer>
+                                <Button x:Name="TriggerButton" Content="rebind" Background="Transparent" Foreground="{StaticResource AccentBrush}" BorderThickness="0" Margin="8,0,0,0" Click="Trigger_Click" />
+                            </StackPanel>
+                        </Grid>
+                        <CheckBox x:Name="LaunchAtLoginCheck" Content="Launch LoopW when I sign in" Foreground="#CCCCCC" Checked="Behavior_Changed" Unchecked="Behavior_Changed" />
+                        <TextBlock Text="Tray startup and hiding the main window will be added with resident-app support."
+                                   FontSize="12" Foreground="{StaticResource MutedBrush}" Margin="24,5,0,0" TextWrapping="Wrap" />
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
 
-        <TextBlock x:Name="StatusText" Grid.Row="3" FontSize="12" Foreground="{StaticResource MutedBrush}" Margin="0,10,0,0" Text=" " />
+            <TabItem Header="Radial">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="0,18,8,0">
+                    <StackPanel>
+                        <TextBlock Text="RADIAL MENU" FontSize="12" FontWeight="Bold" Foreground="{StaticResource AccentBrush}" />
+                        <TextBlock Text="Choose whether the menu appears and how much room its ring uses."
+                                   FontSize="12" Foreground="{StaticResource MutedBrush}" Margin="0,4,0,14" />
+                        <CheckBox x:Name="RadialEnabledCheck" Content="Show radial menu while the trigger is held" Foreground="#CCCCCC" Checked="Radial_Changed" Unchecked="Radial_Changed" />
+                        <CheckBox x:Name="CursorInteractionCheck" Content="Use cursor direction to select a wedge" Foreground="#CCCCCC" Margin="0,12,0,18" Checked="Radial_Changed" Unchecked="Radial_Changed" />
+                        <TextBlock Text="Outer radius" />
+                        <Slider x:Name="OuterRadiusSlider" Minimum="64" Maximum="140" TickFrequency="4" IsSnapToTickEnabled="True" ValueChanged="Radial_ValueChanged" />
+                        <TextBlock x:Name="OuterRadiusValue" FontSize="12" Foreground="{StaticResource MutedBrush}" />
+                        <TextBlock Text="Inner radius" Margin="0,16,0,0" />
+                        <Slider x:Name="InnerRadiusSlider" Minimum="24" Maximum="120" TickFrequency="4" IsSnapToTickEnabled="True" ValueChanged="Radial_ValueChanged" />
+                        <TextBlock x:Name="InnerRadiusValue" FontSize="12" Foreground="{StaticResource MutedBrush}" />
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
 
-        <Button x:Name="AddButton" Grid.Row="4" Content="Add keybind" HorizontalAlignment="Left" Margin="0,8,0,0"
-                Background="{StaticResource AccentBrush}" Foreground="White" BorderThickness="0"
-                Padding="16,8" Cursor="Hand" Click="Add_Click" />
+            <TabItem Header="Preview">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="0,18,8,0">
+                    <StackPanel>
+                        <TextBlock Text="TARGET PREVIEW" FontSize="12" FontWeight="Bold" Foreground="{StaticResource AccentBrush}" />
+                        <TextBlock Text="The preview mirrors the frame your selected action will use."
+                                   FontSize="12" Foreground="{StaticResource MutedBrush}" Margin="0,4,0,14" />
+                        <CheckBox x:Name="PreviewEnabledCheck" Content="Show target preview" Foreground="#CCCCCC" Margin="0,0,0,18" Checked="Preview_Changed" Unchecked="Preview_Changed" />
+                        <TextBlock Text="Padding" />
+                        <Slider x:Name="PreviewPaddingSlider" Minimum="4" Maximum="48" TickFrequency="2" IsSnapToTickEnabled="True" ValueChanged="Preview_ValueChanged" />
+                        <TextBlock x:Name="PreviewPaddingValue" FontSize="12" Foreground="{StaticResource MutedBrush}" />
+                        <TextBlock Text="Corner radius" Margin="0,16,0,0" />
+                        <Slider x:Name="PreviewCornerSlider" Minimum="4" Maximum="32" TickFrequency="2" IsSnapToTickEnabled="True" ValueChanged="Preview_ValueChanged" />
+                        <TextBlock x:Name="PreviewCornerValue" FontSize="12" Foreground="{StaticResource MutedBrush}" />
+                        <TextBlock Text="Border width" Margin="0,16,0,0" />
+                        <Slider x:Name="PreviewBorderWidthSlider" Minimum="0" Maximum="6" TickFrequency="1" IsSnapToTickEnabled="True" ValueChanged="Preview_ValueChanged" />
+                        <TextBlock x:Name="PreviewBorderWidthValue" FontSize="12" Foreground="{StaticResource MutedBrush}" />
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <TabItem Header="Keybinds">
+                <Grid Margin="0,18,0,0">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <StackPanel Grid.Row="0" Margin="0,0,0,10">
+                        <TextBlock Text="KEYBINDS" FontSize="12" FontWeight="Bold" Foreground="{StaticResource AccentBrush}" />
+                        <TextBlock Text="Hold the trigger, then press a bound key. Repeat directional binds to cycle through sizes."
+                                   FontSize="12" Foreground="{StaticResource MutedBrush}" Margin="0,4,0,0" />
+                    </StackPanel>
+                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+                        <ItemsControl x:Name="KeybindList">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Background="{StaticResource PanelBrush}" CornerRadius="10" Padding="12,10" Margin="0,4" BorderBrush="#3C3C3C" BorderThickness="1">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <Border Background="#333333" CornerRadius="8" Padding="12,6" Cursor="Hand" ToolTip="Click to rebind the key">
+                                                <TextBlock Text="{Binding Display}" FontSize="12" MouseLeftButtonUp="KeyChip_MouseLeftButtonUp" />
+                                            </Border>
+                                            <ComboBox Grid.Column="1" Margin="12,0,12,0" VerticalAlignment="Center"
+                                                      ItemsSource="{x:Static local:SettingsWindow.ActionChoices}"
+                                                      SelectedValuePath="Key" DisplayMemberPath="Value"
+                                                      SelectedValue="{Binding Keybind.Action}"
+                                                      SelectionChanged="Action_SelectionChanged" />
+                                            <CheckBox Grid.Column="2" Content="Cycle" IsChecked="{Binding Keybind.CycleEnabled}" IsEnabled="{Binding CanCycle}" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" Margin="0,0,12,0" Checked="Cycle_Changed" Unchecked="Cycle_Changed" />
+                                            <Button Grid.Column="3" Content="✕" Background="Transparent" Foreground="{StaticResource MutedBrush}" BorderThickness="0" Cursor="Hand" ToolTip="Delete" Click="Delete_Click" />
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+                    <Button x:Name="AddButton" Grid.Row="2" Content="Add keybind" HorizontalAlignment="Left" Margin="0,10,0,0" Background="{StaticResource AccentBrush}" Foreground="White" BorderThickness="0" Padding="16,8" Cursor="Hand" Click="Add_Click" />
+                </Grid>
+            </TabItem>
+
+            <TabItem Header="Theme">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="0,18,8,0">
+                    <StackPanel>
+                        <TextBlock Text="COLORS" FontSize="12" FontWeight="Bold" Foreground="{StaticResource AccentBrush}" />
+                        <TextBlock Text="Use #RRGGBB or #AARRGGBB values. Changes apply to the main preview and new radial menus."
+                                   FontSize="12" Foreground="{StaticResource MutedBrush}" Margin="0,4,0,14" TextWrapping="Wrap" />
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="170" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+                            <TextBlock Text="Accent" Margin="0,0,0,10" />
+                            <TextBox x:Name="AccentColorText" Grid.Column="1" Margin="0,0,0,10" LostFocus="Theme_LostFocus" />
+                            <TextBlock Text="Sector fill" Grid.Row="1" Margin="0,0,0,10" />
+                            <TextBox x:Name="SectorFillText" Grid.Row="1" Grid.Column="1" Margin="0,0,0,10" LostFocus="Theme_LostFocus" />
+                            <TextBlock Text="Sector stroke" Grid.Row="2" Margin="0,0,0,10" />
+                            <TextBox x:Name="SectorStrokeText" Grid.Row="2" Grid.Column="1" Margin="0,0,0,10" LostFocus="Theme_LostFocus" />
+                            <TextBlock Text="Ring fill" Grid.Row="3" Margin="0,0,0,10" />
+                            <TextBox x:Name="RingFillText" Grid.Row="3" Grid.Column="1" Margin="0,0,0,10" LostFocus="Theme_LostFocus" />
+                            <TextBlock Text="Preview border" Grid.Row="4" />
+                            <TextBox x:Name="PreviewBorderText" Grid.Row="4" Grid.Column="1" LostFocus="Theme_LostFocus" />
+                        </Grid>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+        </TabControl>
+
+        <TextBlock x:Name="StatusText" Grid.Row="2" FontSize="12" Foreground="{StaticResource MutedBrush}" Margin="0,12,0,0" Text="Saved" />
     </Grid>
 </Window>
