@@ -567,6 +567,15 @@ internal static class WindowActionService
             }
         }
 
+        // No monitor lies in the requested direction (e.g. LeftScreen on the
+        // leftmost display): report a no-op instead of claiming success so the
+        // caller does not push a redundant entry onto the undo history.
+        if (RectsEqual(best, currentWork))
+        {
+            error = "No monitor in that direction.";
+            return false;
+        }
+
         target = TranslateFrame(GetCurrentRect(window), currentWork, best);
         return true;
     }
