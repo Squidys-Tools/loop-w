@@ -118,6 +118,12 @@ public partial class RadialOverlayWindow : Window
             return;
         }
 
+        if (!_settings.CursorInteractionEnabled)
+        {
+            SetSelection(null);
+            return;
+        }
+
         var localX = cursor.X * 96.0 / _dpiX - Left;
         var localY = cursor.Y * 96.0 / _dpiY - Top;
         UpdateSelection(new Point(localX, localY));

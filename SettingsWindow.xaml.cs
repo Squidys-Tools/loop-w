@@ -194,6 +194,11 @@ public partial class SettingsWindow : Window
         _settings.RadialRingFill = RingFillText.Text;
         _settings.PreviewBorderColor = PreviewBorderText.Text;
         _settings.Save();
+        AccentColorText.Text = _settings.AccentColor;
+        SectorFillText.Text = _settings.RadialSectorFill;
+        SectorStrokeText.Text = _settings.RadialSectorStroke;
+        RingFillText.Text = _settings.RadialRingFill;
+        PreviewBorderText.Text = _settings.PreviewBorderColor;
         SettingsChanged?.Invoke(_settings);
         StatusText.Text = "Theme saved";
     }
