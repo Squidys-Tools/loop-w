@@ -78,6 +78,7 @@ public partial class App : Application
         _commandServer?.Stop();
         _ = _commandServer?.DisposeAsync().AsTask();
         _trayIcon?.Dispose();
+        WindowStashService.RestoreAll();
 
         if (_mainWindow != null)
         {

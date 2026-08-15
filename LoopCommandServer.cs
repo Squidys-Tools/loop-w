@@ -7,6 +7,8 @@ namespace LoopW;
 internal sealed class LoopCommandServer : IAsyncDisposable
 {
     internal const string PipeName = "LoopW-Commands";
+    private const int MaxCommandLength = 256;
+    private static readonly TimeSpan CommandReadTimeout = TimeSpan.FromSeconds(2);
 
     private readonly Func<string, Task<string>> _handler;
     private readonly CancellationTokenSource _cancellation = new();
@@ -62,7 +64,7 @@ internal sealed class LoopCommandServer : IAsyncDisposable
                     AutoFlush = true
                 };
 
-                var rawCommand = await reader.ReadLineAsync(cancellation).ConfigureAwait(false);
+                var rawCommand = await ReadCommandAsync(reader, cancellation).ConfigureAwait(false);
                 if (rawCommand != null)
                 {
                     string response;
@@ -82,11 +84,45 @@ internal sealed class LoopCommandServer : IAsyncDisposable
             {
                 return;
             }
+            catch (OperationCanceledException)
+            {
+                // A connected client exceeded the idle command timeout.
+            }
+            catch (InvalidDataException)
+            {
+                // A connected client sent a command larger than the protocol limit.
+            }
             catch (IOException) when (!cancellation.IsCancellationRequested)
             {
                 // A client can disconnect mid-command. Keep the resident server alive.
             }
         }
+    }
+
+    private static async Task<string?> ReadCommandAsync(StreamReader reader, CancellationToken cancellation)
+    {
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
+        timeout.CancelAfter(CommandReadTimeout);
+
+        var buffer = new char[MaxCommandLength];
+        var count = 0;
+        while (count < buffer.Length)
+        {
+            var read = await reader.ReadAsync(buffer.AsMemory(count, 1), timeout.Token).ConfigureAwait(false);
+            if (read == 0)
+            {
+                return count == 0 ? null : new string(buffer, 0, count).TrimEnd('\r');
+            }
+
+            if (buffer[count] == '\n')
+            {
+                return new string(buffer, 0, count).TrimEnd('\r');
+            }
+
+            count += read;
+        }
+
+        throw new InvalidDataException("Command exceeds the maximum length.");
     }
 }
 
@@ -111,7 +147,8 @@ internal static class LoopCommandClient
                     AutoFlush = true
                 };
                 writer.WriteLine(command);
-                response = reader.ReadLine() ?? string.Empty;
+                using var responseTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+                response = reader.ReadLineAsync(responseTimeout.Token).GetAwaiter().GetResult() ?? string.Empty;
                 return true;
             }
             catch (IOException) when (attempt < 2)
@@ -127,6 +164,10 @@ internal static class LoopCommandClient
                 return false;
             }
             catch (TimeoutException)
+            {
+                return false;
+            }
+            catch (OperationCanceledException)
             {
                 return false;
             }

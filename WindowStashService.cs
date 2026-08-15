@@ -101,6 +101,21 @@ internal static class WindowStashService
         return false;
     }
 
+    internal static void RestoreAll()
+    {
+        foreach (var window in Order.ToArray())
+        {
+            if (Stashed.TryGetValue(window, out var stashed) && NativeMethods.IsWindow(window))
+            {
+                var placement = stashed.OriginalPlacement;
+                NativeMethods.SetWindowPlacement(window, ref placement);
+            }
+        }
+
+        Stashed.Clear();
+        Order.Clear();
+    }
+
     public static bool TryRevealAtCursor(NativeMethods.Point cursor, out string message)
     {
         for (var i = 0; i < Order.Count; i++)
