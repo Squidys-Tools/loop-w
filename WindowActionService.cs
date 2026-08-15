@@ -476,7 +476,7 @@ internal static class WindowActionService
                 var stepW = Math.Max(32, width / 10);
                 var stepH = Math.Max(32, height / 10);
                 width = action == WindowAction.Larger ? width + stepW : width - stepW;
-                height = action == WindowAction.Smaller ? height + stepH : height - stepH;
+                height = action == WindowAction.Larger ? height + stepH : height - stepH;
                 width = Math.Max(step, width);
                 height = Math.Max(step, height);
 
