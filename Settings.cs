@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.IO;
 using System.Text.Json;
 using System.Windows.Media;
+using MediaColor = System.Windows.Media.Color;
+using MediaColorConverter = System.Windows.Media.ColorConverter;
 
 namespace LoopW;
 
@@ -111,7 +113,7 @@ public sealed class AppSettings
     {
         try
         {
-            if (ColorConverter.ConvertFromString(value) is Color color)
+            if (MediaColorConverter.ConvertFromString(value) is MediaColor color)
             {
                 return color.ToString();
             }

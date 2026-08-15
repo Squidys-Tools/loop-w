@@ -1,11 +1,15 @@
 using System;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Shapes;
 using System.Windows.Threading;
+using KeyEventArgs = System.Windows.Input.KeyEventArgs;
+using MouseEventArgs = System.Windows.Input.MouseEventArgs;
+using Point = System.Windows.Point;
 
 namespace LoopW;
 
@@ -14,7 +18,7 @@ public partial class RadialOverlayWindow : Window
     private const double OverlayScale = 0.7333333333;
 
     private readonly IntPtr _targetWindow;
-    private readonly Action<WindowHalf> _commit;
+    private readonly Action<WindowAction> _commit;
     private readonly AppSettings _settings;
     private readonly PreviewOverlayWindow _preview;
     private readonly DispatcherTimer _pollTimer;
@@ -22,12 +26,14 @@ public partial class RadialOverlayWindow : Window
     private readonly double _outerRadius;
     private readonly double _innerRadius;
     private readonly double _blurMargin;
-    private WindowHalf? _selected;
+    private readonly Path[] _wedgePaths;
+    private readonly TextBlock[] _labels;
+    private WindowAction? _selected;
     private bool _closing;
     private double _dpiX = 96;
     private double _dpiY = 96;
 
-    internal RadialOverlayWindow(IntPtr targetWindow, Action<WindowHalf> commit, AppSettings settings)
+    internal RadialOverlayWindow(IntPtr targetWindow, Action<WindowAction> commit, AppSettings settings)
     {
         InitializeComponent();
         _targetWindow = targetWindow;
@@ -38,6 +44,16 @@ public partial class RadialOverlayWindow : Window
         _innerRadius = settings.RadialInnerRadius * OverlayScale;
         _center = _outerRadius * 1.1;
         _blurMargin = _outerRadius * 0.27;
+        _wedgePaths = new[]
+        {
+            RightWedge, BottomRightWedge, BottomWedge, BottomLeftWedge,
+            LeftWedge, TopLeftWedge, TopWedge, TopRightWedge
+        };
+        _labels = new[]
+        {
+            RightLabel, BottomRightLabel, BottomLabel, BottomLeftLabel,
+            LeftLabel, TopLeftLabel, TopLabel, TopRightLabel
+        };
         Width = _center * 2;
         Height = _center * 2;
         Resources["SectorFillBrush"] = CreateBrush(settings.RadialSectorFill, "#7A007AFF");
@@ -60,10 +76,23 @@ public partial class RadialOverlayWindow : Window
     {
         Ring.Data = RadialGeometry.BuildAnnulus(_center, _outerRadius, _innerRadius);
         BackdropImage.Clip = RadialGeometry.BuildAnnulus(_center + _blurMargin, _outerRadius, _innerRadius);
-        TopWedge.Data = RadialGeometry.BuildWedge(_center, _outerRadius, _innerRadius, -135, -45);
-        RightWedge.Data = RadialGeometry.BuildWedge(_center, _outerRadius, _innerRadius, -45, 45);
-        BottomWedge.Data = RadialGeometry.BuildWedge(_center, _outerRadius, _innerRadius, 45, 135);
-        LeftWedge.Data = RadialGeometry.BuildWedge(_center, _outerRadius, _innerRadius, 135, 225);
+
+        var labelDistance = (_innerRadius + _outerRadius) / 2;
+        for (var i = 0; i < RadialActionCatalog.Slots.Count; i++)
+        {
+            var slot = RadialActionCatalog.Slots[i];
+            _wedgePaths[i].Data = RadialGeometry.BuildWedge(
+                _center,
+                _outerRadius,
+                _innerRadius,
+                slot.FromDegrees,
+                slot.ToDegrees);
+            _labels[i].Text = slot.Label;
+
+            var angle = slot.CenterDegrees * Math.PI / 180;
+            Canvas.SetLeft(_labels[i], _center + Math.Cos(angle) * labelDistance - _labels[i].Width / 2);
+            Canvas.SetTop(_labels[i], _center + Math.Sin(angle) * labelDistance - 8);
+        }
     }
 
     private void Overlay_Loaded(object sender, RoutedEventArgs e)
@@ -204,9 +233,7 @@ public partial class RadialOverlayWindow : Window
             return;
         }
 
-        var selection = Math.Abs(dx) > Math.Abs(dy)
-            ? (dx < 0 ? WindowHalf.Left : WindowHalf.Right)
-            : (dy < 0 ? WindowHalf.Top : WindowHalf.Bottom);
+        var selection = RadialActionCatalog.ActionAt(Math.Atan2(dy, dx) * 180 / Math.PI);
 
         SetSelection(selection);
     }
@@ -239,11 +266,11 @@ public partial class RadialOverlayWindow : Window
 
         var selection = e.Key switch
         {
-            Key.Left => WindowHalf.Left,
-            Key.Right => WindowHalf.Right,
-            Key.Up => WindowHalf.Top,
-            Key.Down => WindowHalf.Bottom,
-            _ => (WindowHalf?)null
+            Key.Left => WindowAction.LeftHalf,
+            Key.Right => WindowAction.RightHalf,
+            Key.Up => WindowAction.TopHalf,
+            Key.Down => WindowAction.BottomHalf,
+            _ => (WindowAction?)null
         };
 
         if (selection.HasValue)
@@ -253,15 +280,19 @@ public partial class RadialOverlayWindow : Window
         }
     }
 
-    private void SetSelection(WindowHalf? selection)
+    private void SetSelection(WindowAction? selection)
     {
         _selected = selection;
-        HighlightWedge(TopWedge, selection == WindowHalf.Top);
-        HighlightWedge(RightWedge, selection == WindowHalf.Right);
-        HighlightWedge(BottomWedge, selection == WindowHalf.Bottom);
-        HighlightWedge(LeftWedge, selection == WindowHalf.Left);
+        for (var i = 0; i < RadialActionCatalog.Slots.Count; i++)
+        {
+            HighlightWedge(_wedgePaths[i], RadialActionCatalog.Slots[i].Action == selection);
+        }
 
-        if (_settings.PreviewEnabled && selection.HasValue && WindowActionService.TryGetHalfFrame(_targetWindow, selection.Value, out var frame, out _))
+        CenterLabel.Text = selection.HasValue
+            ? WindowActionService.ActionName(selection.Value)
+            : "Choose an action";
+
+        if (_settings.PreviewEnabled && selection.HasValue && WindowActionService.TryGetTargetFrame(_targetWindow, selection.Value, out var frame, out _))
         {
             _preview.ShowFrame(frame, selection.Value);
             _preview.Topmost = true;
@@ -290,7 +321,7 @@ public partial class RadialOverlayWindow : Window
         wedge.BeginAnimation(UIElement.OpacityProperty, new DoubleAnimation(wedge.Opacity, on ? 1 : 0, duration) { EasingFunction = ease });
     }
 
-    private void Commit(WindowHalf action)
+    private void Commit(WindowAction action)
     {
         if (_closing)
         {

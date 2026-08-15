@@ -6,6 +6,9 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Shapes;
+using System.Windows.Threading;
+using Cursors = System.Windows.Input.Cursors;
+using KeyEventArgs = System.Windows.Input.KeyEventArgs;
 
 namespace LoopW;
 
@@ -18,7 +21,9 @@ public partial class MainWindow : Window
     private IntPtr _targetWindow;
     private RadialOverlayWindow? _activeOverlay;
     private SettingsWindow? _settingsWindow;
+    private readonly DispatcherTimer _stashTimer;
     private bool _capturing;
+    private bool _allowClose;
 
     public MainWindow()
     {
@@ -26,6 +31,11 @@ public partial class MainWindow : Window
         _settings = AppSettings.Load();
         _hotkey.SetBinding(_settings.TriggerModifiers, _settings.TriggerVk);
         _hotkey.SetKeybinds(_settings.Keybinds);
+        _stashTimer = new DispatcherTimer(DispatcherPriority.Input)
+        {
+            Interval = TimeSpan.FromMilliseconds(80)
+        };
+        _stashTimer.Tick += StashTimer_Tick;
         ApplyVisualSettings();
     }
 
@@ -40,6 +50,7 @@ public partial class MainWindow : Window
         _hotkey.CaptureRejected += Hotkey_CaptureRejected;
         _hotkey.KeybindPressed += Hotkey_KeybindPressed;
         _hotkey.Start();
+        _stashTimer.Start();
 
         UpdateTriggerLabel();
         TargetStatus.Text = $"  ·  No target captured — hold {TriggerLabel.Text} while another app is focused";
@@ -54,8 +65,76 @@ public partial class MainWindow : Window
 
     private void Window_Closed(object? sender, EventArgs e)
     {
+        _stashTimer.Stop();
         _hotkey.Dispose();
     }
+
+    private void StashTimer_Tick(object? sender, EventArgs e)
+    {
+        if (NativeMethods.GetCursorPos(out var cursor) &&
+            WindowStashService.TryRevealAtCursor(cursor, out var message))
+        {
+            TargetStatus.Text = $"  ·  {message}";
+        }
+    }
+
+    private void Window_Closing(object? sender, System.ComponentModel.CancelEventArgs e)
+    {
+        if (_allowClose)
+        {
+            return;
+        }
+
+        e.Cancel = true;
+        Hide();
+    }
+
+    internal void AllowClose() => _allowClose = true;
+
+    internal void ShowFromTray()
+    {
+        Show();
+        if (WindowState == WindowState.Minimized)
+        {
+            WindowState = WindowState.Normal;
+        }
+
+        Activate();
+    }
+
+    internal void OpenSettingsFromTray() => OpenSettings();
+
+    internal string ExecuteExternalAction(WindowAction action)
+    {
+        var ownWindow = new System.Windows.Interop.WindowInteropHelper(this).Handle;
+        if (action == WindowAction.RevealStashed)
+        {
+            var revealed = WindowActionService.TryApply(IntPtr.Zero, action, out var revealMessage);
+            TargetStatus.Text = $"  ·  {revealMessage}";
+            return revealMessage;
+        }
+
+        var foreground = NativeMethods.GetForegroundWindow();
+        if (foreground == IntPtr.Zero || foreground == ownWindow)
+        {
+            return "No external foreground window is available.";
+        }
+
+        var applied = WindowActionService.TryApply(foreground, action, out var message);
+        if (applied)
+        {
+            SelectedAction.Text = WindowActionService.ActionName(action);
+        }
+
+        TargetStatus.Text = $"  ·  {message}";
+        return message;
+    }
+
+    internal string DescribeKeybinds() =>
+        LoopCommandFormatter.Keybinds(_settings.Keybinds, _settings.TriggerModifiers, _settings.TriggerVk);
+
+    internal string DescribeAll() =>
+        LoopCommandFormatter.All(_settings.Keybinds, _settings.TriggerModifiers, _settings.TriggerVk);
 
     private void BuildRadialGeometry()
     {
@@ -69,7 +148,13 @@ public partial class MainWindow : Window
         RadialPanelCanvas.Width = panelSize;
         RadialPanelCanvas.Height = panelSize;
 
-        foreach (var path in new[] { RadialRing, TopWedge, RightWedge, BottomWedge, LeftWedge })
+        var paths = new[]
+        {
+            RightWedge, BottomRightWedge, BottomWedge, BottomLeftWedge,
+            LeftWedge, TopLeftWedge, TopWedge, TopRightWedge
+        };
+
+        foreach (var path in paths)
         {
             path.Width = diameter;
             path.Height = diameter;
@@ -78,10 +163,16 @@ public partial class MainWindow : Window
         }
 
         RadialRing.Data = RadialGeometry.BuildAnnulus(outerRadius, outerRadius, innerRadius);
-        TopWedge.Data = RadialGeometry.BuildWedge(outerRadius, outerRadius, innerRadius, -135, -45);
-        RightWedge.Data = RadialGeometry.BuildWedge(outerRadius, outerRadius, innerRadius, -45, 45);
-        BottomWedge.Data = RadialGeometry.BuildWedge(outerRadius, outerRadius, innerRadius, 45, 135);
-        LeftWedge.Data = RadialGeometry.BuildWedge(outerRadius, outerRadius, innerRadius, 135, 225);
+        for (var i = 0; i < RadialActionCatalog.Slots.Count; i++)
+        {
+            var slot = RadialActionCatalog.Slots[i];
+            paths[i].Data = RadialGeometry.BuildWedge(
+                outerRadius,
+                outerRadius,
+                innerRadius,
+                slot.FromDegrees,
+                slot.ToDegrees);
+        }
     }
 
     private void AnimateRadialMenuIn()
@@ -220,6 +311,13 @@ public partial class MainWindow : Window
 
     private void Hotkey_KeybindPressed(Keybind keybind)
     {
+        if (keybind.Action == WindowAction.RevealStashed)
+        {
+            _activeOverlay?.Dismiss();
+            ApplyWindowAction(keybind.Action, cycleEnabled: false);
+            return;
+        }
+
         if (_targetWindow == IntPtr.Zero)
         {
             TargetStatus.Text = $"  ·  Capture a target first with {TriggerLabel.Text}";
@@ -248,16 +346,16 @@ public partial class MainWindow : Window
         _settingsWindow.Activate();
     }
 
-    private void CommitOverlayAction(WindowHalf action)
+    private void CommitOverlayAction(WindowAction action)
     {
-        ApplyWindowAction(ToWindowAction(action), cycleEnabled: true);
+        ApplyWindowAction(action, cycleEnabled: WindowCycleService.CanCycle(action));
     }
 
     private void Wedge_MouseUp(object sender, MouseButtonEventArgs e)
     {
-        if (sender is Path path && path.Tag is string action)
+        if (sender is Path { Tag: string action } && Enum.TryParse<WindowAction>(action, out var selectedAction))
         {
-            ApplyAction(action);
+            ApplyWindowAction(selectedAction, WindowCycleService.CanCycle(selectedAction));
         }
     }
 
@@ -265,36 +363,30 @@ public partial class MainWindow : Window
     {
         var action = e.Key switch
         {
-            Key.Left => "Left",
-            Key.Right => "Right",
-            Key.Up => "Top",
-            Key.Down => "Bottom",
-            _ => string.Empty
+            Key.Left => WindowAction.LeftHalf,
+            Key.Right => WindowAction.RightHalf,
+            Key.Up => WindowAction.TopHalf,
+            Key.Down => WindowAction.BottomHalf,
+            _ => (WindowAction?)null
         };
 
-        if (action.Length > 0)
+        if (action.HasValue)
         {
-            ApplyAction(action);
+            ApplyWindowAction(action.Value, WindowCycleService.CanCycle(action.Value));
             e.Handled = true;
         }
     }
 
-    private void ApplyAction(string action)
-    {
-        var half = action switch
-        {
-            "Left" => WindowHalf.Left,
-            "Right" => WindowHalf.Right,
-            "Top" => WindowHalf.Top,
-            "Bottom" => WindowHalf.Bottom,
-            _ => WindowHalf.Left
-        };
-
-        ApplyWindowAction(ToWindowAction(half), cycleEnabled: true);
-    }
-
     private void ApplyWindowAction(WindowAction requestedAction, bool cycleEnabled)
     {
+        if (requestedAction == WindowAction.RevealStashed)
+        {
+            SelectedAction.Text = WindowActionService.ActionName(requestedAction);
+            WindowActionService.TryApply(IntPtr.Zero, requestedAction, out var revealMessage);
+            TargetStatus.Text = $"  ·  {revealMessage}";
+            return;
+        }
+
         if (_targetWindow == IntPtr.Zero)
         {
             TargetStatus.Text = $"  ·  Capture a target first with {TriggerLabel.Text}";
@@ -312,15 +404,6 @@ public partial class MainWindow : Window
 
         TargetStatus.Text = $"  ·  {message}{(applied ? selection.StatusSuffix : string.Empty)}";
     }
-
-    private static WindowAction ToWindowAction(WindowHalf action) => action switch
-    {
-        WindowHalf.Left => WindowAction.LeftHalf,
-        WindowHalf.Right => WindowAction.RightHalf,
-        WindowHalf.Top => WindowAction.TopHalf,
-        WindowHalf.Bottom => WindowAction.BottomHalf,
-        _ => WindowAction.LeftHalf
-    };
 
     private void ApplySettings(AppSettings settings)
     {
