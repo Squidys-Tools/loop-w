@@ -52,10 +52,15 @@ keybinds/settings (#2/#5) will drive it.
 
 Loop: trigger + any key → immediate action, fully configurable.
 
-- [ ] Keybind registry (key → action, persisted like trigger binding).
-- [ ] Capture flow to record new binds (reuse `GlobalHotkey.BeginCapture` UX).
-- [ ] Apply action instantly on trigger+key (no radial menu).
-- [ ] Keybinds UI (list, add, rebind, delete) — lives in the Settings window.
+- [x] Keybind registry (key → action, persisted like trigger binding). `Keybind.cs` +
+      `AppSettings.Keybinds` (`settings.json`).
+- [x] Capture flow to record new binds (reuse `GlobalHotkey.BeginCapture` UX; added a
+      callback overload so the settings window captures without tripping trigger-rebind).
+- [x] Apply action instantly on trigger+key (no radial menu) — `KeybindPressed` event
+      fires while the trigger is held and the key is swallowed system-wide.
+- [x] Keybinds UI (list, add, rebind, delete) — placeholder `SettingsWindow` with a
+      keybinds tab only (full settings in #5). Opened via the "settings" link in the
+      main window footer.
 
 ---
 
@@ -178,3 +183,10 @@ Track decisions and progress here as work happens.
   grow/shrink/move per edge), Initial Frame restore, and a 20-deep undo stack.
   `ApplyHalf` kept as wrapper for the radial UI. Builds clean with `~\.dotnet`.
   Not yet wired into the UI (awaits keybinds/settings).
+- **2026-08-14** — Feature #2: keybindings. `Keybind.cs` model persisted in
+  `AppSettings.Keybinds`. `GlobalHotkey` gains `SetKeybinds` + `KeybindPressed`
+  (fires while trigger is held, key swallowed) + a callback-based `BeginCapture`
+  overload for window-safe capture. Placeholder `SettingsWindow` (keybinds editor:
+  list/add/rebind/delete with action dropdown) opened via "settings" link in main
+  window. `MainWindow.Hotkey_KeybindPressed` applies the action to the captured
+  target. App launches clean; smoke-tested.

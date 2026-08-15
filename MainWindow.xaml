@@ -96,6 +96,7 @@
                     <TextBlock x:Name="TriggerLabel" Text="Caps Lock" FontSize="12" />
                 </Border>
                 <TextBlock x:Name="RebindHint" Text="rebind" Foreground="{StaticResource AccentBrush}" FontSize="12" Cursor="Hand" Margin="10,0,0,0" VerticalAlignment="Center" MouseLeftButtonUp="RebindHint_MouseUp" />
+                <TextBlock Text="settings" Foreground="{StaticResource AccentBrush}" FontSize="12" Cursor="Hand" Margin="18,0,0,0" VerticalAlignment="Center" MouseLeftButtonUp="Settings_MouseUp" />
             </StackPanel>
         </Grid>
     </Grid>
