@@ -37,6 +37,7 @@ internal static class NativeMethods
     public const int DwmwaUseImmersiveDarkMode = 20;
     public const int DwmwaUseImmersiveDarkModeBefore20h1 = 19;
     public const uint SrcCopy = 0x00CC0020;
+    public const uint AttachParentProcess = 0xFFFFFFFF;
 
     public static readonly IntPtr HwndTop = IntPtr.Zero;
     public static readonly IntPtr HwndTopmost = new(-1);
@@ -179,6 +180,14 @@ internal static class NativeMethods
 
     [DllImport("user32.dll")]
     public static extern bool GetCursorPos(out Point point);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool AttachConsole(uint processId);
+
+    [DllImport("kernel32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool FreeConsole();
 
     [StructLayout(LayoutKind.Sequential)]
     public struct Point

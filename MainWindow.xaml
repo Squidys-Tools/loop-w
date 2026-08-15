@@ -9,6 +9,7 @@
         WindowStartupLocation="CenterScreen"
         Loaded="Window_Loaded"
         SourceInitialized="Window_SourceInitialized"
+        Closing="Window_Closing"
         Closed="Window_Closed"
         KeyDown="Window_KeyDown">
     <Window.Resources>
@@ -59,10 +60,14 @@
                 </Grid.RenderTransform>
                 <Canvas x:Name="RadialPanelCanvas" Width="334.4" Height="334.4">
                     <Path x:Name="RadialRing" Width="182.4" Height="182.4" Canvas.Left="76" Canvas.Top="76" Fill="#B61E1E1E" />
-                    <Path x:Name="TopWedge" Width="182.4" Height="182.4" Canvas.Left="76" Canvas.Top="76" Tag="Top" Style="{StaticResource WedgeStyle}" MouseLeftButtonUp="Wedge_MouseUp" />
-                    <Path x:Name="RightWedge" Width="182.4" Height="182.4" Canvas.Left="76" Canvas.Top="76" Tag="Right" Style="{StaticResource WedgeStyle}" MouseLeftButtonUp="Wedge_MouseUp" />
-                    <Path x:Name="BottomWedge" Width="182.4" Height="182.4" Canvas.Left="76" Canvas.Top="76" Tag="Bottom" Style="{StaticResource WedgeStyle}" MouseLeftButtonUp="Wedge_MouseUp" />
-                    <Path x:Name="LeftWedge" Width="182.4" Height="182.4" Canvas.Left="76" Canvas.Top="76" Tag="Left" Style="{StaticResource WedgeStyle}" MouseLeftButtonUp="Wedge_MouseUp" />
+                    <Path x:Name="RightWedge" Width="182.4" Height="182.4" Canvas.Left="76" Canvas.Top="76" Tag="RightHalf" Style="{StaticResource WedgeStyle}" MouseLeftButtonUp="Wedge_MouseUp" />
+                    <Path x:Name="BottomRightWedge" Width="182.4" Height="182.4" Canvas.Left="76" Canvas.Top="76" Tag="BottomRightQuarter" Style="{StaticResource WedgeStyle}" MouseLeftButtonUp="Wedge_MouseUp" />
+                    <Path x:Name="BottomWedge" Width="182.4" Height="182.4" Canvas.Left="76" Canvas.Top="76" Tag="BottomHalf" Style="{StaticResource WedgeStyle}" MouseLeftButtonUp="Wedge_MouseUp" />
+                    <Path x:Name="BottomLeftWedge" Width="182.4" Height="182.4" Canvas.Left="76" Canvas.Top="76" Tag="BottomLeftQuarter" Style="{StaticResource WedgeStyle}" MouseLeftButtonUp="Wedge_MouseUp" />
+                    <Path x:Name="LeftWedge" Width="182.4" Height="182.4" Canvas.Left="76" Canvas.Top="76" Tag="LeftHalf" Style="{StaticResource WedgeStyle}" MouseLeftButtonUp="Wedge_MouseUp" />
+                    <Path x:Name="TopLeftWedge" Width="182.4" Height="182.4" Canvas.Left="76" Canvas.Top="76" Tag="TopLeftQuarter" Style="{StaticResource WedgeStyle}" MouseLeftButtonUp="Wedge_MouseUp" />
+                    <Path x:Name="TopWedge" Width="182.4" Height="182.4" Canvas.Left="76" Canvas.Top="76" Tag="TopHalf" Style="{StaticResource WedgeStyle}" MouseLeftButtonUp="Wedge_MouseUp" />
+                    <Path x:Name="TopRightWedge" Width="182.4" Height="182.4" Canvas.Left="76" Canvas.Top="76" Tag="TopRightQuarter" Style="{StaticResource WedgeStyle}" MouseLeftButtonUp="Wedge_MouseUp" />
                 </Canvas>
 
                 <StackPanel HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,4,0,0" IsHitTestVisible="False">
@@ -81,6 +86,10 @@
                     <TextBlock Text="←" FontSize="18" HorizontalAlignment="Center" Foreground="{DynamicResource AccentBrush}" />
                     <TextBlock Text="Left half" FontSize="12" HorizontalAlignment="Center" Margin="0,2,0,0" />
                 </StackPanel>
+                <TextBlock Text="Top-left quarter" FontSize="10" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="58,84,0,0" IsHitTestVisible="False" />
+                <TextBlock Text="Top-right quarter" FontSize="10" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,84,58,0" IsHitTestVisible="False" />
+                <TextBlock Text="Bottom-left quarter" FontSize="10" HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="58,0,0,84" IsHitTestVisible="False" />
+                <TextBlock Text="Bottom-right quarter" FontSize="10" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,58,84" IsHitTestVisible="False" />
             </Grid>
         </Border>
 

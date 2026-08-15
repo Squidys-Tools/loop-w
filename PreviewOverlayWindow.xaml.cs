@@ -34,7 +34,7 @@ public partial class PreviewOverlayWindow : Window
         NativeMethods.MakeMouseClickThrough(new System.Windows.Interop.WindowInteropHelper(this).Handle);
     }
 
-    internal void ShowFrame(NativeMethods.Rect frame, WindowHalf action)
+    internal void ShowFrame(NativeMethods.Rect frame, WindowAction action)
     {
         if (!NativeMethods.TryGetMonitorWorkRect(frame, out var workArea))
         {

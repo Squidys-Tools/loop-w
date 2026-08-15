@@ -1,6 +1,8 @@
 using System;
 using System.Windows;
 using System.Windows.Media;
+using Point = System.Windows.Point;
+using Size = System.Windows.Size;
 
 namespace LoopW;
 

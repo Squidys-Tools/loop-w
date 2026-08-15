@@ -27,9 +27,26 @@
             </Image.Effect>
         </Image>
         <Path x:Name="Ring" Fill="#B61E1E1E" />
-        <Path x:Name="TopWedge" Opacity="0" Fill="{DynamicResource SectorFillBrush}" Stroke="{DynamicResource SectorStrokeBrush}" StrokeThickness="1.5" />
         <Path x:Name="RightWedge" Opacity="0" Fill="{DynamicResource SectorFillBrush}" Stroke="{DynamicResource SectorStrokeBrush}" StrokeThickness="1.5" />
+        <Path x:Name="BottomRightWedge" Opacity="0" Fill="{DynamicResource SectorFillBrush}" Stroke="{DynamicResource SectorStrokeBrush}" StrokeThickness="1.5" />
         <Path x:Name="BottomWedge" Opacity="0" Fill="{DynamicResource SectorFillBrush}" Stroke="{DynamicResource SectorStrokeBrush}" StrokeThickness="1.5" />
+        <Path x:Name="BottomLeftWedge" Opacity="0" Fill="{DynamicResource SectorFillBrush}" Stroke="{DynamicResource SectorStrokeBrush}" StrokeThickness="1.5" />
         <Path x:Name="LeftWedge" Opacity="0" Fill="{DynamicResource SectorFillBrush}" Stroke="{DynamicResource SectorStrokeBrush}" StrokeThickness="1.5" />
+        <Path x:Name="TopLeftWedge" Opacity="0" Fill="{DynamicResource SectorFillBrush}" Stroke="{DynamicResource SectorStrokeBrush}" StrokeThickness="1.5" />
+        <Path x:Name="TopWedge" Opacity="0" Fill="{DynamicResource SectorFillBrush}" Stroke="{DynamicResource SectorStrokeBrush}" StrokeThickness="1.5" />
+        <Path x:Name="TopRightWedge" Opacity="0" Fill="{DynamicResource SectorFillBrush}" Stroke="{DynamicResource SectorStrokeBrush}" StrokeThickness="1.5" />
+        <Canvas x:Name="Labels" IsHitTestVisible="False">
+            <TextBlock x:Name="RightLabel" Width="48" FontSize="8" Foreground="#E6FFFFFF" TextAlignment="Center" />
+            <TextBlock x:Name="BottomRightLabel" Width="48" FontSize="8" Foreground="#E6FFFFFF" TextAlignment="Center" TextWrapping="Wrap" />
+            <TextBlock x:Name="BottomLabel" Width="48" FontSize="8" Foreground="#E6FFFFFF" TextAlignment="Center" />
+            <TextBlock x:Name="BottomLeftLabel" Width="48" FontSize="8" Foreground="#E6FFFFFF" TextAlignment="Center" TextWrapping="Wrap" />
+            <TextBlock x:Name="LeftLabel" Width="48" FontSize="8" Foreground="#E6FFFFFF" TextAlignment="Center" />
+            <TextBlock x:Name="TopLeftLabel" Width="48" FontSize="8" Foreground="#E6FFFFFF" TextAlignment="Center" TextWrapping="Wrap" />
+            <TextBlock x:Name="TopLabel" Width="48" FontSize="8" Foreground="#E6FFFFFF" TextAlignment="Center" />
+            <TextBlock x:Name="TopRightLabel" Width="48" FontSize="8" Foreground="#E6FFFFFF" TextAlignment="Center" TextWrapping="Wrap" />
+        </Canvas>
+        <TextBlock x:Name="CenterLabel" Width="76" Height="30" HorizontalAlignment="Center" VerticalAlignment="Center"
+                   Foreground="#E6FFFFFF" FontSize="9" FontWeight="SemiBold" TextAlignment="Center"
+                   TextWrapping="Wrap" IsHitTestVisible="False" Text="Choose an action" />
     </Grid>
 </Window>
