@@ -32,6 +32,10 @@ public sealed class GlobalHotkey : IDisposable
     private uint _triggerModifiers;
     private bool _triggerDown;
     private bool _capturing;
+    private List<Keybind> _keybinds = new();
+    private Action<uint, uint>? _captureTarget;
+    private Action? _captureCancelled;
+    private Action? _captureRejected;
 
     public GlobalHotkey()
     {
@@ -54,6 +58,12 @@ public sealed class GlobalHotkey : IDisposable
 
     public event Action? CaptureRejected;
 
+    /// <summary>
+    /// Raised when a bound key goes down while the trigger is held. The key is
+    /// swallowed system-wide so it never reaches the focused app.
+    /// </summary>
+    public event Action<Keybind>? KeybindPressed;
+
     public void Start()
     {
         if (_hookHandle != IntPtr.Zero)
@@ -71,8 +81,32 @@ public sealed class GlobalHotkey : IDisposable
         _triggerDown = false;
     }
 
+    public void SetKeybinds(IReadOnlyList<Keybind> keybinds)
+    {
+        _keybinds = keybinds == null ? new List<Keybind>() : new List<Keybind>(keybinds);
+    }
+
+    /// <summary>
+    /// Begins capture, routing the result to this instance's Capture events.
+    /// </summary>
     public void BeginCapture()
     {
+        _captureTarget = null;
+        _captureCancelled = null;
+        _captureRejected = null;
+        _capturing = true;
+    }
+
+    /// <summary>
+    /// Begins capture, routing the result to the supplied one-shot callbacks instead
+    /// of this instance's Capture events. Used by the settings window so it can
+    /// capture keybinds without tripping the main window's trigger-rebind handlers.
+    /// </summary>
+    public void BeginCapture(Action<uint, uint> captured, Action cancelled, Action rejected)
+    {
+        _captureTarget = captured;
+        _captureCancelled = cancelled;
+        _captureRejected = rejected;
         _capturing = true;
     }
 
@@ -118,6 +152,12 @@ public sealed class GlobalHotkey : IDisposable
 
         if (vk != _triggerVk || !ModifiersMatch(_triggerModifiers))
         {
+            // Keybinds only fire while the trigger is held.
+            if (_triggerDown && TryMatchKeybind(vk))
+            {
+                return true;
+            }
+
             return false;
         }
 
@@ -128,6 +168,24 @@ public sealed class GlobalHotkey : IDisposable
         }
 
         return true;
+    }
+
+    private bool TryMatchKeybind(uint vk)
+    {
+        for (var i = 0; i < _keybinds.Count; i++)
+        {
+            var keybind = _keybinds[i];
+            if (keybind.Vk != vk || keybind.Vk == _triggerVk || !ModifiersMatch(keybind.Modifiers))
+            {
+                continue;
+            }
+
+            var captured = keybind;
+            Dispatch(() => KeybindPressed?.Invoke(captured));
+            return true;
+        }
+
+        return false;
     }
 
     private bool HandleKeyUp(uint vk)
@@ -157,7 +215,15 @@ public sealed class GlobalHotkey : IDisposable
         if (vk == VkEscape)
         {
             _capturing = false;
-            Dispatch(() => CaptureCancelled?.Invoke());
+            if (_captureCancelled != null)
+            {
+                Dispatch(_captureCancelled);
+            }
+            else
+            {
+                Dispatch(() => CaptureCancelled?.Invoke());
+            }
+
             return true;
         }
 
@@ -165,12 +231,30 @@ public sealed class GlobalHotkey : IDisposable
         if ((mods & NativeMethods.ModWin) != 0)
         {
             _capturing = false;
-            Dispatch(() => CaptureRejected?.Invoke());
+            if (_captureRejected != null)
+            {
+                Dispatch(_captureRejected);
+            }
+            else
+            {
+                Dispatch(() => CaptureRejected?.Invoke());
+            }
+
             return true;
         }
 
         _capturing = false;
-        Dispatch(() => KeyCaptured?.Invoke(mods, vk));
+        if (_captureTarget != null)
+        {
+            var capturedMods = mods;
+            var capturedVk = vk;
+            Dispatch(() => _captureTarget(capturedMods, capturedVk));
+        }
+        else
+        {
+            Dispatch(() => KeyCaptured?.Invoke(mods, vk));
+        }
+
         return true;
     }
 

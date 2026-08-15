@@ -18,6 +18,7 @@ public partial class MainWindow : Window
     private readonly GlobalHotkey _hotkey = new();
     private IntPtr _targetWindow;
     private RadialOverlayWindow? _activeOverlay;
+    private SettingsWindow? _settingsWindow;
     private bool _capturing;
 
     public MainWindow()
@@ -25,6 +26,7 @@ public partial class MainWindow : Window
         InitializeComponent();
         var settings = AppSettings.Load();
         _hotkey.SetBinding(settings.TriggerModifiers, settings.TriggerVk);
+        _hotkey.SetKeybinds(settings.Keybinds);
     }
 
     private void Window_Loaded(object sender, RoutedEventArgs e)
@@ -36,6 +38,7 @@ public partial class MainWindow : Window
         _hotkey.KeyCaptured += Hotkey_KeyCaptured;
         _hotkey.CaptureCancelled += Hotkey_CaptureCancelled;
         _hotkey.CaptureRejected += Hotkey_CaptureRejected;
+        _hotkey.KeybindPressed += Hotkey_KeybindPressed;
         _hotkey.Start();
 
         UpdateTriggerLabel();
@@ -110,7 +113,14 @@ public partial class MainWindow : Window
     {
         _capturing = false;
         _hotkey.SetBinding(modifiers, vk);
-        new AppSettings { TriggerModifiers = modifiers, TriggerVk = vk }.Save();
+
+        // Load the existing settings and update only the trigger fields, so a
+        // rebind never wipes out persisted keybinds.
+        var settings = AppSettings.Load();
+        settings.TriggerModifiers = modifiers;
+        settings.TriggerVk = vk;
+        settings.Save();
+
         SetCapturingUi(false);
         TargetStatus.Text = $"  ·  Trigger set to {HotkeyNames.For(modifiers, vk)}";
         Keyboard.ClearFocus();
@@ -186,6 +196,37 @@ public partial class MainWindow : Window
         _activeOverlay = overlay;
         overlay.Closed += (_, _) => _activeOverlay = null;
         overlay.ShowAtCursor();
+    }
+
+    private void Hotkey_KeybindPressed(Keybind keybind)
+    {
+        if (_targetWindow == IntPtr.Zero)
+        {
+            TargetStatus.Text = $"  ·  Capture a target first with {TriggerLabel.Text}";
+            return;
+        }
+
+        // A keybind applies the action directly, so dismiss any open radial
+        // overlay; otherwise releasing the trigger would commit a second wedge.
+        _activeOverlay?.Dismiss();
+
+        SelectedAction.Text = WindowActionService.ActionName(keybind.Action);
+        WindowActionService.TryApply(_targetWindow, keybind.Action, out var message);
+        TargetStatus.Text = $"  ·  {message}";
+    }
+
+    private void Settings_MouseUp(object sender, MouseButtonEventArgs e) => OpenSettings();
+
+    private void OpenSettings()
+    {
+        if (_settingsWindow == null)
+        {
+            _settingsWindow = new SettingsWindow(_hotkey);
+            _settingsWindow.Closed += (_, _) => _settingsWindow = null;
+        }
+
+        _settingsWindow.Show();
+        _settingsWindow.Activate();
     }
 
     private void CommitOverlayAction(WindowHalf action)

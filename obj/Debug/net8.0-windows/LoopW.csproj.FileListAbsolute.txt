@@ -46,3 +46,6 @@ C:\Users\5928008713\Important\projects\loop-w\obj\Debug\net8.0-windows\LoopW.csp
 C:\Users\5928008713\Important\projects\loop-w\obj\Debug\net8.0-windows\LoopW.sourcelink.json
 C:\Users\5928008713\Important\projects\loop-w\obj\Debug\net8.0-windows\LoopW.genruntimeconfig.cache
 C:\Users\5928008713\Important\projects\loop-w\obj\Debug\net8.0-windows\ref\LoopW.dll
+C:\Users\5928008713\Important\projects\loop-w\obj\Debug\net8.0-windows\SettingsWindow.g.cs
+C:\Users\5928008713\Important\projects\loop-w\obj\Debug\net8.0-windows\LoopW_MarkupCompile.lref
+C:\Users\5928008713\Important\projects\loop-w\obj\Debug\net8.0-windows\SettingsWindow.baml

@@ -155,6 +155,16 @@ public partial class RadialOverlayWindow : Window
         }
     }
 
+    /// <summary>
+    /// Closes the overlay without committing a selection. Used when a keybind
+    /// fires while the overlay is open so releasing the trigger cannot apply a
+    /// second (unintended) wedge action.
+    /// </summary>
+    internal void Dismiss()
+    {
+        CloseOverlay();
+    }
+
     private void Overlay_MouseMove(object sender, MouseEventArgs e)
     {
         UpdateSelection(e.GetPosition(this));

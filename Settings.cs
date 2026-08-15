@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Text.Json;
 
@@ -14,6 +15,8 @@ public sealed class AppSettings
     public uint TriggerVk { get; set; } = NativeMethods.VkCapital;
 
     public uint TriggerModifiers { get; set; }
+
+    public List<Keybind> Keybinds { get; set; } = new();
 
     public static AppSettings Load()
     {
