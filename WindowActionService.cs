@@ -556,7 +556,11 @@ internal static class WindowActionService
             var dx = monitor.Left + monitor.Width / 2 - curCenterX;
             var dy = monitor.Top + monitor.Height / 2 - curCenterY;
             var score = dx * dirX + dy * dirY;
-            if (score > bestScore)
+
+            // Only move to a monitor that actually lies in the requested
+            // direction; otherwise the best (least-negative) candidate would be
+            // on the opposite side, e.g. LeftScreen on the leftmost display.
+            if (score > 0 && score > bestScore)
             {
                 bestScore = score;
                 best = monitor;

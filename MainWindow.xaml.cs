@@ -113,7 +113,14 @@ public partial class MainWindow : Window
     {
         _capturing = false;
         _hotkey.SetBinding(modifiers, vk);
-        new AppSettings { TriggerModifiers = modifiers, TriggerVk = vk }.Save();
+
+        // Load the existing settings and update only the trigger fields, so a
+        // rebind never wipes out persisted keybinds.
+        var settings = AppSettings.Load();
+        settings.TriggerModifiers = modifiers;
+        settings.TriggerVk = vk;
+        settings.Save();
+
         SetCapturingUi(false);
         TargetStatus.Text = $"  ·  Trigger set to {HotkeyNames.For(modifiers, vk)}";
         Keyboard.ClearFocus();
@@ -198,6 +205,10 @@ public partial class MainWindow : Window
             TargetStatus.Text = $"  ·  Capture a target first with {TriggerLabel.Text}";
             return;
         }
+
+        // A keybind applies the action directly, so dismiss any open radial
+        // overlay; otherwise releasing the trigger would commit a second wedge.
+        _activeOverlay?.Dismiss();
 
         SelectedAction.Text = WindowActionService.ActionName(keybind.Action);
         WindowActionService.TryApply(_targetWindow, keybind.Action, out var message);
