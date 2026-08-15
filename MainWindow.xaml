@@ -23,8 +23,8 @@
             <Setter Property="Cursor" Value="Hand" />
             <Style.Triggers>
                 <Trigger Property="IsMouseOver" Value="True">
-                    <Setter Property="Fill" Value="#7A007AFF" />
-                    <Setter Property="Stroke" Value="#F0007AFF" />
+                    <Setter Property="Fill" Value="{DynamicResource SectorFillBrush}" />
+                    <Setter Property="Stroke" Value="{DynamicResource SectorStrokeBrush}" />
                     <Setter Property="StrokeThickness" Value="1.5" />
                 </Trigger>
             </Style.Triggers>
@@ -40,7 +40,7 @@
 
         <Grid Grid.Row="0" Margin="0,0,0,24">
             <StackPanel>
-                <TextBlock Text="LOOPW" FontSize="13" FontWeight="Bold" Foreground="{StaticResource AccentBrush}" />
+                <TextBlock Text="LOOPW" FontSize="13" FontWeight="Bold" Foreground="{DynamicResource AccentBrush}" />
                 <TextBlock Text="Window management, in flow." FontSize="30" FontWeight="SemiBold" Margin="0,8,0,0" />
                 <TextBlock Text="Hold your trigger. Move with intent. Release to commit." FontSize="14" Foreground="{StaticResource MutedBrush}" Margin="0,8,0,0" />
             </StackPanel>
@@ -57,7 +57,7 @@
                 <Grid.RenderTransform>
                     <ScaleTransform x:Name="RadialPanelScale" ScaleX="0.96" ScaleY="0.96" />
                 </Grid.RenderTransform>
-                <Canvas Width="334.4" Height="334.4">
+                <Canvas x:Name="RadialPanelCanvas" Width="334.4" Height="334.4">
                     <Path x:Name="RadialRing" Width="182.4" Height="182.4" Canvas.Left="76" Canvas.Top="76" Fill="#B61E1E1E" />
                     <Path x:Name="TopWedge" Width="182.4" Height="182.4" Canvas.Left="76" Canvas.Top="76" Tag="Top" Style="{StaticResource WedgeStyle}" MouseLeftButtonUp="Wedge_MouseUp" />
                     <Path x:Name="RightWedge" Width="182.4" Height="182.4" Canvas.Left="76" Canvas.Top="76" Tag="Right" Style="{StaticResource WedgeStyle}" MouseLeftButtonUp="Wedge_MouseUp" />
@@ -66,19 +66,19 @@
                 </Canvas>
 
                 <StackPanel HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,4,0,0" IsHitTestVisible="False">
-                    <TextBlock Text="↑" FontSize="18" HorizontalAlignment="Center" Foreground="{StaticResource AccentBrush}" />
+                    <TextBlock Text="↑" FontSize="18" HorizontalAlignment="Center" Foreground="{DynamicResource AccentBrush}" />
                     <TextBlock Text="Top half" FontSize="12" HorizontalAlignment="Center" Margin="0,2,0,0" />
                 </StackPanel>
                 <StackPanel HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,12,0" IsHitTestVisible="False">
-                    <TextBlock Text="→" FontSize="18" HorizontalAlignment="Center" Foreground="{StaticResource AccentBrush}" />
+                    <TextBlock Text="→" FontSize="18" HorizontalAlignment="Center" Foreground="{DynamicResource AccentBrush}" />
                     <TextBlock Text="Right half" FontSize="12" HorizontalAlignment="Center" Margin="0,2,0,0" />
                 </StackPanel>
                 <StackPanel HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,4" IsHitTestVisible="False">
-                    <TextBlock Text="↓" FontSize="18" HorizontalAlignment="Center" Foreground="{StaticResource AccentBrush}" />
+                    <TextBlock Text="↓" FontSize="18" HorizontalAlignment="Center" Foreground="{DynamicResource AccentBrush}" />
                     <TextBlock Text="Bottom half" FontSize="12" HorizontalAlignment="Center" Margin="0,2,0,0" />
                 </StackPanel>
                 <StackPanel HorizontalAlignment="Left" VerticalAlignment="Center" Margin="12,0,0,0" IsHitTestVisible="False">
-                    <TextBlock Text="←" FontSize="18" HorizontalAlignment="Center" Foreground="{StaticResource AccentBrush}" />
+                    <TextBlock Text="←" FontSize="18" HorizontalAlignment="Center" Foreground="{DynamicResource AccentBrush}" />
                     <TextBlock Text="Left half" FontSize="12" HorizontalAlignment="Center" Margin="0,2,0,0" />
                 </StackPanel>
             </Grid>
@@ -95,8 +95,8 @@
                 <Border x:Name="TriggerCap" Background="#333333" BorderBrush="{StaticResource CapBrush}" BorderThickness="1" CornerRadius="8" Padding="10,6" Margin="10,0,0,0" Cursor="Hand" ToolTip="Click to rebind the trigger key" MouseLeftButtonUp="TriggerCap_MouseUp">
                     <TextBlock x:Name="TriggerLabel" Text="Caps Lock" FontSize="12" />
                 </Border>
-                <TextBlock x:Name="RebindHint" Text="rebind" Foreground="{StaticResource AccentBrush}" FontSize="12" Cursor="Hand" Margin="10,0,0,0" VerticalAlignment="Center" MouseLeftButtonUp="RebindHint_MouseUp" />
-                <TextBlock Text="settings" Foreground="{StaticResource AccentBrush}" FontSize="12" Cursor="Hand" Margin="18,0,0,0" VerticalAlignment="Center" MouseLeftButtonUp="Settings_MouseUp" />
+                <TextBlock x:Name="RebindHint" Text="rebind" Foreground="{DynamicResource AccentBrush}" FontSize="12" Cursor="Hand" Margin="10,0,0,0" VerticalAlignment="Center" MouseLeftButtonUp="RebindHint_MouseUp" />
+                <TextBlock Text="settings" Foreground="{DynamicResource AccentBrush}" FontSize="12" Cursor="Hand" Margin="18,0,0,0" VerticalAlignment="Center" MouseLeftButtonUp="Settings_MouseUp" />
             </StackPanel>
         </Grid>
     </Grid>

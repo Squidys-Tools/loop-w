@@ -21,7 +21,7 @@
                         <BlurEffect Radius="18" />
                     </Image.Effect>
                 </Image>
-                <Border Background="#1AFFFFFF" CornerRadius="11" />
+                <Border x:Name="SurfaceTint" Background="#1AFFFFFF" CornerRadius="11" />
             </Grid>
         </Border>
     </Canvas>

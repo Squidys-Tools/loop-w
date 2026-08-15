@@ -11,11 +11,10 @@ namespace LoopW;
 
 public partial class MainWindow : Window
 {
-    private const double RadialCenter = 91.2;
-    private const double RadialOuterRadius = 91.2;
-    private const double RadialInnerRadius = 57.76;
+    private const double RadialCanvasPadding = 76;
 
     private readonly GlobalHotkey _hotkey = new();
+    private readonly AppSettings _settings;
     private IntPtr _targetWindow;
     private RadialOverlayWindow? _activeOverlay;
     private SettingsWindow? _settingsWindow;
@@ -24,9 +23,10 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
-        var settings = AppSettings.Load();
-        _hotkey.SetBinding(settings.TriggerModifiers, settings.TriggerVk);
-        _hotkey.SetKeybinds(settings.Keybinds);
+        _settings = AppSettings.Load();
+        _hotkey.SetBinding(_settings.TriggerModifiers, _settings.TriggerVk);
+        _hotkey.SetKeybinds(_settings.Keybinds);
+        ApplyVisualSettings();
     }
 
     private void Window_Loaded(object sender, RoutedEventArgs e)
@@ -59,11 +59,29 @@ public partial class MainWindow : Window
 
     private void BuildRadialGeometry()
     {
-        RadialRing.Data = RadialGeometry.BuildAnnulus(RadialCenter, RadialOuterRadius, RadialInnerRadius);
-        TopWedge.Data = RadialGeometry.BuildWedge(RadialCenter, RadialOuterRadius, RadialInnerRadius, -135, -45);
-        RightWedge.Data = RadialGeometry.BuildWedge(RadialCenter, RadialOuterRadius, RadialInnerRadius, -45, 45);
-        BottomWedge.Data = RadialGeometry.BuildWedge(RadialCenter, RadialOuterRadius, RadialInnerRadius, 45, 135);
-        LeftWedge.Data = RadialGeometry.BuildWedge(RadialCenter, RadialOuterRadius, RadialInnerRadius, 135, 225);
+        var outerRadius = _settings.RadialOuterRadius;
+        var innerRadius = _settings.RadialInnerRadius;
+        var diameter = outerRadius * 2;
+        var panelSize = diameter + RadialCanvasPadding * 2;
+
+        RadialPanel.Width = panelSize;
+        RadialPanel.Height = panelSize;
+        RadialPanelCanvas.Width = panelSize;
+        RadialPanelCanvas.Height = panelSize;
+
+        foreach (var path in new[] { RadialRing, TopWedge, RightWedge, BottomWedge, LeftWedge })
+        {
+            path.Width = diameter;
+            path.Height = diameter;
+            Canvas.SetLeft(path, RadialCanvasPadding);
+            Canvas.SetTop(path, RadialCanvasPadding);
+        }
+
+        RadialRing.Data = RadialGeometry.BuildAnnulus(outerRadius, outerRadius, innerRadius);
+        TopWedge.Data = RadialGeometry.BuildWedge(outerRadius, outerRadius, innerRadius, -135, -45);
+        RightWedge.Data = RadialGeometry.BuildWedge(outerRadius, outerRadius, innerRadius, -45, 45);
+        BottomWedge.Data = RadialGeometry.BuildWedge(outerRadius, outerRadius, innerRadius, 45, 135);
+        LeftWedge.Data = RadialGeometry.BuildWedge(outerRadius, outerRadius, innerRadius, 135, 225);
     }
 
     private void AnimateRadialMenuIn()
@@ -116,10 +134,9 @@ public partial class MainWindow : Window
 
         // Load the existing settings and update only the trigger fields, so a
         // rebind never wipes out persisted keybinds.
-        var settings = AppSettings.Load();
-        settings.TriggerModifiers = modifiers;
-        settings.TriggerVk = vk;
-        settings.Save();
+        _settings.TriggerModifiers = modifiers;
+        _settings.TriggerVk = vk;
+        _settings.Save();
 
         SetCapturingUi(false);
         TargetStatus.Text = $"  ·  Trigger set to {HotkeyNames.For(modifiers, vk)}";
@@ -192,10 +209,13 @@ public partial class MainWindow : Window
         var title = new StringBuilder(256);
         NativeMethods.GetWindowText(_targetWindow, title, title.Capacity);
         TargetStatus.Text = $"  ·  Target: {(title.Length > 0 ? title.ToString() : "active window")}";
-        var overlay = new RadialOverlayWindow(_targetWindow, CommitOverlayAction);
-        _activeOverlay = overlay;
-        overlay.Closed += (_, _) => _activeOverlay = null;
-        overlay.ShowAtCursor();
+        if (_settings.RadialEnabled)
+        {
+            var overlay = new RadialOverlayWindow(_targetWindow, CommitOverlayAction, _settings);
+            _activeOverlay = overlay;
+            overlay.Closed += (_, _) => _activeOverlay = null;
+            overlay.ShowAtCursor();
+        }
     }
 
     private void Hotkey_KeybindPressed(Keybind keybind)
@@ -210,9 +230,7 @@ public partial class MainWindow : Window
         // overlay; otherwise releasing the trigger would commit a second wedge.
         _activeOverlay?.Dismiss();
 
-        SelectedAction.Text = WindowActionService.ActionName(keybind.Action);
-        WindowActionService.TryApply(_targetWindow, keybind.Action, out var message);
-        TargetStatus.Text = $"  ·  {message}";
+        ApplyWindowAction(keybind.Action, keybind.CycleEnabled);
     }
 
     private void Settings_MouseUp(object sender, MouseButtonEventArgs e) => OpenSettings();
@@ -221,7 +239,8 @@ public partial class MainWindow : Window
     {
         if (_settingsWindow == null)
         {
-            _settingsWindow = new SettingsWindow(_hotkey);
+            _settingsWindow = new SettingsWindow(_hotkey, _settings);
+            _settingsWindow.SettingsChanged += ApplySettings;
             _settingsWindow.Closed += (_, _) => _settingsWindow = null;
         }
 
@@ -231,18 +250,7 @@ public partial class MainWindow : Window
 
     private void CommitOverlayAction(WindowHalf action)
     {
-        var label = action switch
-        {
-            WindowHalf.Left => "Left half",
-            WindowHalf.Right => "Right half",
-            WindowHalf.Top => "Top half",
-            WindowHalf.Bottom => "Bottom half",
-            _ => "Window"
-        };
-
-        SelectedAction.Text = label;
-        WindowActionService.ApplyHalf(_targetWindow, action, out var message);
-        TargetStatus.Text = $"  ·  {message}";
+        ApplyWindowAction(ToWindowAction(action), cycleEnabled: true);
     }
 
     private void Wedge_MouseUp(object sender, MouseButtonEventArgs e)
@@ -273,14 +281,6 @@ public partial class MainWindow : Window
 
     private void ApplyAction(string action)
     {
-        SelectedAction.Text = action == "Top" ? "Top half" : action == "Bottom" ? "Bottom half" : action + " half";
-
-        if (_targetWindow == IntPtr.Zero)
-        {
-            TargetStatus.Text = $"  ·  Capture a target first with {TriggerLabel.Text}";
-            return;
-        }
-
         var half = action switch
         {
             "Left" => WindowHalf.Left,
@@ -290,7 +290,72 @@ public partial class MainWindow : Window
             _ => WindowHalf.Left
         };
 
-        WindowActionService.ApplyHalf(_targetWindow, half, out var message);
-        TargetStatus.Text = $"  ·  {message}";
+        ApplyWindowAction(ToWindowAction(half), cycleEnabled: true);
+    }
+
+    private void ApplyWindowAction(WindowAction requestedAction, bool cycleEnabled)
+    {
+        if (_targetWindow == IntPtr.Zero)
+        {
+            TargetStatus.Text = $"  ·  Capture a target first with {TriggerLabel.Text}";
+            return;
+        }
+
+        var selection = WindowCycleService.Select(_targetWindow, requestedAction, cycleEnabled);
+        SelectedAction.Text = WindowActionService.ActionName(selection.EffectiveAction);
+
+        var applied = WindowActionService.TryApply(_targetWindow, selection.EffectiveAction, out var message);
+        if (applied)
+        {
+            WindowCycleService.Commit(_targetWindow, selection);
+        }
+
+        TargetStatus.Text = $"  ·  {message}{(applied ? selection.StatusSuffix : string.Empty)}";
+    }
+
+    private static WindowAction ToWindowAction(WindowHalf action) => action switch
+    {
+        WindowHalf.Left => WindowAction.LeftHalf,
+        WindowHalf.Right => WindowAction.RightHalf,
+        WindowHalf.Top => WindowAction.TopHalf,
+        WindowHalf.Bottom => WindowAction.BottomHalf,
+        _ => WindowAction.LeftHalf
+    };
+
+    private void ApplySettings(AppSettings settings)
+    {
+        _hotkey.SetBinding(settings.TriggerModifiers, settings.TriggerVk);
+        _hotkey.SetKeybinds(settings.Keybinds);
+        UpdateTriggerLabel();
+        BuildRadialGeometry();
+        ApplyVisualSettings();
+    }
+
+    private void ApplyVisualSettings()
+    {
+        Resources["AccentBrush"] = CreateBrush(_settings.AccentColor, "#007AFF");
+        Resources["SectorFillBrush"] = CreateBrush(_settings.RadialSectorFill, "#7A007AFF");
+        Resources["SectorStrokeBrush"] = CreateBrush(_settings.RadialSectorStroke, "#F0007AFF");
+        RadialRing.Fill = CreateBrush(_settings.RadialRingFill, "#B61E1E1E");
+    }
+
+    private static System.Windows.Media.Brush CreateBrush(string value, string fallback)
+    {
+        try
+        {
+            if (new System.Windows.Media.BrushConverter().ConvertFromString(value) is System.Windows.Media.Brush brush)
+            {
+                brush.Freeze();
+                return brush;
+            }
+        }
+        catch
+        {
+            // Settings.cs normalizes persisted colors. Keep the UI safe if a
+            // value is edited in memory before it is saved.
+        }
+
+        return new System.Windows.Media.BrushConverter().ConvertFromString(fallback) as System.Windows.Media.Brush
+            ?? System.Windows.Media.Brushes.Transparent;
     }
 }

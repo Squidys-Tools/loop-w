@@ -9,17 +9,23 @@ namespace LoopW;
 
 public partial class PreviewOverlayWindow : Window
 {
-    private const double BlurMargin = 21;
-
+    private readonly AppSettings _settings;
+    private readonly double _blurMargin;
     private double _workLeft;
     private double _workTop;
     private double _workWidth;
     private double _workHeight;
     private BitmapSource? _backdrop;
 
-    public PreviewOverlayWindow()
+    public PreviewOverlayWindow(AppSettings settings)
     {
         InitializeComponent();
+        _settings = settings;
+        _blurMargin = settings.PreviewPadding;
+        PreviewSurface.CornerRadius = new CornerRadius(settings.PreviewCornerRadius);
+        SurfaceTint.CornerRadius = new CornerRadius(Math.Max(1, settings.PreviewCornerRadius - 3));
+        PreviewSurface.BorderBrush = CreateBrush(settings.PreviewBorderColor, "#FFFFFFFF");
+        PreviewSurface.BorderThickness = new Thickness(settings.PreviewBorderWidth);
         SourceInitialized += PreviewOverlayWindow_SourceInitialized;
     }
 
@@ -167,8 +173,8 @@ public partial class PreviewOverlayWindow : Window
 
         var scaleX = 96.0 / dpiX;
         var scaleY = 96.0 / dpiY;
-        var marginX = (int)Math.Round(BlurMargin * dpiX / 96);
-        var marginY = (int)Math.Round(BlurMargin * dpiY / 96);
+        var marginX = (int)Math.Round(_blurMargin * dpiX / 96);
+        var marginY = (int)Math.Round(_blurMargin * dpiY / 96);
 
         var x = Math.Max(0, frame.Left - marginX - workArea.Left);
         var y = Math.Max(0, frame.Top - marginY - workArea.Top);
@@ -236,5 +242,24 @@ public partial class PreviewOverlayWindow : Window
         PreviewSurface.BeginAnimation(UIElement.OpacityProperty, new DoubleAnimation(0, 1, duration) { EasingFunction = ease });
         scale.BeginAnimation(ScaleTransform.ScaleXProperty, new DoubleAnimation(0.98, 1, duration) { EasingFunction = ease });
         scale.BeginAnimation(ScaleTransform.ScaleYProperty, new DoubleAnimation(0.98, 1, duration) { EasingFunction = ease });
+    }
+
+    private static System.Windows.Media.Brush CreateBrush(string value, string fallback)
+    {
+        try
+        {
+            if (new System.Windows.Media.BrushConverter().ConvertFromString(value) is System.Windows.Media.Brush brush)
+            {
+                brush.Freeze();
+                return brush;
+            }
+        }
+        catch
+        {
+            // Invalid in-memory values use a safe fallback.
+        }
+
+        return new System.Windows.Media.BrushConverter().ConvertFromString(fallback) as System.Windows.Media.Brush
+            ?? System.Windows.Media.Brushes.Transparent;
     }
 }

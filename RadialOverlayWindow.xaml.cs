@@ -11,26 +11,38 @@ namespace LoopW;
 
 public partial class RadialOverlayWindow : Window
 {
-    private const double Center = 76;
-    private const double OuterRadius = 66.88;
-    private const double InnerRadius = 42.56;
-    private const double DeadZoneRadius = 42.56;
-    private const double BlurMargin = 18.24;
+    private const double OverlayScale = 0.7333333333;
 
     private readonly IntPtr _targetWindow;
     private readonly Action<WindowHalf> _commit;
-    private readonly PreviewOverlayWindow _preview = new();
+    private readonly AppSettings _settings;
+    private readonly PreviewOverlayWindow _preview;
     private readonly DispatcherTimer _pollTimer;
+    private readonly double _center;
+    private readonly double _outerRadius;
+    private readonly double _innerRadius;
+    private readonly double _blurMargin;
     private WindowHalf? _selected;
     private bool _closing;
     private double _dpiX = 96;
     private double _dpiY = 96;
 
-    internal RadialOverlayWindow(IntPtr targetWindow, Action<WindowHalf> commit)
+    internal RadialOverlayWindow(IntPtr targetWindow, Action<WindowHalf> commit, AppSettings settings)
     {
         InitializeComponent();
         _targetWindow = targetWindow;
         _commit = commit;
+        _settings = settings;
+        _preview = new PreviewOverlayWindow(settings);
+        _outerRadius = settings.RadialOuterRadius * OverlayScale;
+        _innerRadius = settings.RadialInnerRadius * OverlayScale;
+        _center = _outerRadius * 1.1;
+        _blurMargin = _outerRadius * 0.27;
+        Width = _center * 2;
+        Height = _center * 2;
+        Resources["SectorFillBrush"] = CreateBrush(settings.RadialSectorFill, "#7A007AFF");
+        Resources["SectorStrokeBrush"] = CreateBrush(settings.RadialSectorStroke, "#F0007AFF");
+        Ring.Fill = CreateBrush(settings.RadialRingFill, "#B61E1E1E");
         BuildGeometry();
 
         // The ring's transparent center hole is skipped by Windows hit-testing, so
@@ -46,12 +58,12 @@ public partial class RadialOverlayWindow : Window
 
     private void BuildGeometry()
     {
-        Ring.Data = RadialGeometry.BuildAnnulus(Center, OuterRadius, InnerRadius);
-        BackdropImage.Clip = RadialGeometry.BuildAnnulus(Center + BlurMargin, OuterRadius, InnerRadius);
-        TopWedge.Data = RadialGeometry.BuildWedge(Center, OuterRadius, InnerRadius, -135, -45);
-        RightWedge.Data = RadialGeometry.BuildWedge(Center, OuterRadius, InnerRadius, -45, 45);
-        BottomWedge.Data = RadialGeometry.BuildWedge(Center, OuterRadius, InnerRadius, 45, 135);
-        LeftWedge.Data = RadialGeometry.BuildWedge(Center, OuterRadius, InnerRadius, 135, 225);
+        Ring.Data = RadialGeometry.BuildAnnulus(_center, _outerRadius, _innerRadius);
+        BackdropImage.Clip = RadialGeometry.BuildAnnulus(_center + _blurMargin, _outerRadius, _innerRadius);
+        TopWedge.Data = RadialGeometry.BuildWedge(_center, _outerRadius, _innerRadius, -135, -45);
+        RightWedge.Data = RadialGeometry.BuildWedge(_center, _outerRadius, _innerRadius, -45, 45);
+        BottomWedge.Data = RadialGeometry.BuildWedge(_center, _outerRadius, _innerRadius, 45, 135);
+        LeftWedge.Data = RadialGeometry.BuildWedge(_center, _outerRadius, _innerRadius, 135, 225);
     }
 
     private void Overlay_Loaded(object sender, RoutedEventArgs e)
@@ -106,6 +118,12 @@ public partial class RadialOverlayWindow : Window
             return;
         }
 
+        if (!_settings.CursorInteractionEnabled)
+        {
+            SetSelection(null);
+            return;
+        }
+
         var localX = cursor.X * 96.0 / _dpiX - Left;
         var localY = cursor.Y * 96.0 / _dpiY - Top;
         UpdateSelection(new Point(localX, localY));
@@ -115,7 +133,7 @@ public partial class RadialOverlayWindow : Window
     {
         try
         {
-            var margin = (int)Math.Round(BlurMargin * dpiX / 96);
+            var margin = (int)Math.Round(_blurMargin * dpiX / 96);
             var left = (int)Math.Round(Left * dpiX / 96) - margin;
             var top = (int)Math.Round(Top * dpiY / 96) - margin;
             var width = (int)Math.Round(Width * dpiX / 96) + margin * 2;
@@ -167,15 +185,20 @@ public partial class RadialOverlayWindow : Window
 
     private void Overlay_MouseMove(object sender, MouseEventArgs e)
     {
+        if (!_settings.CursorInteractionEnabled)
+        {
+            return;
+        }
+
         UpdateSelection(e.GetPosition(this));
     }
 
     private void UpdateSelection(Point point)
     {
-        var dx = point.X - Center;
-        var dy = point.Y - Center;
+        var dx = point.X - _center;
+        var dy = point.Y - _center;
 
-        if (Math.Sqrt(dx * dx + dy * dy) < DeadZoneRadius)
+        if (Math.Sqrt(dx * dx + dy * dy) < _innerRadius)
         {
             SetSelection(null);
             return;
@@ -190,6 +213,11 @@ public partial class RadialOverlayWindow : Window
 
     private void Overlay_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
     {
+        if (!_settings.CursorInteractionEnabled)
+        {
+            return;
+        }
+
         if (_selected.HasValue)
         {
             Commit(_selected.Value);
@@ -233,7 +261,7 @@ public partial class RadialOverlayWindow : Window
         HighlightWedge(BottomWedge, selection == WindowHalf.Bottom);
         HighlightWedge(LeftWedge, selection == WindowHalf.Left);
 
-        if (selection.HasValue && WindowActionService.TryGetHalfFrame(_targetWindow, selection.Value, out var frame, out _))
+        if (_settings.PreviewEnabled && selection.HasValue && WindowActionService.TryGetHalfFrame(_targetWindow, selection.Value, out var frame, out _))
         {
             _preview.ShowFrame(frame, selection.Value);
             _preview.Topmost = true;
@@ -292,5 +320,24 @@ public partial class RadialOverlayWindow : Window
         OverlaySurface.BeginAnimation(UIElement.OpacityProperty, opacity);
         scale.BeginAnimation(ScaleTransform.ScaleXProperty, new DoubleAnimation(scale.ScaleX, 0.94, duration) { EasingFunction = ease });
         scale.BeginAnimation(ScaleTransform.ScaleYProperty, new DoubleAnimation(scale.ScaleY, 0.94, duration) { EasingFunction = ease });
+    }
+
+    private static System.Windows.Media.Brush CreateBrush(string value, string fallback)
+    {
+        try
+        {
+            if (new System.Windows.Media.BrushConverter().ConvertFromString(value) is System.Windows.Media.Brush brush)
+            {
+                brush.Freeze();
+                return brush;
+            }
+        }
+        catch
+        {
+            // Invalid in-memory values use a safe fallback.
+        }
+
+        return new System.Windows.Media.BrushConverter().ConvertFromString(fallback) as System.Windows.Media.Brush
+            ?? System.Windows.Media.Brushes.Transparent;
     }
 }
