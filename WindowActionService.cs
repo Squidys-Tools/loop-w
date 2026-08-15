@@ -410,7 +410,7 @@ internal static class WindowActionService
         {
             var items = stack.ToArray();
             stack.Clear();
-            for (var i = 0; i < MaxUndoDepth; i++)
+            for (var i = MaxUndoDepth - 1; i >= 0; i--)
             {
                 stack.Push(items[i]);
             }
