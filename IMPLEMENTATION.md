@@ -17,7 +17,7 @@ Window management made elegant, for Windows. A feature-by-feature port of
       Win-combos rejected; persisted to `%LOCALAPPDATA%\LoopW\settings.json`. `Settings.cs`
 - [x] Radial menu rendered at the cursor on trigger press. `RadialOverlayWindow.xaml(.cs)`
 - [x] Wedge selection by cursor direction (polled 20 ms so the transparent center hole
-      can clear a selection). N/S/E/W halves only.
+      can clear a selection). Cardinal halves and diagonal quarters.
 - [x] Live preview of the target frame (blurred backdrop, rounded, animated). `PreviewOverlayWindow.xaml(.cs)`
 - [x] Commit on trigger release / left-click / arrow keys; Esc cancels.
 - [x] Multi-DPI aware (per-monitor DPI via `shcore.dll`).
@@ -29,8 +29,9 @@ Window management made elegant, for Windows. A feature-by-feature port of
 
 ## 1. Action library
 
-Today only **halves** exist (`WindowActionService.ApplyHalf` / `WindowHalf`). Loop has
-~40 actions. Plan:
+The generic action library contains ~40 actions. The radial surface now exposes
+the four cardinal halves and four diagonal quarters; the remaining actions stay
+available through keybinds.
 
 - [x] Refactor to a generic `WindowAction` set: halves, quarters, thirds, center,
       maximize, almost-maximize, fullscreen, minimize, hide.
@@ -39,12 +40,12 @@ Today only **halves** exist (`WindowActionService.ApplyHalf` / `WindowHalf`). Lo
 - [x] Initial Frame — record a window's bounds on its first action, restore on demand.
 - [x] Undo — stack of recent placements per window.
 
-Notes: `WindowActionService.cs` now exposes `TryApply(window, WindowAction, out msg)`
-and `TryGetTargetFrame(...)` (used by the preview). `ApplyHalf` / `TryGetHalfFrame`
-remain as thin wrappers so the radial overlay and preview keep working unchanged.
+Notes: `WindowActionService.cs` exposes `TryApply(window, WindowAction, out msg)`
+and `TryGetTargetFrame(...)`. The radial overlay uses those generic APIs directly;
+the half wrappers remain for compatibility with older callers.
 `FitFrame` clamps to min/max track sizes and re-anchors to zone edges (halves, thirds,
-etc.) or re-centers (center, almost-maximize, center-thirds). Not yet surfaced in UI —
-keybinds/settings (#2/#5) will drive it.
+etc.) or re-centers (center, almost-maximize, center-thirds). Keybinds/settings
+continue to expose actions that do not fit the radial surface.
 
 ---
 
@@ -82,10 +83,10 @@ directional chain. A failed window placement does not consume a step.
 
 Hide windows at the screen edge to declutter; reveal on hover or keybind.
 
-- [ ] Stash a target window (animate off the closest screen edge).
-- [ ] Edge hit-zone: hover near edge reveals stashed windows (like a dock).
-- [ ] Keybind to cycle/revive stashed windows.
-- [ ] Per-window stash state + bounds restore (pair with Initial Frame).
+- [x] Stash a target window off the closest screen edge with a visible edge peek.
+- [x] Edge hit-zone: hover near edge reveals stashed windows (like a dock).
+- [x] Keybind to reveal the next stashed window.
+- [x] Per-window stash state + placement restore (pair with Initial Frame).
 
 ---
 
@@ -118,10 +119,10 @@ and theme options.
 
 To be a real background utility (not a window you keep open):
 
-- [ ] System tray icon with menu (Open Settings, Quit).
-- [ ] Single-instance guard (second launch focuses existing instance / tray).
-- [ ] Launch at login (registry `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`).
-- [ ] Run without showing the main window (start minimized to tray on boot).
+- [x] System tray icon with menu (Open LoopW, Open Settings, Quit).
+- [x] Single-instance guard (second launch signals and focuses the existing instance).
+- [x] Launch at login (registry `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`).
+- [x] Run without showing the main window (start hidden in the tray on boot).
 
 ---
 
@@ -129,9 +130,12 @@ To be a real background utility (not a window you keep open):
 
 Loop's `loop://` URL scheme. Windows equivalent:
 
-- [ ] Named pipe server (e.g. `loopw-<user>`) accepting commands.
-- [ ] CLI mode: `loopw.exe direction/right`, `list/all`, `list/actions`, `list/keybinds`.
-- [ ] Same action library exposed (reuses #1).
+- [x] Same-user named pipe server (`LoopW-Commands`) accepting one-line commands
+      from the CLI.
+- [x] CLI mode: `LoopW.exe direction/right`, `list/all`, `list/actions`, and
+      `list/keybinds`, with `action/<name>` available for the full action library.
+- [x] Same action library exposed through typed command parsing and the existing
+      `WindowActionService`.
 
 ---
 
@@ -146,20 +150,16 @@ Loop's `loop://` URL scheme. Windows equivalent:
 
 ## 10. Tests / verification
 
-- [ ] Unit tests for frame math (`WindowActionService`, geometry) with a fake window.
-- [ ] Manual QA checklist for DPI scaling, multi-monitor, elevated apps, RDP sessions.
+- [x] Pure unit runner for frame math and radial geometry in `LoopW.Tests`.
+- [x] Manual QA checklist for lifecycle, radial actions, window states, DPI scaling,
+      multi-monitor behavior, and RDP sessions in `QA.md`.
 
 ---
 
 ## Suggested build order
 
-1. Generic action library (#1) — everything else depends on it.
-2. Keybindings engine (#2) on top of the action library.
-3. Cycles (#3) — reuse the repeat detection from keybinds.
-4. Settings window (#5) to surface #1–#3 and hold theming (#6).
-5. Tray/autostart/single-instance (#7) to make it a resident utility.
-6. Stash (#4).
-7. Scripting/IPC (#8), then packaging (#9).
+1. Packaging (#9), including a real app icon, publish profile, and installer.
+2. Run the desktop QA checklist in `QA.md` across the supported Windows setups.
 
 ---
 
@@ -172,6 +172,7 @@ Loop's `loop://` URL scheme. Windows equivalent:
 $dotnet = "$HOME\.dotnet\dotnet.exe"
 & $dotnet build LoopW.csproj
 & $dotnet run --project LoopW.csproj
+& $dotnet run --project LoopW.Tests/LoopW.Tests.csproj
 & $dotnet publish LoopW.csproj -c Release -r win-x64 --self-contained -p:PublishSingleFile=true
 ```
 
@@ -199,3 +200,34 @@ Track decisions and progress here as work happens.
   Radial, Preview, Keybinds, and Theme tabs. Added validated persistence for the
   new settings, launch-at-login registration, live visual updates, and radial/
   preview options.
+- **2026-08-15** — Feature #7: added a resident app lifecycle with a system tray,
+  single-instance activation, hidden startup, and explicit tray quit. Main-window
+  close now hides to the tray, while tray activation restores the window or opens
+  settings. The lifecycle smoke test confirmed that a second launch leaves one
+  LoopW process running.
+- **2026-08-15** — Radial action surface: expanded the overlay and main preview to
+  eight spatial sectors. Cardinal sectors apply halves, diagonal sectors apply
+  quarters, and the live preview now calls the generic `WindowAction` frame API.
+  Added `.gitignore` rules and removed tracked `bin/` and `obj/` build outputs from
+  the repository index.
+- **2026-08-15** — Verification: extracted pure frame math into
+  `WindowFrameMath.cs` and added an eight-case test runner under `LoopW.Tests`.
+  All 8 tests pass. Added `QA.md` for the Windows-only lifecycle, display, window
+  state, and settings checks that need a real desktop session.
+- **2026-08-15** — Feature #4: added edge stash state with nearest-edge placement,
+  visible peeking, edge-hover reveal polling, and a Reveal stashed action that
+  works from a keybind without a captured target window.
+- **2026-08-15** — Automated QA: main build passed with zero warnings, all 9 pure
+  tests passed, and the published executable passed the single-instance smoke
+  test. The remaining QA checklist items need interactive desktop verification.
+- **2026-08-15** — Feature #8: added typed named-pipe commands for direction and
+  full action execution, action/keybind/all listings, same-user CLI routing to
+  the resident process, and startup-command execution when no instance exists.
+  Parser coverage now brings the pure test runner to 15 tests; a live pipe
+  request returned the configured trigger successfully. Second-launch activation
+  now uses the same resident pipe, with the named event retained as fallback.
+- **2026-08-15** — Desktop-level smoke verification used a real Notepad HWND:
+  `direction/right` moved it to the exact right-half frame. Lifecycle checks
+  confirmed hidden startup, second-launch activation, close-to-tray hiding, and
+  one remaining resident process. Visual tray and radial interaction remain for
+  a connected desktop session.
