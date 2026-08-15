@@ -18,6 +18,8 @@ internal static class NativeMethods
     public const int SwRestore = 9;
     public const int SwShowMinimized = 2;
     public const int SwShowMaximized = 3;
+    public const int SwMinimize = 6;
+    public const int SwHide = 0;
     public const uint WpfRestoreToMaximized = 0x0002;
     public const uint WpfAsyncWindowPlacement = 0x0004;
     public const uint WmGetMinMaxInfo = 0x0024;
@@ -142,6 +144,9 @@ internal static class NativeMethods
 
     [DllImport("user32.dll")]
     public static extern IntPtr MonitorFromPoint(Point point, uint flags);
+
+    [DllImport("user32.dll")]
+    public static extern bool EnumDisplayMonitors(IntPtr hdc, IntPtr lprcClip, MonitorEnumProc lpfnEnum, IntPtr dwData);
 
     [DllImport("shcore.dll")]
     public static extern int GetDpiForMonitor(IntPtr monitor, int dpiType, out uint dpiX, out uint dpiY);
