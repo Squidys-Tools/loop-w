@@ -23,6 +23,8 @@ internal static class Program
         ("directional navigation chooses the nearest window", DirectionalNavigationChoosesNearestWindow),
         ("stack navigation wraps to the next window", StackNavigationWraps),
         ("stash frames keep a visible edge peek", StashFramesKeepVisiblePeek),
+        ("stash identity matching rejects ambiguity", StashIdentityMatchingRejectsAmbiguity),
+        ("stash settings normalize safely", StashSettingsNormalizeSafely),
         ("radial geometry creates annulus and wedge paths", RadialGeometryCreatesPaths),
         ("command parser maps direction aliases", CommandParserMapsDirectionAliases),
         ("command parser maps action names", CommandParserMapsActionNames),
@@ -248,6 +250,67 @@ internal static class Program
         Equal(StashEdge.Left, WindowStashService.NearestEdge(work, Rect(-2, 120, 398, 520)));
         Equal(Rect(-392, 120, 8, 520), WindowStashService.CalculateStashedFrame(work, window, StashEdge.Left, 8));
         Equal(Rect(992, 120, 1392, 520), WindowStashService.CalculateStashedFrame(work, window, StashEdge.Right, 8));
+    }
+
+    private static void StashIdentityMatchingRejectsAmbiguity()
+    {
+        var record = new StashRecord
+        {
+            ExecutablePath = @"C:\Apps\Editor.exe",
+            ProcessId = 42,
+            WindowClass = "EditorWindow",
+            Title = "Document"
+        };
+        var candidates = new[]
+        {
+            new WindowIdentityCandidate<IntPtr>(
+                new IntPtr(1),
+                new WindowIdentity(record.ExecutablePath, 42, record.WindowClass, record.Title)),
+            new WindowIdentityCandidate<IntPtr>(
+                new IntPtr(2),
+                new WindowIdentity(record.ExecutablePath, 42, record.WindowClass, "Other document"))
+        };
+
+        True(!WindowIdentityMatcher.TryFindUnambiguousMatch(record, candidates, out _));
+
+        var reusedHandle = new[]
+        {
+            new WindowIdentityCandidate<IntPtr>(
+                new IntPtr(1),
+                new WindowIdentity(@"C:\Apps\Other.exe", 99, "OtherWindow", record.Title))
+        };
+        True(!WindowIdentityMatcher.TryFindUnambiguousMatch(record, reusedHandle, out _));
+
+        True(WindowIdentityMatcher.TryFindUnambiguousMatch(
+            record,
+            new[] { candidates[0] },
+            out var match));
+        Equal(new IntPtr(1), match);
+    }
+
+    private static void StashSettingsNormalizeSafely()
+    {
+        var settings = new AppSettings
+        {
+            StashEdgePeek = 1000,
+            StashHitZone = -1,
+            StashRevealDelayMilliseconds = 99999,
+            StashRecords = new List<StashRecord>
+            {
+                new() { Id = "duplicate" },
+                new() { Id = "duplicate", Edge = (StashEdge)999 },
+                null!
+            }
+        };
+
+        settings.Normalize();
+
+        Equal(48, settings.StashEdgePeek);
+        Equal(1, settings.StashHitZone);
+        Equal(2000, settings.StashRevealDelayMilliseconds);
+        Equal(2, settings.StashRecords.Count);
+        True(settings.StashRecords.All(record => !string.IsNullOrWhiteSpace(record.Id)));
+        True(settings.StashRecords.All(record => Enum.IsDefined(record.Edge)));
     }
 
     private static void RadialGeometryCreatesPaths()
