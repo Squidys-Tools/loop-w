@@ -55,6 +55,12 @@ public sealed class AppSettings
 
     public bool PreviewEnabled { get; set; } = true;
 
+    public bool DragSnapEnabled { get; set; } = true;
+
+    public int DragSnapThreshold { get; set; } = 24;
+
+    public bool RestorePreDragFrameOnSnapCancel { get; set; } = true;
+
     public double PreviewPadding { get; set; } = 21;
 
     public double PreviewCornerRadius { get; set; } = 14;
@@ -132,6 +138,7 @@ public sealed class AppSettings
         PreviewPadding = Clamp(PreviewPadding, 4, 48);
         PreviewCornerRadius = Clamp(PreviewCornerRadius, 4, 32);
         PreviewBorderWidth = Clamp(PreviewBorderWidth, 0, 6);
+        DragSnapThreshold = Math.Clamp(DragSnapThreshold, 4, 96);
 
         AccentColor = NormalizeColor(AccentColor, "#007AFF");
         RadialSectorFill = NormalizeColor(RadialSectorFill, "#7A007AFF");
@@ -160,6 +167,9 @@ public sealed class AppSettings
         RadialOuterRadius = defaults.RadialOuterRadius;
         RadialInnerRadius = defaults.RadialInnerRadius;
         PreviewEnabled = defaults.PreviewEnabled;
+        DragSnapEnabled = defaults.DragSnapEnabled;
+        DragSnapThreshold = defaults.DragSnapThreshold;
+        RestorePreDragFrameOnSnapCancel = defaults.RestorePreDragFrameOnSnapCancel;
         PreviewPadding = defaults.PreviewPadding;
         PreviewCornerRadius = defaults.PreviewCornerRadius;
         PreviewBorderWidth = defaults.PreviewBorderWidth;

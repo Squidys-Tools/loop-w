@@ -60,10 +60,12 @@ The app uses .NET 8, WPF, and native Windows APIs through `user32`, `dwmapi`,
 - [x] Same-user named-pipe server: `LoopW-Commands`.
 - [x] CLI commands for listing actions, listing keybinds, directional actions,
   and named actions.
-- [x] Pure tests for frame math, radial geometry, cycles, navigation, and command
+- [x] Pure tests for frame math, radial geometry, cycles, navigation, drag snap
+  geometry, settings, and command
   parsing.
-- [x] Last recorded verification: warning-free build, 28 passing tests, a live
-  pipe request, and a real Notepad right-half action.
+- [x] Last recorded verification: warning-free build and 31 passing tests. The
+  live pipe request and real Notepad action remain previously recorded checks
+  and should be rerun with the drag-snap QA pass.
 - [ ] Complete the interactive checks in [`QA.md`](QA.md).
 
 ## Remaining work
@@ -154,20 +156,28 @@ Implemented Windows design:
 
 ### 4. Add drag snapping
 
-- [ ] Snap a dragged window to screen edges and supported zones.
-- [ ] Show the target frame before committing the snap.
-- [ ] Add a configurable snap threshold.
-- [ ] Optionally restore the pre-drag frame when a snap is canceled.
-- [ ] Handle capture loss, canceled moves, monitor changes, fullscreen windows,
+- [x] Snap a title-bar dragged window to screen edges and supported half/quarter zones.
+- [x] Show the target frame before committing the snap.
+- [x] Add a configurable snap threshold.
+- [x] Optionally restore the pre-drag frame when a snap is canceled.
+- [x] Handle capture loss, canceled moves, monitor changes, fullscreen windows,
   and applications that reject the requested frame.
-- [ ] Do not interfere with Windows Snap Assist or snap LoopW's own windows.
+- [x] Do not interfere with Windows Snap Assist or snap LoopW's own windows.
 
 Windows implementation:
 
-- Track move/size lifecycle with `SetWinEventHook` or a narrowly scoped mouse
-  hook plus foreground-window tracking.
-- Reuse the existing preview and frame-calculation code.
-- Use DWM attributes and monitor work areas to keep previews accurate.
+- `DragSnapService` observes a narrowly scoped `WH_MOUSE_LL` title-bar drag
+  lifecycle without swallowing input or taking mouse capture. It polls the
+  left-button state so capture loss and canceled moves close the gesture.
+- `DragSnapGeometry` resolves half and quarter zones from the physical monitor
+  edge while `WindowFrameMath` computes the work-area frame.
+- The existing `PreviewOverlayWindow` renders the resolved frame before release.
+- `WindowActionService.TryApplySnap` restores and places the frame on the
+  cursor's monitor, reports min/max-size or placement rejection, and records a
+  successful snap in undo history.
+- Fullscreen, maximized, borderless, tool, owned, hidden, and LoopW windows are
+  ignored at the drag boundary. Mouse messages continue to Windows so native
+  resize and Snap Assist behavior remains available.
 
 ### 5. Harden stash and window identity
 

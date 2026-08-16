@@ -300,6 +300,75 @@ internal static class WindowActionService
         return true;
     }
 
+    internal static bool TryApplySnap(IntPtr window, DragSnapTarget target, out string message)
+    {
+        message = string.Empty;
+        if (window == IntPtr.Zero || !WindowQuery.IsEligibleForSnap(window))
+        {
+            message = "The dragged window is no longer available.";
+            return false;
+        }
+
+        var ideal = target.Frame;
+        if (!NativeMethods.TryGetMonitorWorkRect(ideal, out var work))
+        {
+            message = "Could not determine the snap monitor.";
+            return false;
+        }
+
+        var frame = WindowFrameMath.FitFrame(work, target.Action, ideal, GetMinMaxInfo(window));
+        PushUndo(window);
+        if (!PlaceWindow(window, frame))
+        {
+            message = "Windows rejected the snap. The target may be elevated or non-resizable.";
+            return false;
+        }
+
+        if (!NativeMethods.GetWindowRect(window, out var actual))
+        {
+            message = "Could not read the snapped window's final position.";
+            return false;
+        }
+
+        if (!RectsEqual(actual, frame))
+        {
+            var reanchored = WindowFrameMath.FitFrame(work, target.Action, actual, new NativeMethods.MinMaxInfo());
+            if (!RectsEqual(reanchored, frame))
+            {
+                PlaceWindow(window, reanchored);
+                NativeMethods.GetWindowRect(window, out actual);
+            }
+        }
+
+        var label = ActionName(target.Action);
+        message = SizesEqual(actual, ideal)
+            ? $"Applied drag snap: {label}"
+            : $"Snapped to {label}, but the window's minimum/maximum size forced {actual.Width}\u00d7{actual.Height} instead of {ideal.Width}\u00d7{ideal.Height}.";
+        return true;
+    }
+
+    internal static bool TryRestoreFrame(IntPtr window, NativeMethods.Rect frame, out string message)
+    {
+        message = string.Empty;
+        if (window == IntPtr.Zero || !NativeMethods.IsWindow(window))
+        {
+            message = "The dragged window is no longer available.";
+            return false;
+        }
+
+        if (!PlaceWindow(window, frame) ||
+            !NativeMethods.GetWindowRect(window, out var actual))
+        {
+            message = "Could not restore the pre-drag frame.";
+            return false;
+        }
+
+        message = RectsEqual(actual, frame)
+            ? "Restored the pre-drag frame"
+            : "The application did not accept the pre-drag frame.";
+        return RectsEqual(actual, frame);
+    }
+
     /// <summary>
     /// Computes the ideal frame for an action without applying anything. Used by the
     /// preview overlay and by tests.

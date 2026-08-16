@@ -786,6 +786,44 @@
                                         ValueChanged="Preview_ValueChanged" />
                             </StackPanel>
                         </Border>
+
+                        <Border Style="{StaticResource CardStyle}" Margin="0,12,0,0">
+                            <StackPanel>
+                                <TextBlock Text="Drag snapping" FontSize="14" FontWeight="SemiBold" />
+                                <TextBlock Text="Preview and commit a half or quarter zone when a title-bar drag reaches a monitor edge."
+                                           Style="{StaticResource DescriptionStyle}"
+                                           Margin="0,4,0,12" />
+                                <CheckBox x:Name="DragSnapEnabledCheck"
+                                          Content="Snap dragged windows to edges and corners"
+                                          Style="{StaticResource ToggleCheckBoxStyle}"
+                                          Checked="DragSnap_Changed"
+                                          Unchecked="DragSnap_Changed" />
+                                <CheckBox x:Name="RestorePreDragFrameCheck"
+                                          Content="Restore the original frame when a snap is canceled"
+                                          Style="{StaticResource ToggleCheckBoxStyle}"
+                                          Checked="DragSnap_Changed"
+                                          Unchecked="DragSnap_Changed" />
+                                <Grid Margin="0,12,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="Snap threshold" Style="{StaticResource SettingLabelStyle}" />
+                                    <TextBlock x:Name="DragSnapThresholdValue"
+                                               Grid.Column="1"
+                                               Foreground="{DynamicResource SecondaryTextBrush}" />
+                                </Grid>
+                                <Slider x:Name="DragSnapThresholdSlider"
+                                        Minimum="4"
+                                        Maximum="96"
+                                        TickFrequency="4"
+                                        IsSnapToTickEnabled="True"
+                                        ValueChanged="DragSnap_ValueChanged" />
+                                <TextBlock Text="The threshold is measured from the physical monitor edge, so taskbars do not make a zone harder to reach."
+                                           Style="{StaticResource DescriptionStyle}"
+                                           Margin="0,8,0,0" />
+                            </StackPanel>
+                        </Border>
                     </StackPanel>
 
                     <StackPanel x:Name="AppearanceSection" Visibility="Collapsed">

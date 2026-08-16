@@ -37,6 +37,8 @@ internal static class WindowQuery
         return frames;
     }
 
+    public static bool IsEligibleForSnap(IntPtr window) => IsEligible(window, IntPtr.Zero);
+
     private static List<WindowCandidate> Enumerate(IntPtr excludedWindow)
     {
         var windows = new List<WindowCandidate>();

@@ -18,10 +18,12 @@ public partial class MainWindow : Window
 
     private readonly GlobalHotkey _hotkey = new();
     private readonly AppSettings _settings;
+    private readonly DragSnapService _dragSnap;
     private IReadOnlyList<RadialTarget> _radialTargets = Array.Empty<RadialTarget>();
     private IntPtr _targetWindow;
     private RadialOverlayWindow? _activeOverlay;
     private readonly DispatcherTimer _stashTimer;
+    private PreviewOverlayWindow? _dragPreview;
     private bool _capturing;
     private bool _allowClose;
 
@@ -34,6 +36,7 @@ public partial class MainWindow : Window
         var settingsPanel = new SettingsWindow(_hotkey, _settings);
         settingsPanel.SettingsChanged += ApplySettings;
         SettingsHost.Content = settingsPanel;
+        _dragSnap = new DragSnapService(Dispatcher, _settings);
 
         _hotkey.SetBinding(_settings.TriggerModifiers, _settings.TriggerVk);
         _hotkey.SetTriggerBehavior(
@@ -63,7 +66,11 @@ public partial class MainWindow : Window
         _hotkey.CaptureCancelled += Hotkey_CaptureCancelled;
         _hotkey.CaptureRejected += Hotkey_CaptureRejected;
         _hotkey.KeybindPressed += Hotkey_KeybindPressed;
+        _dragSnap.TargetChanged += DragSnap_TargetChanged;
+        _dragSnap.TargetCleared += DragSnap_TargetCleared;
+        _dragSnap.GestureEnded += DragSnap_GestureEnded;
         _hotkey.Start();
+        _dragSnap.Start();
         _stashTimer.Start();
 
         UpdateTriggerLabel();
@@ -80,6 +87,11 @@ public partial class MainWindow : Window
     private void Window_Closed(object? sender, EventArgs e)
     {
         _stashTimer.Stop();
+        _dragSnap.TargetChanged -= DragSnap_TargetChanged;
+        _dragSnap.TargetCleared -= DragSnap_TargetCleared;
+        _dragSnap.GestureEnded -= DragSnap_GestureEnded;
+        _dragSnap.Dispose();
+        _dragPreview?.Close();
         _hotkey.Dispose();
     }
 
@@ -510,9 +522,54 @@ public partial class MainWindow : Window
             settings.DoubleClickToTrigger,
             settings.MiddleClickToTrigger);
         _hotkey.SetKeybinds(settings.Keybinds);
+        _dragPreview?.HideImmediately();
+        _dragSnap.UpdateSettings();
         UpdateTriggerLabel();
         BuildRadialGeometry();
         ApplyVisualSettings();
+    }
+
+    private void DragSnap_TargetChanged(DragSnapTarget target)
+    {
+        if (!_settings.PreviewEnabled)
+        {
+            return;
+        }
+
+        _dragPreview ??= new PreviewOverlayWindow(_settings);
+        _dragPreview.ShowFrame(target.Frame, target.Action);
+        _dragPreview.Topmost = true;
+    }
+
+    private void DragSnap_TargetCleared()
+    {
+        _dragPreview?.HideImmediately();
+    }
+
+    private void DragSnap_GestureEnded(DragSnapGesture gesture)
+    {
+        // Placement can wait for a rejecting or restoring application. Keep the
+        // low-level hook responsive and let the next dispatcher turn do the work.
+        Dispatcher.BeginInvoke(DispatcherPriority.Input, () =>
+        {
+            if (gesture.Reason == DragSnapEndReason.Released && gesture.Target is { } target)
+            {
+                var applied = WindowActionService.TryApplySnap(gesture.Window, target, out var message);
+                if (applied)
+                {
+                    SelectedAction.Text = WindowActionService.ActionName(target.Action);
+                }
+
+                TargetStatus.Text = $"  ·  {message}";
+                return;
+            }
+
+            if (_settings.RestorePreDragFrameOnSnapCancel)
+            {
+                WindowActionService.TryRestoreFrame(gesture.Window, gesture.OriginalFrame, out var message);
+                TargetStatus.Text = $"  ·  {message}";
+            }
+        });
     }
 
     private void ApplyVisualSettings()
