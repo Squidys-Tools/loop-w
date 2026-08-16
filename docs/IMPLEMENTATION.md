@@ -181,15 +181,16 @@ Windows implementation:
 
 ### 5. Harden stash and window identity
 
-- [ ] Remove stash entries when a window is destroyed or its process exits.
-- [ ] Restore maximized/minimized state and original monitor/DPI information.
-- [ ] Add configurable edge peek size, hit-zone size, and reveal delay.
-- [ ] Persist stash metadata across restart using executable path, process ID,
+- [x] Remove stash entries when a window is destroyed or its process exits.
+- [x] Restore maximized/minimized state and original monitor/DPI information.
+- [x] Add configurable edge peek size, hit-zone size, and reveal delay.
+- [x] Persist stash metadata across restart using executable path, process ID,
   window class, and title as matching hints.
-- [ ] Restore only an unambiguous match. Never trust a reused HWND by itself.
+- [x] Restore only an unambiguous match. Never trust a reused HWND by itself.
 
-The current stash store is session-only. Cross-restart restoration must remain
-conservative because Windows HWND values are not permanent window identities.
+Stash records are stored with the application settings. Cross-restart restoration
+requires the executable path plus at least two independent metadata hints, and
+never treats a persisted HWND as an identity.
 
 ### 6. Finish monitor, DPI, and app policies
 

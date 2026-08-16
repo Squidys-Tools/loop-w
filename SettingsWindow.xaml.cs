@@ -313,6 +313,31 @@ public partial class SettingsWindow : UserControl
         SaveSettings("Snap threshold saved");
     }
 
+    private void Stash_Changed(object sender, RoutedEventArgs e)
+    {
+        if (_loading)
+        {
+            return;
+        }
+
+        _settings.StashPersistenceEnabled = StashPersistenceCheck.IsChecked == true;
+        SaveSettings("Stash settings saved");
+    }
+
+    private void Stash_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (_loading)
+        {
+            return;
+        }
+
+        _settings.StashEdgePeek = (int)Math.Round(StashEdgePeekSlider.Value);
+        _settings.StashHitZone = (int)Math.Round(StashHitZoneSlider.Value);
+        _settings.StashRevealDelayMilliseconds = (int)Math.Round(StashRevealDelaySlider.Value);
+        UpdateValueLabels();
+        SaveSettings("Stash timing saved");
+    }
+
     private void AppearanceMode_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (_loading || AppearanceModeCombo.SelectedValue is not string mode)
@@ -549,6 +574,10 @@ public partial class SettingsWindow : UserControl
                 _settings.DragSnapEnabled = defaults.DragSnapEnabled;
                 _settings.DragSnapThreshold = defaults.DragSnapThreshold;
                 _settings.RestorePreDragFrameOnSnapCancel = defaults.RestorePreDragFrameOnSnapCancel;
+                _settings.StashPersistenceEnabled = defaults.StashPersistenceEnabled;
+                _settings.StashEdgePeek = defaults.StashEdgePeek;
+                _settings.StashHitZone = defaults.StashHitZone;
+                _settings.StashRevealDelayMilliseconds = defaults.StashRevealDelayMilliseconds;
                 break;
             case "Appearance":
                 _settings.AppearanceMode = defaults.AppearanceMode;
@@ -654,6 +683,10 @@ public partial class SettingsWindow : UserControl
         DragSnapEnabledCheck.IsChecked = _settings.DragSnapEnabled;
         RestorePreDragFrameCheck.IsChecked = _settings.RestorePreDragFrameOnSnapCancel;
         DragSnapThresholdSlider.Value = _settings.DragSnapThreshold;
+        StashPersistenceCheck.IsChecked = _settings.StashPersistenceEnabled;
+        StashEdgePeekSlider.Value = _settings.StashEdgePeek;
+        StashHitZoneSlider.Value = _settings.StashHitZone;
+        StashRevealDelaySlider.Value = _settings.StashRevealDelayMilliseconds;
         AppearanceModeCombo.SelectedValue = _settings.AppearanceMode;
         RefreshRadialControls();
         RefreshThemeFields();
@@ -776,6 +809,11 @@ public partial class SettingsWindow : UserControl
         PreviewCornerValue.Text = $"{PreviewCornerSlider.Value:0} px";
         PreviewBorderWidthValue.Text = $"{PreviewBorderWidthSlider.Value:0} px";
         DragSnapThresholdValue.Text = $"{DragSnapThresholdSlider.Value:0} px";
+        StashEdgePeekValue.Text = $"{StashEdgePeekSlider.Value:0} px";
+        StashHitZoneValue.Text = $"{StashHitZoneSlider.Value:0} px";
+        StashRevealDelayValue.Text = StashRevealDelaySlider.Value <= 0
+            ? "Instant"
+            : $"{StashRevealDelaySlider.Value:0} ms";
     }
 
     private void UpdateKeybindEmptyState()

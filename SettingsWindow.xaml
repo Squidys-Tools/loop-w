@@ -824,6 +824,68 @@
                                            Margin="0,8,0,0" />
                             </StackPanel>
                         </Border>
+
+                        <Border Style="{StaticResource CardStyle}" Margin="0,12,0,0">
+                            <StackPanel>
+                                <TextBlock Text="Stash and reveal" FontSize="14" FontWeight="SemiBold" />
+                                <TextBlock Text="Keep windows safely identifiable across a LoopW restart and tune how much of a stashed window remains reachable."
+                                           Style="{StaticResource DescriptionStyle}"
+                                           Margin="0,4,0,12" />
+                                <CheckBox x:Name="StashPersistenceCheck"
+                                          Content="Persist stashed windows across restart"
+                                          Style="{StaticResource ToggleCheckBoxStyle}"
+                                          Checked="Stash_Changed"
+                                          Unchecked="Stash_Changed" />
+                                <Grid Margin="0,14,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="Edge peek" Style="{StaticResource SettingLabelStyle}" />
+                                    <TextBlock x:Name="StashEdgePeekValue"
+                                               Grid.Column="1"
+                                               Foreground="{DynamicResource SecondaryTextBrush}" />
+                                </Grid>
+                                <Slider x:Name="StashEdgePeekSlider"
+                                        Minimum="1"
+                                        Maximum="48"
+                                        TickFrequency="1"
+                                        IsSnapToTickEnabled="True"
+                                        ValueChanged="Stash_ValueChanged" />
+                                <Grid Margin="0,14,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="Reveal hit zone" Style="{StaticResource SettingLabelStyle}" />
+                                    <TextBlock x:Name="StashHitZoneValue"
+                                               Grid.Column="1"
+                                               Foreground="{DynamicResource SecondaryTextBrush}" />
+                                </Grid>
+                                <Slider x:Name="StashHitZoneSlider"
+                                        Minimum="1"
+                                        Maximum="96"
+                                        TickFrequency="2"
+                                        IsSnapToTickEnabled="True"
+                                        ValueChanged="Stash_ValueChanged" />
+                                <Grid Margin="0,14,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="Reveal delay" Style="{StaticResource SettingLabelStyle}" />
+                                    <TextBlock x:Name="StashRevealDelayValue"
+                                               Grid.Column="1"
+                                               Foreground="{DynamicResource SecondaryTextBrush}" />
+                                </Grid>
+                                <Slider x:Name="StashRevealDelaySlider"
+                                        Minimum="0"
+                                        Maximum="500"
+                                        TickFrequency="20"
+                                        IsSnapToTickEnabled="True"
+                                        ValueChanged="Stash_ValueChanged" />
+                            </StackPanel>
+                        </Border>
                     </StackPanel>
 
                     <StackPanel x:Name="AppearanceSection" Visibility="Collapsed">

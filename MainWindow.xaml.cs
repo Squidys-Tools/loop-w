@@ -31,6 +31,7 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         _settings = AppSettings.Load();
+        WindowStashService.Configure(_settings);
         _radialTargets = RadialActionCatalog.LoadTargets(_settings);
 
         var settingsPanel = new SettingsWindow(_hotkey, _settings);
@@ -126,6 +127,7 @@ public partial class MainWindow : Window
 
     private void StashTimer_Tick(object? sender, EventArgs e)
     {
+        WindowStashService.Poll();
         if (NativeMethods.GetCursorPos(out var cursor) &&
             WindowStashService.TryRevealAtCursor(cursor, out var message))
         {
@@ -513,6 +515,7 @@ public partial class MainWindow : Window
 
     private void ApplySettings(AppSettings settings)
     {
+        WindowStashService.UpdateSettings(settings);
         _radialTargets = RadialActionCatalog.LoadTargets(settings);
         _hotkey.SetBinding(settings.TriggerModifiers, settings.TriggerVk);
         _hotkey.SetTriggerBehavior(

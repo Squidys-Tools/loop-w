@@ -61,6 +61,16 @@ public sealed class AppSettings
 
     public bool RestorePreDragFrameOnSnapCancel { get; set; } = true;
 
+    public bool StashPersistenceEnabled { get; set; } = true;
+
+    public int StashEdgePeek { get; set; } = 8;
+
+    public int StashHitZone { get; set; } = 14;
+
+    public int StashRevealDelayMilliseconds { get; set; } = 80;
+
+    public List<StashRecord> StashRecords { get; set; } = new();
+
     public double PreviewPadding { get; set; } = 21;
 
     public double PreviewCornerRadius { get; set; } = 14;
@@ -139,6 +149,10 @@ public sealed class AppSettings
         PreviewCornerRadius = Clamp(PreviewCornerRadius, 4, 32);
         PreviewBorderWidth = Clamp(PreviewBorderWidth, 0, 6);
         DragSnapThreshold = Math.Clamp(DragSnapThreshold, 4, 96);
+        StashEdgePeek = Math.Clamp(StashEdgePeek, 1, 48);
+        StashHitZone = Math.Clamp(StashHitZone, 1, 96);
+        StashRevealDelayMilliseconds = Math.Clamp(StashRevealDelayMilliseconds, 0, 2000);
+        NormalizeStashRecords();
 
         AccentColor = NormalizeColor(AccentColor, "#007AFF");
         RadialSectorFill = NormalizeColor(RadialSectorFill, "#7A007AFF");
@@ -170,6 +184,11 @@ public sealed class AppSettings
         DragSnapEnabled = defaults.DragSnapEnabled;
         DragSnapThreshold = defaults.DragSnapThreshold;
         RestorePreDragFrameOnSnapCancel = defaults.RestorePreDragFrameOnSnapCancel;
+        StashPersistenceEnabled = defaults.StashPersistenceEnabled;
+        StashEdgePeek = defaults.StashEdgePeek;
+        StashHitZone = defaults.StashHitZone;
+        StashRevealDelayMilliseconds = defaults.StashRevealDelayMilliseconds;
+        StashRecords = new List<StashRecord>();
         PreviewPadding = defaults.PreviewPadding;
         PreviewCornerRadius = defaults.PreviewCornerRadius;
         PreviewBorderWidth = defaults.PreviewBorderWidth;
@@ -223,6 +242,52 @@ public sealed class AppSettings
             {
                 keybind.Action = WindowAction.RightHalf;
             }
+        }
+    }
+
+    private void NormalizeStashRecords()
+    {
+        StashRecords ??= new List<StashRecord>();
+        const int maxStashRecords = 64;
+        if (StashRecords.Count > maxStashRecords)
+        {
+            // New records are appended. Keep the newest records so a buildup
+            // of old unmatched entries cannot evict a newly stashed window.
+            StashRecords.RemoveRange(0, StashRecords.Count - maxStashRecords);
+        }
+
+        var ids = new HashSet<string>(StringComparer.Ordinal);
+        for (var i = StashRecords.Count - 1; i >= 0; i--)
+        {
+            var record = StashRecords[i];
+            if (record is null)
+            {
+                StashRecords.RemoveAt(i);
+                continue;
+            }
+
+            if (string.IsNullOrWhiteSpace(record.Id) || !ids.Add(record.Id))
+            {
+                do
+                {
+                    record.Id = Guid.NewGuid().ToString("N");
+                }
+                while (!ids.Add(record.Id));
+            }
+
+            if (!Enum.IsDefined(record.Edge))
+            {
+                record.Edge = StashEdge.Left;
+            }
+
+            record.OriginalPlacement ??= new StashPlacement();
+            record.OriginalPlacement.MinPosition ??= new StashPoint();
+            record.OriginalPlacement.MaxPosition ??= new StashPoint();
+            record.OriginalPlacement.NormalPosition ??= new StashRect();
+            record.OriginalMonitor ??= new StashMonitor();
+            record.OriginalMonitor.Monitor ??= new StashRect();
+            record.OriginalMonitor.Work ??= new StashRect();
+            record.StashedFrame ??= new StashRect();
         }
     }
 
