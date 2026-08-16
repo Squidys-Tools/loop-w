@@ -127,9 +127,13 @@ internal static class LoopCommandFormatter
         Environment.NewLine,
         Enum.GetValues<WindowAction>().Select(action => $"action/{ActionToken(action)} - {WindowActionService.ActionName(action)}"));
 
-    internal static string Keybinds(IReadOnlyList<Keybind> keybinds, uint triggerModifiers, uint triggerVk)
+    internal static string Keybinds(
+        IReadOnlyList<Keybind> keybinds,
+        uint triggerModifiers,
+        uint triggerVk,
+        TriggerModifierSide triggerSide = TriggerModifierSide.Any)
     {
-        var lines = new List<string> { $"trigger: {HotkeyNames.For(triggerModifiers, triggerVk)}" };
+        var lines = new List<string> { $"trigger: {HotkeyNames.For(triggerModifiers, triggerVk, triggerSide)}" };
         if (keybinds.Count == 0)
         {
             lines.Add("keybinds: none");
@@ -138,13 +142,18 @@ internal static class LoopCommandFormatter
 
         lines.AddRange(keybinds.Select(bind =>
             $"{HotkeyNames.For(bind.Modifiers, bind.Vk)} -> action/{ActionToken(bind.Action)}" +
-            (bind.CycleEnabled ? " (cycle)" : string.Empty)));
+            (bind.CycleEnabled ? " (cycle)" : string.Empty) +
+            (bind.BypassTrigger ? " (bypass trigger)" : string.Empty)));
         return string.Join(Environment.NewLine, lines);
     }
 
-    internal static string All(IReadOnlyList<Keybind> keybinds, uint triggerModifiers, uint triggerVk) =>
+    internal static string All(
+        IReadOnlyList<Keybind> keybinds,
+        uint triggerModifiers,
+        uint triggerVk,
+        TriggerModifierSide triggerSide = TriggerModifierSide.Any) =>
         $"Actions:{Environment.NewLine}{Actions()}{Environment.NewLine}{Environment.NewLine}" +
-        $"Keybinds:{Environment.NewLine}{Keybinds(keybinds, triggerModifiers, triggerVk)}";
+        $"Keybinds:{Environment.NewLine}{Keybinds(keybinds, triggerModifiers, triggerVk, triggerSide)}";
 
     private static string ActionToken(WindowAction action) =>
         LoopCommandParser.Normalize(action.ToString());

@@ -424,9 +424,84 @@
                             </StackPanel>
                         </Border>
 
+                        <Border Style="{StaticResource CardStyle}" Margin="0,12,0,0">
+                            <StackPanel>
+                                <TextBlock Text="Trigger behavior" FontSize="14" FontWeight="SemiBold" />
+                                <TextBlock Text="Tune how LoopW recognizes and holds the trigger."
+                                           Style="{StaticResource DescriptionStyle}"
+                                           Margin="0,4,0,12" />
+                                <CheckBox x:Name="DoubleClickTriggerCheck"
+                                          Content="Require a double-click to activate"
+                                          Style="{StaticResource ToggleCheckBoxStyle}"
+                                          Checked="TriggerBehavior_Changed"
+                                          Unchecked="TriggerBehavior_Changed" />
+                                <CheckBox x:Name="MiddleClickTriggerCheck"
+                                          Content="Allow middle mouse button to activate"
+                                          Style="{StaticResource ToggleCheckBoxStyle}"
+                                          Checked="TriggerBehavior_Changed"
+                                          Unchecked="TriggerBehavior_Changed" />
+                                <Grid Margin="0,8,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="170" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel>
+                                        <TextBlock Text="Modifier side" Style="{StaticResource SettingLabelStyle}" />
+                                        <TextBlock Text="Use either side, or require the left/right modifier."
+                                                   Style="{StaticResource DescriptionStyle}"
+                                                   Margin="0,3,0,0" />
+                                    </StackPanel>
+                                    <ComboBox x:Name="TriggerSideCombo"
+                                              Grid.Column="1"
+                                              SelectedValuePath="Tag"
+                                              SelectionChanged="TriggerSide_SelectionChanged"
+                                              VerticalAlignment="Center">
+                                        <ComboBoxItem Content="Either side" Tag="Any" />
+                                        <ComboBoxItem Content="Left side" Tag="Left" />
+                                        <ComboBoxItem Content="Right side" Tag="Right" />
+                                    </ComboBox>
+                                </Grid>
+                                <Grid Margin="0,16,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="Activation delay" Style="{StaticResource SettingLabelStyle}" />
+                                    <TextBlock x:Name="TriggerDelayValue"
+                                               Grid.Column="1"
+                                               Foreground="{DynamicResource SecondaryTextBrush}" />
+                                </Grid>
+                                <Slider x:Name="TriggerDelaySlider"
+                                        Minimum="0"
+                                        Maximum="1000"
+                                        TickFrequency="50"
+                                        IsSnapToTickEnabled="True"
+                                        ValueChanged="TriggerBehavior_ValueChanged" />
+                                <Grid Margin="0,16,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="Activation timeout" Style="{StaticResource SettingLabelStyle}" />
+                                    <TextBlock x:Name="TriggerTimeoutValue"
+                                               Grid.Column="1"
+                                               Foreground="{DynamicResource SecondaryTextBrush}" />
+                                </Grid>
+                                <Slider x:Name="TriggerTimeoutSlider"
+                                        Minimum="0"
+                                        Maximum="10000"
+                                        TickFrequency="500"
+                                        IsSnapToTickEnabled="True"
+                                        ValueChanged="TriggerBehavior_ValueChanged" />
+                                <TextBlock Text="A timeout closes an inactive radial menu without committing an action. Set it to Off to disable it."
+                                           Style="{StaticResource DescriptionStyle}"
+                                           Margin="0,8,0,0" />
+                            </StackPanel>
+                        </Border>
+
                         <Border Style="{StaticResource CardStyle}"
                                 Margin="0,12,0,0"
-                                Visibility="Collapsed">
+                                Visibility="Visible">
                             <Grid>
                                 <Grid.RowDefinitions>
                                     <RowDefinition Height="Auto" />
@@ -435,7 +510,7 @@
                                 </Grid.RowDefinitions>
                                 <StackPanel>
                                     <TextBlock Text="Keybinds" FontSize="14" FontWeight="SemiBold" />
-                                    <TextBlock Text="Hold the trigger, then press a bound key to apply an action instantly."
+                                    <TextBlock Text="Hold the trigger, or mark a keybind to run without it, to apply an action instantly."
                                                Style="{StaticResource DescriptionStyle}"
                                                Margin="0,4,0,0" />
                                 </StackPanel>
@@ -457,6 +532,7 @@
                                                     <Grid.ColumnDefinitions>
                                                         <ColumnDefinition Width="Auto" />
                                                         <ColumnDefinition Width="*" />
+                                                        <ColumnDefinition Width="Auto" />
                                                         <ColumnDefinition Width="Auto" />
                                                         <ColumnDefinition Width="Auto" />
                                                     </Grid.ColumnDefinitions>
@@ -481,7 +557,16 @@
                                                               Margin="0,0,12,0"
                                                               Checked="Cycle_Changed"
                                                               Unchecked="Cycle_Changed" />
-                                                    <Button Grid.Column="3"
+                                                    <CheckBox Grid.Column="3"
+                                                              Content="Bypass trigger"
+                                                              Style="{StaticResource ToggleCheckBoxStyle}"
+                                                              IsChecked="{Binding Keybind.BypassTrigger}"
+                                                              VerticalAlignment="Center"
+                                                              Margin="0,0,12,0"
+                                                              Checked="Bypass_Changed"
+                                                              Unchecked="Bypass_Changed"
+                                                              ToolTip="Run this action without holding the trigger" />
+                                                    <Button Grid.Column="4"
                                                             Content="Delete"
                                                             Style="{StaticResource DangerButtonStyle}"
                                                             Click="Delete_Click"
@@ -562,6 +647,73 @@
                                            Style="{StaticResource DescriptionStyle}"
                                            Margin="0,8,0,0" />
                             </StackPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource CardStyle}" Margin="0,12,0,0">
+                            <StackPanel>
+                                <TextBlock Text="Wedge assignments" FontSize="14" FontWeight="SemiBold" />
+                                <TextBlock Text="Choose what each direction commits. Keybind entries follow the bindings in Advanced."
+                                           Style="{StaticResource DescriptionStyle}"
+                                           Margin="0,4,0,14" />
+                                <ItemsControl x:Name="RadialSlotList">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Grid Margin="0,4">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="105" />
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock Text="{Binding Label}"
+                                                           Style="{StaticResource SettingLabelStyle}"
+                                                           VerticalAlignment="Center" />
+                                                <ComboBox Grid.Column="1"
+                                                          ItemsSource="{Binding Choices}"
+                                                          SelectedItem="{Binding SelectedChoice, Mode=TwoWay}"
+                                                          SelectionChanged="RadialSlot_SelectionChanged"
+                                                          VerticalAlignment="Center" />
+                                                <CheckBox Grid.Column="2"
+                                                          Content="Cycle"
+                                                          Style="{StaticResource ToggleCheckBoxStyle}"
+                                                          IsChecked="{Binding CycleEnabled, Mode=TwoWay}"
+                                                          IsEnabled="{Binding CanCycle}"
+                                                          Margin="12,0,0,0"
+                                                          VerticalAlignment="Center"
+                                                          Checked="RadialSlotCycle_Changed"
+                                                          Unchecked="RadialSlotCycle_Changed" />
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource CardStyle}" Margin="0,12,0,0">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="230" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel>
+                                    <TextBlock Text="Center action" FontSize="14" FontWeight="SemiBold" />
+                                    <TextBlock Text="The center is selected when the cursor rests inside the ring."
+                                               Style="{StaticResource DescriptionStyle}"
+                                               Margin="0,4,0,0" />
+                                </StackPanel>
+                                <ComboBox x:Name="CenterActionCombo"
+                                          Grid.Column="1"
+                                          VerticalAlignment="Center"
+                                          SelectionChanged="CenterAction_SelectionChanged" />
+                                <CheckBox x:Name="CenterCycleCheck"
+                                          Grid.Column="2"
+                                          Content="Cycle"
+                                          Style="{StaticResource ToggleCheckBoxStyle}"
+                                          Margin="12,0,0,0"
+                                          VerticalAlignment="Center"
+                                          Checked="CenterCycle_Changed"
+                                          Unchecked="CenterCycle_Changed" />
+                            </Grid>
                         </Border>
                     </StackPanel>
 
