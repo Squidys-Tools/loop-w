@@ -37,15 +37,19 @@ internal static class WindowQuery
         return frames;
     }
 
-    public static bool IsEligibleForSnap(IntPtr window) => IsEligible(window, IntPtr.Zero);
+    public static bool IsEligibleForSnap(IntPtr window) =>
+        !NativeMethods.IsIconic(window) &&
+        WindowPolicy.IsEligibleForEnumeration(window, IntPtr.Zero);
 
     private static List<WindowCandidate> Enumerate(IntPtr excludedWindow)
     {
         var windows = new List<WindowCandidate>();
         NativeMethods.EnumWindows((window, _) =>
         {
-            if (IsEligible(window, excludedWindow) &&
-                NativeMethods.GetWindowRect(window, out var frame))
+            if (!NativeMethods.IsIconic(window) &&
+                WindowPolicy.IsEligibleForEnumeration(window, excludedWindow) &&
+                NativeMethods.GetWindowRect(window, out var frame) &&
+                frame.Width > 0 && frame.Height > 0)
             {
                 windows.Add(new WindowCandidate(window, frame));
             }
@@ -55,31 +59,6 @@ internal static class WindowQuery
         return windows;
     }
 
-    private static bool IsEligible(IntPtr window, IntPtr excludedWindow)
-    {
-        if (window == IntPtr.Zero || window == excludedWindow || !NativeMethods.IsWindow(window) ||
-            !NativeMethods.IsWindowVisible(window) || NativeMethods.IsIconic(window))
-        {
-            return false;
-        }
-
-        var style = NativeMethods.GetWindowLongPtr(window, NativeMethods.GwlStyle).ToInt64();
-        var extendedStyle = NativeMethods.GetWindowLongPtr(window, NativeMethods.GwlExStyle).ToInt64();
-        if ((style & NativeMethods.WsChild) != 0 ||
-            (extendedStyle & NativeMethods.WsExToolWindow) != 0 ||
-            NativeMethods.GetWindow(window, NativeMethods.GwOwner) != IntPtr.Zero)
-        {
-            return false;
-        }
-
-        NativeMethods.GetWindowThreadProcessId(window, out var processId);
-        if (processId == Environment.ProcessId)
-        {
-            return false;
-        }
-
-        return NativeMethods.GetWindowRect(window, out var frame) && frame.Width > 0 && frame.Height > 0;
-    }
 }
 
 internal static class WindowNavigation

@@ -27,6 +27,10 @@ internal static class Program
         ("stash settings normalize safely", StashSettingsNormalizeSafely),
         ("stash settings keep newest records", StashSettingsKeepNewestRecords),
         ("same-monitor DPI changes preserve stash frames", SameMonitorDpiChangesPreserveStashFrames),
+        ("same-monitor work-area changes rebase stash frames", SameMonitorWorkAreaChangesRebaseStashFrames),
+        ("screen padding combines global and edge values", ScreenPaddingCombinesGlobalAndEdges),
+        ("logical monitor moves scale frame size", LogicalMonitorMovesScaleFrameSize),
+        ("screen and exclusion settings normalize", ScreenAndExclusionSettingsNormalize),
         ("radial geometry creates annulus and wedge paths", RadialGeometryCreatesPaths),
         ("command parser maps direction aliases", CommandParserMapsDirectionAliases),
         ("command parser maps action names", CommandParserMapsActionNames),
@@ -352,6 +356,79 @@ internal static class Program
         var frame = Rect(100, 120, 700, 620);
 
         Equal(frame, WindowStashService.RebaseRect(frame, original, changedDpi));
+    }
+
+    private static void ScreenPaddingCombinesGlobalAndEdges()
+    {
+        var settings = new AppSettings
+        {
+            GlobalScreenPadding = 8,
+            ScreenPaddingLeft = 4,
+            ScreenPaddingTop = 2,
+            ScreenPaddingRight = 6,
+            ScreenPaddingBottom = 10
+        };
+
+        Equal(
+            Rect(12, 10, 986, 782),
+            MonitorService.ApplyPadding(Rect(0, 0, 1000, 800), settings));
+    }
+
+    private static void LogicalMonitorMovesScaleFrameSize()
+    {
+        var source = new MonitorSnapshot(Rect(0, 0, 1920, 1080), Rect(0, 0, 1920, 1040), 96, 96);
+        var target = new MonitorSnapshot(Rect(1920, 0, 3840, 1080), Rect(1920, 0, 3840, 1040), 144, 144);
+
+        Equal(
+            Rect(2070, 150, 2970, 900),
+            MonitorService.TranslateFrame(
+                Rect(100, 100, 700, 600),
+                source,
+                target,
+                MonitorMoveSizePolicy.PreserveLogicalSize));
+    }
+
+    private static void SameMonitorWorkAreaChangesRebaseStashFrames()
+    {
+        var original = new StashMonitor
+        {
+            Monitor = StashRect.FromNative(Rect(0, 0, 1920, 1080)),
+            Work = StashRect.FromNative(Rect(0, 0, 1920, 1040)),
+            DpiX = 96,
+            DpiY = 96
+        };
+        var changedWork = new StashMonitor
+        {
+            Monitor = StashRect.FromNative(Rect(0, 0, 1920, 1080)),
+            Work = StashRect.FromNative(Rect(0, 40, 1920, 1040)),
+            DpiX = 96,
+            DpiY = 96
+        };
+
+        Equal(
+            Rect(100, 160, 700, 660),
+            WindowStashService.RebaseRect(Rect(100, 120, 700, 620), original, changedWork));
+    }
+
+    private static void ScreenAndExclusionSettingsNormalize()
+    {
+        var settings = new AppSettings
+        {
+            MonitorMoveSizePolicy = (MonitorMoveSizePolicy)999,
+            GlobalScreenPadding = -1,
+            ScreenPaddingLeft = 999,
+            ExcludedExecutablePaths = new List<string> { " C:\\Apps\\Editor.exe ", "c:\\apps\\editor.exe", "" },
+            ExcludedProcessNames = new List<string> { "Editor.exe", "editor", "  " }
+        };
+
+        settings.Normalize();
+
+        Equal(MonitorMoveSizePolicy.PreservePixels, settings.MonitorMoveSizePolicy);
+        Equal(0, settings.GlobalScreenPadding);
+        Equal(128, settings.ScreenPaddingLeft);
+        Equal(1, settings.ExcludedExecutablePaths.Count);
+        Equal(1, settings.ExcludedProcessNames.Count);
+        Equal("Editor", settings.ExcludedProcessNames[0]);
     }
 
     private static void RadialGeometryCreatesPaths()

@@ -83,6 +83,32 @@ internal sealed class DragSnapService : IDisposable
         }
     }
 
+    public void RefreshTarget()
+    {
+        if (!_leftButtonDown || !_dragStarted)
+        {
+            return;
+        }
+
+        if (!NativeMethods.GetCursorPos(out var point) || !TryGetTarget(point, out var target))
+        {
+            if (_target.HasValue)
+            {
+                _target = null;
+                TargetCleared?.Invoke();
+            }
+
+            return;
+        }
+
+        if (_target != target)
+        {
+            _target = target;
+            _hadCandidate = true;
+            TargetChanged?.Invoke(target);
+        }
+    }
+
     public void Dispose()
     {
         _captureTimer.Stop();
@@ -274,13 +300,8 @@ internal sealed class DragSnapService : IDisposable
     private bool TryGetTarget(NativeMethods.Point point, out DragSnapTarget target)
     {
         target = default;
-        var monitor = NativeMethods.MonitorFromPoint(point, NativeMethods.MonitorDefaultToNearest);
-        var info = new NativeMethods.MonitorInfo
-        {
-            Size = Marshal.SizeOf<NativeMethods.MonitorInfo>()
-        };
-        if (monitor == IntPtr.Zero || !NativeMethods.GetMonitorInfo(monitor, ref info) ||
-            !DragSnapGeometry.TryResolve(info.Monitor, info.Work, point, _settings.DragSnapThreshold, out var zone))
+        if (!MonitorService.TryGetForPoint(point, out var monitor) ||
+            !DragSnapGeometry.TryResolve(monitor.Monitor, monitor.Work, point, _settings.DragSnapThreshold, out var zone))
         {
             return false;
         }

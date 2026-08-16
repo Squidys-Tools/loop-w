@@ -317,6 +317,11 @@
                                  GroupName="SettingsSections"
                                  Style="{StaticResource NavButtonStyle}"
                                  Checked="SectionNav_Checked" />
+                    <RadioButton Content="Screens &amp; apps"
+                                 Tag="Screens"
+                                 GroupName="SettingsSections"
+                                 Style="{StaticResource NavButtonStyle}"
+                                 Checked="SectionNav_Checked" />
                     <RadioButton Content="Appearance"
                                  Tag="Appearance"
                                  GroupName="SettingsSections"
@@ -884,6 +889,134 @@
                                         TickFrequency="20"
                                         IsSnapToTickEnabled="True"
                                         ValueChanged="Stash_ValueChanged" />
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+
+                    <StackPanel x:Name="ScreensSection" Visibility="Collapsed">
+                        <Grid Margin="0,0,0,16">
+                            <StackPanel>
+                                <TextBlock Text="Screens &amp; apps" FontSize="21" FontWeight="SemiBold" />
+                                <TextBlock Text="Choose how LoopW treats monitor boundaries and application targets."
+                                           Style="{StaticResource DescriptionStyle}"
+                                           Margin="0,5,0,0" />
+                            </StackPanel>
+                            <Button Content="Reset section"
+                                    Tag="Screens"
+                                    Style="{StaticResource QuietButtonStyle}"
+                                    HorizontalAlignment="Right"
+                                    VerticalAlignment="Bottom"
+                                    Click="ResetSection_Click" />
+                        </Grid>
+
+                        <Border Style="{StaticResource CardStyle}">
+                            <StackPanel>
+                                <TextBlock Text="Moving between monitors" FontSize="14" FontWeight="SemiBold" />
+                                <TextBlock Text="Logical size scales a window with the destination DPI. Pixel size keeps its current physical dimensions."
+                                           Style="{StaticResource DescriptionStyle}"
+                                           Margin="0,4,0,12" />
+                                <ComboBox x:Name="MonitorMovePolicyCombo"
+                                          SelectedValuePath="Tag"
+                                          SelectionChanged="MonitorMovePolicy_SelectionChanged">
+                                    <ComboBoxItem Content="Preserve pixel size" Tag="PreservePixels" />
+                                    <ComboBoxItem Content="Preserve logical size" Tag="PreserveLogicalSize" />
+                                </ComboBox>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource CardStyle}" Margin="0,12,0,0">
+                            <StackPanel>
+                                <TextBlock Text="Screen padding" FontSize="14" FontWeight="SemiBold" />
+                                <TextBlock Text="Keep action frames away from display edges. Global padding is added to each edge, then the per-edge values are added."
+                                           Style="{StaticResource DescriptionStyle}"
+                                           Margin="0,4,0,12" />
+                                <Grid>
+                                    <TextBlock Text="Global" Style="{StaticResource SettingLabelStyle}" />
+                                    <TextBlock x:Name="GlobalScreenPaddingValue"
+                                               TextAlignment="Right"
+                                               Foreground="{DynamicResource SecondaryTextBrush}" />
+                                </Grid>
+                                <Slider x:Name="GlobalScreenPaddingSlider"
+                                        Minimum="0"
+                                        Maximum="64"
+                                        TickFrequency="4"
+                                        IsSnapToTickEnabled="True"
+                                        ValueChanged="ScreenPadding_ValueChanged" />
+                                <Grid Margin="0,12,0,0">
+                                    <TextBlock Text="Left" Style="{StaticResource SettingLabelStyle}" />
+                                    <TextBlock x:Name="ScreenPaddingLeftValue"
+                                               TextAlignment="Right"
+                                               Foreground="{DynamicResource SecondaryTextBrush}" />
+                                </Grid>
+                                <Slider x:Name="ScreenPaddingLeftSlider"
+                                        Minimum="0"
+                                        Maximum="64"
+                                        TickFrequency="4"
+                                        IsSnapToTickEnabled="True"
+                                        ValueChanged="ScreenPadding_ValueChanged" />
+                                <Grid Margin="0,12,0,0">
+                                    <TextBlock Text="Top" Style="{StaticResource SettingLabelStyle}" />
+                                    <TextBlock x:Name="ScreenPaddingTopValue"
+                                               TextAlignment="Right"
+                                               Foreground="{DynamicResource SecondaryTextBrush}" />
+                                </Grid>
+                                <Slider x:Name="ScreenPaddingTopSlider"
+                                        Minimum="0"
+                                        Maximum="64"
+                                        TickFrequency="4"
+                                        IsSnapToTickEnabled="True"
+                                        ValueChanged="ScreenPadding_ValueChanged" />
+                                <Grid Margin="0,12,0,0">
+                                    <TextBlock Text="Right" Style="{StaticResource SettingLabelStyle}" />
+                                    <TextBlock x:Name="ScreenPaddingRightValue"
+                                               TextAlignment="Right"
+                                               Foreground="{DynamicResource SecondaryTextBrush}" />
+                                </Grid>
+                                <Slider x:Name="ScreenPaddingRightSlider"
+                                        Minimum="0"
+                                        Maximum="64"
+                                        TickFrequency="4"
+                                        IsSnapToTickEnabled="True"
+                                        ValueChanged="ScreenPadding_ValueChanged" />
+                                <Grid Margin="0,12,0,0">
+                                    <TextBlock Text="Bottom" Style="{StaticResource SettingLabelStyle}" />
+                                    <TextBlock x:Name="ScreenPaddingBottomValue"
+                                               TextAlignment="Right"
+                                               Foreground="{DynamicResource SecondaryTextBrush}" />
+                                </Grid>
+                                <Slider x:Name="ScreenPaddingBottomSlider"
+                                        Minimum="0"
+                                        Maximum="64"
+                                        TickFrequency="4"
+                                        IsSnapToTickEnabled="True"
+                                        ValueChanged="ScreenPadding_ValueChanged" />
+                            </StackPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource CardStyle}" Margin="0,12,0,0">
+                            <StackPanel>
+                                <TextBlock Text="Excluded applications" FontSize="14" FontWeight="SemiBold" />
+                                <TextBlock Text="One executable path per line. Matching apps are ignored by actions, focus, fill, minimize-others, snapping, stash, and IPC."
+                                           Style="{StaticResource DescriptionStyle}"
+                                           Margin="0,4,0,8" />
+                                <TextBox x:Name="ExcludedExecutablePathsText"
+                                         MinHeight="72"
+                                         AcceptsReturn="True"
+                                         TextWrapping="Wrap"
+                                         VerticalScrollBarVisibility="Auto"
+                                         LostFocus="Exclusions_LostFocus" />
+                                <TextBlock Text="Process names"
+                                           Style="{StaticResource SettingLabelStyle}"
+                                           Margin="0,14,0,4" />
+                                <TextBox x:Name="ExcludedProcessNamesText"
+                                         MinHeight="56"
+                                         AcceptsReturn="True"
+                                         TextWrapping="Wrap"
+                                         VerticalScrollBarVisibility="Auto"
+                                         LostFocus="Exclusions_LostFocus" />
+                                <TextBlock Text="Use names such as ExampleApp or ExampleApp.exe. Changes save when the field loses focus."
+                                           Style="{StaticResource DescriptionStyle}"
+                                           Margin="0,8,0,0" />
                             </StackPanel>
                         </Border>
                     </StackPanel>

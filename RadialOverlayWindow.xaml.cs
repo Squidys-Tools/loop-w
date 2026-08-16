@@ -230,6 +230,14 @@ public partial class RadialOverlayWindow : Window
         CloseOverlay();
     }
 
+    internal void RefreshTargetFrame()
+    {
+        if (_selected is { } selection)
+        {
+            ShowPreviewFor(selection);
+        }
+    }
+
     private void Overlay_MouseMove(object sender, MouseEventArgs e)
     {
         if (!_settings.CursorInteractionEnabled)
@@ -332,6 +340,11 @@ public partial class RadialOverlayWindow : Window
 
         HighlightCenter(selection is RadialSelection.Center);
 
+        ShowPreviewFor(selection);
+    }
+
+    private void ShowPreviewFor(RadialSelection? selection)
+    {
         var action = selection is { } resolvedSelection
             ? RadialTargetResolver.ActionOf(resolvedSelection.Target)
             : null;
