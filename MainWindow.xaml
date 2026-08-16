@@ -212,36 +212,36 @@
                 </Grid.RenderTransform>
                 <Canvas x:Name="RadialPanelCanvas" Width="334.4" Height="334.4">
                     <Path x:Name="RadialRing" Width="182.4" Height="182.4" Canvas.Left="76" Canvas.Top="76" Fill="#B61E1E1E" />
-                    <Path x:Name="RightWedge" Width="182.4" Height="182.4" Canvas.Left="76" Canvas.Top="76" Tag="RightHalf" Style="{StaticResource WedgeStyle}" MouseLeftButtonUp="Wedge_MouseUp" />
-                    <Path x:Name="BottomRightWedge" Width="182.4" Height="182.4" Canvas.Left="76" Canvas.Top="76" Tag="BottomRightQuarter" Style="{StaticResource WedgeStyle}" MouseLeftButtonUp="Wedge_MouseUp" />
-                    <Path x:Name="BottomWedge" Width="182.4" Height="182.4" Canvas.Left="76" Canvas.Top="76" Tag="BottomHalf" Style="{StaticResource WedgeStyle}" MouseLeftButtonUp="Wedge_MouseUp" />
-                    <Path x:Name="BottomLeftWedge" Width="182.4" Height="182.4" Canvas.Left="76" Canvas.Top="76" Tag="BottomLeftQuarter" Style="{StaticResource WedgeStyle}" MouseLeftButtonUp="Wedge_MouseUp" />
-                    <Path x:Name="LeftWedge" Width="182.4" Height="182.4" Canvas.Left="76" Canvas.Top="76" Tag="LeftHalf" Style="{StaticResource WedgeStyle}" MouseLeftButtonUp="Wedge_MouseUp" />
-                    <Path x:Name="TopLeftWedge" Width="182.4" Height="182.4" Canvas.Left="76" Canvas.Top="76" Tag="TopLeftQuarter" Style="{StaticResource WedgeStyle}" MouseLeftButtonUp="Wedge_MouseUp" />
-                    <Path x:Name="TopWedge" Width="182.4" Height="182.4" Canvas.Left="76" Canvas.Top="76" Tag="TopHalf" Style="{StaticResource WedgeStyle}" MouseLeftButtonUp="Wedge_MouseUp" />
-                    <Path x:Name="TopRightWedge" Width="182.4" Height="182.4" Canvas.Left="76" Canvas.Top="76" Tag="TopRightQuarter" Style="{StaticResource WedgeStyle}" MouseLeftButtonUp="Wedge_MouseUp" />
+                    <Path x:Name="RightWedge" Width="182.4" Height="182.4" Canvas.Left="76" Canvas.Top="76" Tag="0" Style="{StaticResource WedgeStyle}" MouseLeftButtonUp="Wedge_MouseUp" />
+                    <Path x:Name="BottomRightWedge" Width="182.4" Height="182.4" Canvas.Left="76" Canvas.Top="76" Tag="1" Style="{StaticResource WedgeStyle}" MouseLeftButtonUp="Wedge_MouseUp" />
+                    <Path x:Name="BottomWedge" Width="182.4" Height="182.4" Canvas.Left="76" Canvas.Top="76" Tag="2" Style="{StaticResource WedgeStyle}" MouseLeftButtonUp="Wedge_MouseUp" />
+                    <Path x:Name="BottomLeftWedge" Width="182.4" Height="182.4" Canvas.Left="76" Canvas.Top="76" Tag="3" Style="{StaticResource WedgeStyle}" MouseLeftButtonUp="Wedge_MouseUp" />
+                    <Path x:Name="LeftWedge" Width="182.4" Height="182.4" Canvas.Left="76" Canvas.Top="76" Tag="4" Style="{StaticResource WedgeStyle}" MouseLeftButtonUp="Wedge_MouseUp" />
+                    <Path x:Name="TopLeftWedge" Width="182.4" Height="182.4" Canvas.Left="76" Canvas.Top="76" Tag="5" Style="{StaticResource WedgeStyle}" MouseLeftButtonUp="Wedge_MouseUp" />
+                    <Path x:Name="TopWedge" Width="182.4" Height="182.4" Canvas.Left="76" Canvas.Top="76" Tag="6" Style="{StaticResource WedgeStyle}" MouseLeftButtonUp="Wedge_MouseUp" />
+                    <Path x:Name="TopRightWedge" Width="182.4" Height="182.4" Canvas.Left="76" Canvas.Top="76" Tag="7" Style="{StaticResource WedgeStyle}" MouseLeftButtonUp="Wedge_MouseUp" />
                 </Canvas>
 
                 <StackPanel HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,4,0,0" IsHitTestVisible="False">
                     <TextBlock Text="↑" FontSize="18" HorizontalAlignment="Center" Foreground="{DynamicResource AccentBrush}" />
-                    <TextBlock Text="Top half" FontSize="12" HorizontalAlignment="Center" Margin="0,2,0,0" />
+                    <TextBlock x:Name="TopActionLabel" Text="Top half" FontSize="12" HorizontalAlignment="Center" Margin="0,2,0,0" TextWrapping="Wrap" MaxWidth="100" />
                 </StackPanel>
                 <StackPanel HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,12,0" IsHitTestVisible="False">
                     <TextBlock Text="→" FontSize="18" HorizontalAlignment="Center" Foreground="{DynamicResource AccentBrush}" />
-                    <TextBlock Text="Right half" FontSize="12" HorizontalAlignment="Center" Margin="0,2,0,0" />
+                    <TextBlock x:Name="RightActionLabel" Text="Right half" FontSize="12" HorizontalAlignment="Center" Margin="0,2,0,0" TextWrapping="Wrap" MaxWidth="100" />
                 </StackPanel>
                 <StackPanel HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,4" IsHitTestVisible="False">
                     <TextBlock Text="↓" FontSize="18" HorizontalAlignment="Center" Foreground="{DynamicResource AccentBrush}" />
-                    <TextBlock Text="Bottom half" FontSize="12" HorizontalAlignment="Center" Margin="0,2,0,0" />
+                    <TextBlock x:Name="BottomActionLabel" Text="Bottom half" FontSize="12" HorizontalAlignment="Center" Margin="0,2,0,0" TextWrapping="Wrap" MaxWidth="100" />
                 </StackPanel>
                 <StackPanel HorizontalAlignment="Left" VerticalAlignment="Center" Margin="12,0,0,0" IsHitTestVisible="False">
                     <TextBlock Text="←" FontSize="18" HorizontalAlignment="Center" Foreground="{DynamicResource AccentBrush}" />
-                    <TextBlock Text="Left half" FontSize="12" HorizontalAlignment="Center" Margin="0,2,0,0" />
+                    <TextBlock x:Name="LeftActionLabel" Text="Left half" FontSize="12" HorizontalAlignment="Center" Margin="0,2,0,0" TextWrapping="Wrap" MaxWidth="100" />
                 </StackPanel>
-                <TextBlock Text="Top-left quarter" FontSize="10" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="58,84,0,0" IsHitTestVisible="False" />
-                <TextBlock Text="Top-right quarter" FontSize="10" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,84,58,0" IsHitTestVisible="False" />
-                <TextBlock Text="Bottom-left quarter" FontSize="10" HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="58,0,0,84" IsHitTestVisible="False" />
-                <TextBlock Text="Bottom-right quarter" FontSize="10" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,58,84" IsHitTestVisible="False" />
+                <TextBlock x:Name="TopLeftActionLabel" Text="Top-left quarter" FontSize="10" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="58,84,0,0" IsHitTestVisible="False" TextWrapping="Wrap" MaxWidth="85" />
+                <TextBlock x:Name="TopRightActionLabel" Text="Top-right quarter" FontSize="10" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,84,58,0" IsHitTestVisible="False" TextWrapping="Wrap" MaxWidth="85" />
+                <TextBlock x:Name="BottomLeftActionLabel" Text="Bottom-left quarter" FontSize="10" HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="58,0,0,84" IsHitTestVisible="False" TextWrapping="Wrap" MaxWidth="85" />
+                <TextBlock x:Name="BottomRightActionLabel" Text="Bottom-right quarter" FontSize="10" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,58,84" IsHitTestVisible="False" TextWrapping="Wrap" MaxWidth="85" />
             </Grid>
         </Border>
 

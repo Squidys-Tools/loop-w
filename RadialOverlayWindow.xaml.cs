@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Interop;
@@ -17,8 +18,10 @@ public partial class RadialOverlayWindow : Window
     private const double OverlayScale = 0.7333333333;
 
     private readonly IntPtr _targetWindow;
-    private readonly Action<WindowAction> _commit;
+    private readonly Action<RadialTarget> _commit;
     private readonly AppSettings _settings;
+    private readonly IReadOnlyList<RadialTarget> _slotTargets;
+    private readonly RadialTarget _centerTarget;
     private readonly PreviewOverlayWindow _preview;
     private readonly DispatcherTimer _pollTimer;
     private readonly double _center;
@@ -26,17 +29,19 @@ public partial class RadialOverlayWindow : Window
     private readonly double _innerRadius;
     private readonly double _blurMargin;
     private readonly Path[] _wedgePaths;
-    private WindowAction? _selected;
+    private RadialSelection? _selected;
     private bool _closing;
     private double _dpiX = 96;
     private double _dpiY = 96;
 
-    internal RadialOverlayWindow(IntPtr targetWindow, Action<WindowAction> commit, AppSettings settings)
+    internal RadialOverlayWindow(IntPtr targetWindow, Action<RadialTarget> commit, AppSettings settings)
     {
         InitializeComponent();
         _targetWindow = targetWindow;
         _commit = commit;
         _settings = settings;
+        _slotTargets = RadialActionCatalog.LoadTargets(settings);
+        _centerTarget = RadialTargetResolver.Resolve(settings.CenterTarget, settings.Keybinds);
         _preview = new PreviewOverlayWindow(settings);
         _outerRadius = settings.RadialOuterRadius * OverlayScale;
         _innerRadius = settings.RadialInnerRadius * OverlayScale;
@@ -73,11 +78,12 @@ public partial class RadialOverlayWindow : Window
     private void BuildGeometry()
     {
         Ring.Data = RadialGeometry.BuildAnnulus(_center, _outerRadius, _innerRadius);
+        CenterHighlight.Data = new EllipseGeometry(new Point(_center, _center), _innerRadius, _innerRadius);
         BackdropImage.Clip = RadialGeometry.BuildAnnulus(_center + _blurMargin, _outerRadius, _innerRadius);
 
-        for (var i = 0; i < RadialActionCatalog.Slots.Count; i++)
+        for (var i = 0; i < RadialActionCatalog.Geometry.Count; i++)
         {
-            var slot = RadialActionCatalog.Slots[i];
+            var slot = RadialActionCatalog.Geometry[i];
             _wedgePaths[i].Data = RadialGeometry.BuildWedge(
                 _center,
                 _outerRadius,
@@ -204,9 +210,9 @@ public partial class RadialOverlayWindow : Window
             return;
         }
 
-        if (_selected.HasValue)
+        if (_selected is { } selected)
         {
-            Commit(_selected.Value);
+            Commit(selected.Target);
         }
         else
         {
@@ -241,13 +247,13 @@ public partial class RadialOverlayWindow : Window
 
         if (Math.Sqrt(dx * dx + dy * dy) < _innerRadius)
         {
-            SetSelection(null);
+            SetSelection(CreateCenterSelection());
             return;
         }
 
-        var selection = RadialActionCatalog.ActionAt(Math.Atan2(dy, dx) * 180 / Math.PI);
+        var index = RadialActionCatalog.IndexAt(Math.Atan2(dy, dx) * 180 / Math.PI);
 
-        SetSelection(selection);
+        SetSelection(CreateWedgeSelection(index));
     }
 
     private void Overlay_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
@@ -257,9 +263,9 @@ public partial class RadialOverlayWindow : Window
             return;
         }
 
-        if (_selected.HasValue)
+        if (_selected is { } selected)
         {
-            Commit(_selected.Value);
+            Commit(selected.Target);
         }
         else
         {
@@ -276,23 +282,32 @@ public partial class RadialOverlayWindow : Window
             return;
         }
 
-        var selection = e.Key switch
+        var index = e.Key switch
         {
-            Key.Left => WindowAction.LeftHalf,
-            Key.Right => WindowAction.RightHalf,
-            Key.Up => WindowAction.TopHalf,
-            Key.Down => WindowAction.BottomHalf,
-            _ => (WindowAction?)null
+            Key.Right => 0,
+            Key.Down => 2,
+            Key.Left => 4,
+            Key.Up => 6,
+            _ => -1
         };
 
-        if (selection.HasValue)
+        if (index >= 0)
         {
-            Commit(selection.Value);
+            var selection = CreateWedgeSelection(index);
+            if (selection is { } resolved)
+            {
+                Commit(resolved.Target);
+            }
+            else
+            {
+                CloseOverlay();
+            }
+
             e.Handled = true;
         }
     }
 
-    private void SetSelection(WindowAction? selection)
+    private void SetSelection(RadialSelection? selection)
     {
         if (_selected == selection)
         {
@@ -305,18 +320,24 @@ public partial class RadialOverlayWindow : Window
         // Cursor polling runs every 20 ms, so only animate the paths whose state
         // changed. Reapplying all eight animations on every tick creates and
         // replaces hundreds of animation clocks per second while hovering.
-        for (var i = 0; i < RadialActionCatalog.Slots.Count; i++)
+        var previousIndex = previous is RadialSelection.Wedge previousWedge ? previousWedge.Index : -1;
+        var selectedIndex = selection is RadialSelection.Wedge selectedWedge ? selectedWedge.Index : -1;
+        for (var i = 0; i < RadialActionCatalog.Geometry.Count; i++)
         {
-            var action = RadialActionCatalog.Slots[i].Action;
-            if (action == previous || action == selection)
+            if (i == previousIndex || i == selectedIndex)
             {
-                HighlightWedge(_wedgePaths[i], action == selection);
+                HighlightWedge(_wedgePaths[i], i == selectedIndex);
             }
         }
 
-        if (_settings.PreviewEnabled && selection.HasValue && WindowActionService.TryGetTargetFrame(_targetWindow, selection.Value, out var frame, out _))
+        HighlightCenter(selection is RadialSelection.Center);
+
+        var action = selection is { } resolvedSelection
+            ? RadialTargetResolver.ActionOf(resolvedSelection.Target)
+            : null;
+        if (_settings.PreviewEnabled && action.HasValue && WindowActionService.TryGetTargetFrame(_targetWindow, action.Value, out var frame, out _))
         {
-            _preview.ShowFrame(frame, selection.Value);
+            _preview.ShowFrame(frame, action.Value);
             _preview.Topmost = true;
             RaiseAbovePreview();
         }
@@ -359,15 +380,51 @@ public partial class RadialOverlayWindow : Window
         wedge.BeginAnimation(UIElement.OpacityProperty, animation, HandoffBehavior.SnapshotAndReplace);
     }
 
-    private void Commit(WindowAction action)
+    private RadialSelection? CreateWedgeSelection(int index)
+    {
+        if (index < 0 || index >= _slotTargets.Count || _slotTargets[index] is RadialTarget.None)
+        {
+            return null;
+        }
+
+        return new RadialSelection.Wedge(index, _slotTargets[index]);
+    }
+
+    private RadialSelection? CreateCenterSelection() => _centerTarget is RadialTarget.None
+        ? null
+        : new RadialSelection.Center(_centerTarget);
+
+    private void Commit(RadialTarget target)
     {
         if (_closing)
         {
             return;
         }
 
-        _commit(action);
+        _commit(target);
         CloseOverlay();
+    }
+
+    private void HighlightCenter(bool on)
+    {
+        var target = on ? 1 : 0;
+        var from = CenterHighlight.Opacity;
+        CenterHighlight.BeginAnimation(UIElement.OpacityProperty, null);
+        CenterHighlight.Opacity = target;
+
+        if (Math.Abs(from - target) < 0.001)
+        {
+            return;
+        }
+
+        CenterHighlight.BeginAnimation(
+            UIElement.OpacityProperty,
+            new DoubleAnimation(from, target, new Duration(TimeSpan.FromMilliseconds(130)))
+            {
+                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut },
+                FillBehavior = FillBehavior.Stop
+            },
+            HandoffBehavior.SnapshotAndReplace);
     }
 
     private void CloseOverlay()

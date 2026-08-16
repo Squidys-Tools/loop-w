@@ -20,6 +20,12 @@ internal static class NativeMethods
     public const int SwShowMaximized = 3;
     public const int SwMinimize = 6;
     public const int SwHide = 0;
+    public const int GwlStyle = -16;
+    public const int WsChild = 0x40000000;
+    public const long WsExToolWindow = 0x00000080L;
+    public const uint GwOwner = 4;
+    public const int WmMButtonDown = 0x0207;
+    public const int WmMButtonUp = 0x0208;
     public const uint WpfRestoreToMaximized = 0x0002;
     public const uint WpfAsyncWindowPlacement = 0x0004;
     public const uint WmGetMinMaxInfo = 0x0024;
@@ -90,6 +96,7 @@ internal static class NativeMethods
     }
 
     public delegate bool MonitorEnumProc(IntPtr monitor, IntPtr hdc, IntPtr rect, IntPtr data);
+    public delegate bool EnumWindowsProc(IntPtr window, IntPtr data);
 
     [DllImport("user32.dll", SetLastError = true)]
     public static extern bool RegisterHotKey(IntPtr hWnd, int id, uint fsModifiers, uint vk);
@@ -107,10 +114,27 @@ internal static class NativeMethods
         public IntPtr DwExtraInfo;
     }
 
+    [StructLayout(LayoutKind.Sequential)]
+    public struct MouseLlHookStruct
+    {
+        public Point Point;
+        public uint MouseData;
+        public uint Flags;
+        public uint Time;
+        public IntPtr DwExtraInfo;
+    }
+
     public delegate IntPtr KeyboardHookProc(int nCode, IntPtr wParam, IntPtr lParam);
+    public delegate IntPtr MouseHookProc(int nCode, IntPtr wParam, IntPtr lParam);
 
     [DllImport("user32.dll", SetLastError = true)]
     public static extern IntPtr SetWindowsHookEx(int idHook, KeyboardHookProc lpfn, IntPtr hMod, uint dwThreadId);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern IntPtr SetWindowsHookEx(int idHook, MouseHookProc lpfn, IntPtr hMod, uint dwThreadId);
+
+    [DllImport("user32.dll")]
+    public static extern uint GetDoubleClickTime();
 
     [DllImport("user32.dll", SetLastError = true)]
     public static extern bool UnhookWindowsHookEx(IntPtr hhk);
@@ -120,6 +144,25 @@ internal static class NativeMethods
 
     [DllImport("user32.dll")]
     public static extern IntPtr GetForegroundWindow();
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool EnumWindows(EnumWindowsProc callback, IntPtr data);
+
+    [DllImport("user32.dll")]
+    public static extern IntPtr GetWindow(IntPtr hWnd, uint command);
+
+    [DllImport("user32.dll")]
+    public static extern bool IsWindowVisible(IntPtr hWnd);
+
+    [DllImport("user32.dll")]
+    public static extern bool IsIconic(IntPtr hWnd);
+
+    [DllImport("user32.dll")]
+    public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
+
+    [DllImport("user32.dll")]
+    public static extern bool SetForegroundWindow(IntPtr hWnd);
 
     [DllImport("dwmapi.dll")]
     public static extern int DwmSetWindowAttribute(IntPtr hwnd, int attribute, ref int value, int size);

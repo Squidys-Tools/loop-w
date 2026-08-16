@@ -21,7 +21,21 @@ public sealed class AppSettings
 
     public uint TriggerModifiers { get; set; }
 
+    public TriggerModifierSide TriggerModifierSide { get; set; } = TriggerModifierSide.Any;
+
+    public int TriggerDelayMilliseconds { get; set; }
+
+    public int TriggerTimeoutMilliseconds { get; set; }
+
+    public bool DoubleClickToTrigger { get; set; }
+
+    public bool MiddleClickToTrigger { get; set; }
+
     public List<Keybind> Keybinds { get; set; } = new();
+
+    public List<RadialTargetSettings> RadialSlots { get; set; } = RadialConfiguration.CreateDefaultSlots();
+
+    public RadialTargetSettings CenterTarget { get; set; } = RadialConfiguration.CreateDefaultCenter();
 
     public bool LaunchAtLogin { get; set; }
 
@@ -95,11 +109,20 @@ public sealed class AppSettings
         }
     }
 
-    private void Normalize()
+    internal void Normalize()
     {
         TriggerVk = TriggerVk == 0 ? NativeMethods.VkCapital : TriggerVk;
         TriggerModifiers &= NativeMethods.ModControl | NativeMethods.ModAlt | NativeMethods.ModShift | NativeMethods.ModWin;
+        if (!Enum.IsDefined(TriggerModifierSide))
+        {
+            TriggerModifierSide = TriggerModifierSide.Any;
+        }
+
+        TriggerDelayMilliseconds = Math.Clamp(TriggerDelayMilliseconds, 0, 1000);
+        TriggerTimeoutMilliseconds = Math.Clamp(TriggerTimeoutMilliseconds, 0, 10000);
         Keybinds ??= new List<Keybind>();
+        NormalizeKeybinds();
+        NormalizeRadialTargets();
         AppearanceMode = AppearanceMode is "Dark" or "FollowWindows" or "Light"
             ? AppearanceMode
             : "Dark";
@@ -122,7 +145,14 @@ public sealed class AppSettings
         var defaults = new AppSettings();
         TriggerVk = defaults.TriggerVk;
         TriggerModifiers = defaults.TriggerModifiers;
+        TriggerModifierSide = defaults.TriggerModifierSide;
+        TriggerDelayMilliseconds = defaults.TriggerDelayMilliseconds;
+        TriggerTimeoutMilliseconds = defaults.TriggerTimeoutMilliseconds;
+        DoubleClickToTrigger = defaults.DoubleClickToTrigger;
+        MiddleClickToTrigger = defaults.MiddleClickToTrigger;
         Keybinds = new List<Keybind>();
+        RadialSlots = RadialConfiguration.CreateDefaultSlots();
+        CenterTarget = RadialConfiguration.CreateDefaultCenter();
         LaunchAtLogin = defaults.LaunchAtLogin;
         AppearanceMode = defaults.AppearanceMode;
         RadialEnabled = defaults.RadialEnabled;
@@ -156,6 +186,96 @@ public sealed class AppSettings
 
     private static double Clamp(double value, double min, double max) =>
         double.IsFinite(value) ? Math.Max(min, Math.Min(max, value)) : min;
+
+    private void NormalizeKeybinds()
+    {
+        var ids = new HashSet<string>(StringComparer.Ordinal);
+        for (var i = 0; i < Keybinds.Count; i++)
+        {
+            var keybind = Keybinds[i];
+            if (keybind is null)
+            {
+                keybind = new Keybind(0, NativeMethods.VkSpace, WindowAction.RightHalf);
+                Keybinds[i] = keybind;
+            }
+
+            if (string.IsNullOrWhiteSpace(keybind.Id) || !ids.Add(keybind.Id))
+            {
+                do
+                {
+                    keybind.Id = Guid.NewGuid().ToString("N");
+                }
+                while (!ids.Add(keybind.Id));
+            }
+
+            keybind.Modifiers &= NativeMethods.ModControl | NativeMethods.ModAlt | NativeMethods.ModShift | NativeMethods.ModWin;
+            if (!Enum.IsDefined(keybind.Action))
+            {
+                keybind.Action = WindowAction.RightHalf;
+            }
+        }
+    }
+
+    private void NormalizeRadialTargets()
+    {
+        RadialSlots ??= RadialConfiguration.CreateDefaultSlots();
+        while (RadialSlots.Count < RadialConfiguration.SlotCount)
+        {
+            RadialSlots.Add(new RadialTargetSettings { Kind = RadialTargetKind.None });
+        }
+
+        if (RadialSlots.Count > RadialConfiguration.SlotCount)
+        {
+            RadialSlots.RemoveRange(RadialConfiguration.SlotCount, RadialSlots.Count - RadialConfiguration.SlotCount);
+        }
+
+        var keybindIds = new HashSet<string>(Keybinds.Select(keybind => keybind.Id), StringComparer.Ordinal);
+        for (var i = 0; i < RadialSlots.Count; i++)
+        {
+            RadialSlots[i] ??= new RadialTargetSettings { Kind = RadialTargetKind.None };
+            NormalizeTarget(RadialSlots[i], keybindIds);
+        }
+
+        CenterTarget ??= RadialConfiguration.CreateDefaultCenter();
+        NormalizeTarget(CenterTarget, keybindIds);
+    }
+
+    private static void NormalizeTarget(RadialTargetSettings target, IReadOnlySet<string> keybindIds)
+    {
+        if (!Enum.IsDefined(target.Kind))
+        {
+            target.Kind = RadialTargetKind.None;
+        }
+
+        switch (target.Kind)
+        {
+            case RadialTargetKind.None:
+                target.Action = WindowAction.RightHalf;
+                target.KeybindId = string.Empty;
+                target.CycleEnabled = false;
+                break;
+            case RadialTargetKind.Action:
+                if (!Enum.IsDefined(target.Action))
+                {
+                    target.Kind = RadialTargetKind.None;
+                    target.Action = WindowAction.RightHalf;
+                    target.KeybindId = string.Empty;
+                    target.CycleEnabled = false;
+                }
+
+                break;
+            case RadialTargetKind.Keybind:
+                if (string.IsNullOrWhiteSpace(target.KeybindId) || !keybindIds.Contains(target.KeybindId))
+                {
+                    target.Kind = RadialTargetKind.None;
+                    target.Action = WindowAction.RightHalf;
+                    target.KeybindId = string.Empty;
+                    target.CycleEnabled = false;
+                }
+
+                break;
+        }
+    }
 
     private static string NormalizeColor(string? value, string fallback)
     {

@@ -18,6 +18,7 @@ public partial class MainWindow : Window
 
     private readonly GlobalHotkey _hotkey = new();
     private readonly AppSettings _settings;
+    private IReadOnlyList<RadialTarget> _radialTargets = Array.Empty<RadialTarget>();
     private IntPtr _targetWindow;
     private RadialOverlayWindow? _activeOverlay;
     private readonly DispatcherTimer _stashTimer;
@@ -28,12 +29,19 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         _settings = AppSettings.Load();
+        _radialTargets = RadialActionCatalog.LoadTargets(_settings);
 
         var settingsPanel = new SettingsWindow(_hotkey, _settings);
         settingsPanel.SettingsChanged += ApplySettings;
         SettingsHost.Content = settingsPanel;
 
         _hotkey.SetBinding(_settings.TriggerModifiers, _settings.TriggerVk);
+        _hotkey.SetTriggerBehavior(
+            _settings.TriggerModifierSide,
+            _settings.TriggerDelayMilliseconds,
+            _settings.TriggerTimeoutMilliseconds,
+            _settings.DoubleClickToTrigger,
+            _settings.MiddleClickToTrigger);
         _hotkey.SetKeybinds(_settings.Keybinds);
         _stashTimer = new DispatcherTimer(DispatcherPriority.Input)
         {
@@ -49,6 +57,8 @@ public partial class MainWindow : Window
         AnimateRadialMenuIn();
         _hotkey.TriggerPressed += Hotkey_TriggerPressed;
         _hotkey.TriggerReleased += Hotkey_TriggerReleased;
+        _hotkey.TriggerCancelled += Hotkey_TriggerCancelled;
+        _hotkey.TriggerTimedOut += Hotkey_TriggerTimedOut;
         _hotkey.KeyCaptured += Hotkey_KeyCaptured;
         _hotkey.CaptureCancelled += Hotkey_CaptureCancelled;
         _hotkey.CaptureRejected += Hotkey_CaptureRejected;
@@ -164,10 +174,18 @@ public partial class MainWindow : Window
     }
 
     internal string DescribeKeybinds() =>
-        LoopCommandFormatter.Keybinds(_settings.Keybinds, _settings.TriggerModifiers, _settings.TriggerVk);
+        LoopCommandFormatter.Keybinds(
+            _settings.Keybinds,
+            _settings.TriggerModifiers,
+            _settings.TriggerVk,
+            _settings.TriggerModifierSide);
 
     internal string DescribeAll() =>
-        LoopCommandFormatter.All(_settings.Keybinds, _settings.TriggerModifiers, _settings.TriggerVk);
+        LoopCommandFormatter.All(
+            _settings.Keybinds,
+            _settings.TriggerModifiers,
+            _settings.TriggerVk,
+            _settings.TriggerModifierSide);
 
     private void BuildRadialGeometry()
     {
@@ -196,9 +214,9 @@ public partial class MainWindow : Window
         }
 
         RadialRing.Data = RadialGeometry.BuildAnnulus(outerRadius, outerRadius, innerRadius);
-        for (var i = 0; i < RadialActionCatalog.Slots.Count; i++)
+        for (var i = 0; i < RadialActionCatalog.Geometry.Count; i++)
         {
-            var slot = RadialActionCatalog.Slots[i];
+            var slot = RadialActionCatalog.Geometry[i];
             paths[i].Data = RadialGeometry.BuildWedge(
                 outerRadius,
                 outerRadius,
@@ -206,6 +224,25 @@ public partial class MainWindow : Window
                 slot.FromDegrees,
                 slot.ToDegrees);
         }
+
+        UpdateRadialPreviewLabels();
+    }
+
+    private void UpdateRadialPreviewLabels()
+    {
+        if (_radialTargets.Count < RadialConfiguration.SlotCount)
+        {
+            return;
+        }
+
+        RightActionLabel.Text = RadialTargetResolver.DisplayName(_radialTargets[0]);
+        BottomRightActionLabel.Text = RadialTargetResolver.DisplayName(_radialTargets[1]);
+        BottomActionLabel.Text = RadialTargetResolver.DisplayName(_radialTargets[2]);
+        BottomLeftActionLabel.Text = RadialTargetResolver.DisplayName(_radialTargets[3]);
+        LeftActionLabel.Text = RadialTargetResolver.DisplayName(_radialTargets[4]);
+        TopLeftActionLabel.Text = RadialTargetResolver.DisplayName(_radialTargets[5]);
+        TopActionLabel.Text = RadialTargetResolver.DisplayName(_radialTargets[6]);
+        TopRightActionLabel.Text = RadialTargetResolver.DisplayName(_radialTargets[7]);
     }
 
     private void AnimateRadialMenuIn()
@@ -256,6 +293,20 @@ public partial class MainWindow : Window
         }
     }
 
+    private void Hotkey_TriggerTimedOut()
+    {
+        _activeOverlay?.Dismiss();
+        _targetWindow = IntPtr.Zero;
+        TargetStatus.Text = "  ·  Trigger timed out — no action committed";
+    }
+
+    private void Hotkey_TriggerCancelled()
+    {
+        _activeOverlay?.Dismiss();
+        _targetWindow = IntPtr.Zero;
+        TargetStatus.Text = "  ·  Trigger cancelled";
+    }
+
     private void Hotkey_KeyCaptured(uint modifiers, uint vk)
     {
         _capturing = false;
@@ -268,7 +319,7 @@ public partial class MainWindow : Window
         _settings.Save();
 
         SetCapturingUi(false);
-        TargetStatus.Text = $"  ·  Trigger set to {HotkeyNames.For(modifiers, vk)}";
+        TargetStatus.Text = $"  ·  Trigger set to {HotkeyNames.For(modifiers, vk, _settings.TriggerModifierSide)}";
         Keyboard.ClearFocus();
     }
 
@@ -306,7 +357,9 @@ public partial class MainWindow : Window
 
     private void SetCapturingUi(bool capturing)
     {
-        TriggerLabel.Text = capturing ? "Press a key…" : HotkeyNames.For(_hotkey.TriggerModifiers, _hotkey.TriggerVk);
+        TriggerLabel.Text = capturing
+            ? "Press a key…"
+            : HotkeyNames.For(_hotkey.TriggerModifiers, _hotkey.TriggerVk, _settings.TriggerModifierSide);
         RebindHint.Text = capturing ? "Esc to cancel" : "rebind";
         TriggerCap.BorderBrush = capturing
             ? (System.Windows.Media.Brush)FindResource("AccentBrush")
@@ -315,7 +368,7 @@ public partial class MainWindow : Window
 
     private void UpdateTriggerLabel()
     {
-        TriggerLabel.Text = HotkeyNames.For(_hotkey.TriggerModifiers, _hotkey.TriggerVk);
+        TriggerLabel.Text = HotkeyNames.For(_hotkey.TriggerModifiers, _hotkey.TriggerVk, _settings.TriggerModifierSide);
     }
 
     private void CaptureTargetWindow()
@@ -340,7 +393,7 @@ public partial class MainWindow : Window
         TargetStatus.Text = $"  ·  Target: {(title.Length > 0 ? title.ToString() : "active window")}";
         if (_settings.RadialEnabled)
         {
-            var overlay = new RadialOverlayWindow(_targetWindow, CommitOverlayAction, _settings);
+            var overlay = new RadialOverlayWindow(_targetWindow, CommitOverlayTarget, _settings);
             _activeOverlay = overlay;
             overlay.Closed += (_, _) => _activeOverlay = null;
             overlay.ShowAtCursor();
@@ -373,35 +426,49 @@ public partial class MainWindow : Window
 
     private void OpenSettings() => ShowFromTray();
 
-    private void CommitOverlayAction(WindowAction action)
+    private void CommitOverlayTarget(RadialTarget target)
     {
-        ApplyWindowAction(action, cycleEnabled: WindowCycleService.CanCycle(action));
+        ApplyRadialTarget(target);
     }
 
     private void Wedge_MouseUp(object sender, MouseButtonEventArgs e)
     {
-        if (sender is Path { Tag: string action } && Enum.TryParse<WindowAction>(action, out var selectedAction))
+        if (sender is Path { Tag: string rawIndex } && int.TryParse(rawIndex, out var index) &&
+            index >= 0 && index < _radialTargets.Count)
         {
-            ApplyWindowAction(selectedAction, WindowCycleService.CanCycle(selectedAction));
+            ApplyRadialTarget(_radialTargets[index]);
         }
     }
 
     private void Window_KeyDown(object sender, KeyEventArgs e)
     {
-        var action = e.Key switch
+        var index = e.Key switch
         {
-            Key.Left => WindowAction.LeftHalf,
-            Key.Right => WindowAction.RightHalf,
-            Key.Up => WindowAction.TopHalf,
-            Key.Down => WindowAction.BottomHalf,
-            _ => (WindowAction?)null
+            Key.Right => 0,
+            Key.Down => 2,
+            Key.Left => 4,
+            Key.Up => 6,
+            _ => -1
         };
 
-        if (action.HasValue)
+        if (index >= 0 && index < _radialTargets.Count)
         {
-            ApplyWindowAction(action.Value, WindowCycleService.CanCycle(action.Value));
+            ApplyRadialTarget(_radialTargets[index]);
             e.Handled = true;
         }
+    }
+
+    private void ApplyRadialTarget(RadialTarget target)
+    {
+        var action = RadialTargetResolver.ActionOf(target);
+        if (!action.HasValue)
+        {
+            SelectedAction.Text = "No action";
+            TargetStatus.Text = "  ·  No radial action is configured";
+            return;
+        }
+
+        ApplyWindowAction(action.Value, RadialTargetResolver.CycleEnabledOf(target));
     }
 
     private void ApplyWindowAction(WindowAction requestedAction, bool cycleEnabled)
@@ -434,7 +501,14 @@ public partial class MainWindow : Window
 
     private void ApplySettings(AppSettings settings)
     {
+        _radialTargets = RadialActionCatalog.LoadTargets(settings);
         _hotkey.SetBinding(settings.TriggerModifiers, settings.TriggerVk);
+        _hotkey.SetTriggerBehavior(
+            settings.TriggerModifierSide,
+            settings.TriggerDelayMilliseconds,
+            settings.TriggerTimeoutMilliseconds,
+            settings.DoubleClickToTrigger,
+            settings.MiddleClickToTrigger);
         _hotkey.SetKeybinds(settings.Keybinds);
         UpdateTriggerLabel();
         BuildRadialGeometry();

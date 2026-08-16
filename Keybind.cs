@@ -1,4 +1,13 @@
+using System;
+
 namespace LoopW;
+
+public enum TriggerModifierSide
+{
+    Any,
+    Left,
+    Right
+}
 
 /// <summary>
 /// A trigger + key combination that applies a window action without opening the
@@ -6,6 +15,8 @@ namespace LoopW;
 /// </summary>
 public sealed class Keybind
 {
+    public string Id { get; set; } = Guid.NewGuid().ToString("N");
+
     public uint Modifiers { get; set; }
 
     public uint Vk { get; set; }
@@ -17,6 +28,12 @@ public sealed class Keybind
     /// cycle. Missing values in older settings files keep this default.
     /// </summary>
     public bool CycleEnabled { get; set; } = true;
+
+    /// <summary>
+    /// Applies this action when its key combination is pressed without the
+    /// configured trigger key.
+    /// </summary>
+    public bool BypassTrigger { get; set; }
 
     public Keybind()
     {

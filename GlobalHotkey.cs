@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
+using System.Threading;
 using System.Windows.Threading;
+using ThreadTimer = System.Threading.Timer;
 
 namespace LoopW;
 
@@ -14,6 +16,7 @@ namespace LoopW;
 public sealed class GlobalHotkey : IDisposable
 {
     private const int WhKeyboardLl = 13;
+    private const int WhMouseLl = 14;
     private const int WmKeyDown = 0x0100;
     private const int WmKeyUp = 0x0101;
     private const int WmSysKeyDown = 0x0104;
@@ -27,11 +30,26 @@ public sealed class GlobalHotkey : IDisposable
     private const uint VkEscape = 0x1B;
 
     private readonly NativeMethods.KeyboardHookProc _hookProc;
+    private readonly NativeMethods.MouseHookProc _mouseHookProc;
+    private readonly object _stateGate = new();
     private IntPtr _hookHandle;
+    private IntPtr _mouseHookHandle;
     private uint _triggerVk;
     private uint _triggerModifiers;
+    private TriggerModifierSide _triggerModifierSide;
+    private int _triggerDelayMilliseconds;
+    private int _triggerTimeoutMilliseconds;
+    private bool _doubleClickToTrigger;
+    private bool _middleClickToTrigger;
     private bool _triggerDown;
+    private bool _middleTriggerDown;
+    private bool _triggerActivated;
+    private bool _triggerTimedOut;
     private bool _capturing;
+    private long _lastTriggerReleaseAt = -1;
+    private long _stateVersion;
+    private ThreadTimer? _activationTimer;
+    private ThreadTimer? _timeoutTimer;
     private readonly HashSet<uint> _pressedKeybinds = new();
     private List<Keybind> _keybinds = new();
     private Action<uint, uint>? _captureTarget;
@@ -41,17 +59,24 @@ public sealed class GlobalHotkey : IDisposable
     public GlobalHotkey()
     {
         _hookProc = HookProc;
+        _mouseHookProc = MouseHookProc;
     }
 
     public uint TriggerVk => _triggerVk;
 
     public uint TriggerModifiers => _triggerModifiers;
 
+    public TriggerModifierSide TriggerModifierSide => _triggerModifierSide;
+
     public bool IsActive => _hookHandle != IntPtr.Zero;
 
     public event Action? TriggerPressed;
 
     public event Action? TriggerReleased;
+
+    public event Action? TriggerCancelled;
+
+    public event Action? TriggerTimedOut;
 
     public event Action<uint, uint>? KeyCaptured;
 
@@ -67,24 +92,54 @@ public sealed class GlobalHotkey : IDisposable
 
     public void Start()
     {
-        if (_hookHandle != IntPtr.Zero)
+        lock (_stateGate)
         {
-            return;
-        }
+            if (_hookHandle == IntPtr.Zero)
+            {
+                _hookHandle = NativeMethods.SetWindowsHookEx(WhKeyboardLl, _hookProc, IntPtr.Zero, 0);
+            }
 
-        _hookHandle = NativeMethods.SetWindowsHookEx(WhKeyboardLl, _hookProc, IntPtr.Zero, 0);
+            UpdateMouseHookLocked();
+        }
     }
 
     public void SetBinding(uint modifiers, uint vk)
     {
-        _triggerModifiers = modifiers;
-        _triggerVk = vk;
-        _triggerDown = false;
+        lock (_stateGate)
+        {
+            _triggerModifiers = modifiers;
+            _triggerVk = vk;
+            ResetInputStateLocked(notify: true);
+        }
+    }
+
+    public void SetTriggerBehavior(
+        TriggerModifierSide modifierSide,
+        int delayMilliseconds,
+        int timeoutMilliseconds,
+        bool doubleClickToTrigger,
+        bool middleClickToTrigger)
+    {
+        lock (_stateGate)
+        {
+            _triggerModifierSide = Enum.IsDefined(modifierSide)
+                ? modifierSide
+                : TriggerModifierSide.Any;
+            _triggerDelayMilliseconds = Math.Clamp(delayMilliseconds, 0, 1000);
+            _triggerTimeoutMilliseconds = Math.Clamp(timeoutMilliseconds, 0, 10000);
+            _doubleClickToTrigger = doubleClickToTrigger;
+            _middleClickToTrigger = middleClickToTrigger;
+            ResetInputStateLocked(notify: true);
+            UpdateMouseHookLocked();
+        }
     }
 
     public void SetKeybinds(IReadOnlyList<Keybind> keybinds)
     {
-        _keybinds = keybinds == null ? new List<Keybind>() : new List<Keybind>(keybinds);
+        lock (_stateGate)
+        {
+            _keybinds = keybinds == null ? new List<Keybind>() : new List<Keybind>(keybinds);
+        }
     }
 
     /// <summary>
@@ -92,10 +147,14 @@ public sealed class GlobalHotkey : IDisposable
     /// </summary>
     public void BeginCapture()
     {
-        _captureTarget = null;
-        _captureCancelled = null;
-        _captureRejected = null;
-        _capturing = true;
+        lock (_stateGate)
+        {
+            _captureTarget = null;
+            _captureCancelled = null;
+            _captureRejected = null;
+            _capturing = true;
+            ResetInputStateLocked(notify: true);
+        }
     }
 
     /// <summary>
@@ -105,18 +164,33 @@ public sealed class GlobalHotkey : IDisposable
     /// </summary>
     public void BeginCapture(Action<uint, uint> captured, Action cancelled, Action rejected)
     {
-        _captureTarget = captured;
-        _captureCancelled = cancelled;
-        _captureRejected = rejected;
-        _capturing = true;
+        lock (_stateGate)
+        {
+            _captureTarget = captured;
+            _captureCancelled = cancelled;
+            _captureRejected = rejected;
+            _capturing = true;
+            ResetInputStateLocked(notify: true);
+        }
     }
 
     public void Dispose()
     {
-        if (_hookHandle != IntPtr.Zero)
+        lock (_stateGate)
         {
-            NativeMethods.UnhookWindowsHookEx(_hookHandle);
-            _hookHandle = IntPtr.Zero;
+            if (_hookHandle != IntPtr.Zero)
+            {
+                NativeMethods.UnhookWindowsHookEx(_hookHandle);
+                _hookHandle = IntPtr.Zero;
+            }
+
+            if (_mouseHookHandle != IntPtr.Zero)
+            {
+                NativeMethods.UnhookWindowsHookEx(_mouseHookHandle);
+                _mouseHookHandle = IntPtr.Zero;
+            }
+
+            ResetInputStateLocked(notify: false);
         }
 
         GC.SuppressFinalize(this);
@@ -126,17 +200,20 @@ public sealed class GlobalHotkey : IDisposable
     {
         if (nCode >= 0)
         {
-            int message = wParam.ToInt32();
-            bool isDown = message == WmKeyDown || message == WmSysKeyDown;
-            bool isUp = message == WmKeyUp || message == WmSysKeyUp;
+            var message = wParam.ToInt32();
+            var isDown = message == WmKeyDown || message == WmSysKeyDown;
+            var isUp = message == WmKeyUp || message == WmSysKeyUp;
 
             if (isDown || isUp)
             {
                 var data = Marshal.PtrToStructure<NativeMethods.KbdLlHookStruct>(lParam);
-                bool suppress = isDown ? HandleKeyDown(data.VkCode) : HandleKeyUp(data.VkCode);
-                if (suppress)
+                lock (_stateGate)
                 {
-                    return (IntPtr)1;
+                    var suppress = isDown ? HandleKeyDownLocked(data.VkCode) : HandleKeyUpLocked(data.VkCode);
+                    if (suppress)
+                    {
+                        return (IntPtr)1;
+                    }
                 }
             }
         }
@@ -144,37 +221,67 @@ public sealed class GlobalHotkey : IDisposable
         return NativeMethods.CallNextHookEx(_hookHandle, nCode, wParam, lParam);
     }
 
-    private bool HandleKeyDown(uint vk)
+    private IntPtr MouseHookProc(int nCode, IntPtr wParam, IntPtr lParam)
+    {
+        if (nCode >= 0)
+        {
+            var message = wParam.ToInt32();
+            if (message == NativeMethods.WmMButtonDown || message == NativeMethods.WmMButtonUp)
+            {
+                lock (_stateGate)
+                {
+                    var suppress = message == NativeMethods.WmMButtonDown
+                        ? HandleMiddleButtonDownLocked()
+                        : HandleMiddleButtonUpLocked();
+                    if (suppress)
+                    {
+                        return (IntPtr)1;
+                    }
+                }
+            }
+        }
+
+        return NativeMethods.CallNextHookEx(_mouseHookHandle, nCode, wParam, lParam);
+    }
+
+    private bool HandleKeyDownLocked(uint vk)
     {
         if (_capturing)
         {
-            return HandleCapture(vk);
+            return HandleCaptureLocked(vk);
         }
 
-        if (vk != _triggerVk || !ModifiersMatch(_triggerModifiers))
+        if (vk == _triggerVk && ModifiersMatch(_triggerModifiers, _triggerModifierSide))
         {
-            // Keybinds only fire while the trigger is held.
-            if (_triggerDown && TryMatchKeybind(vk))
+            if (!_triggerDown)
             {
-                return true;
+                _triggerDown = true;
+                if (!_middleTriggerDown)
+                {
+                    BeginTriggerPressLocked();
+                }
             }
 
-            return false;
+            return true;
         }
 
-        if (!_triggerDown)
+        if (AnyTriggerHeld && !_triggerTimedOut && TryMatchKeybindLocked(vk, bypassTrigger: false))
         {
-            _triggerDown = true;
-            Dispatch(() => TriggerPressed?.Invoke());
+            return true;
         }
 
-        return true;
+        if (!AnyTriggerHeld && TryMatchKeybindLocked(vk, bypassTrigger: true))
+        {
+            return true;
+        }
+
+        return false;
     }
 
-    private bool TryMatchKeybind(uint vk)
+    private bool TryMatchKeybindLocked(uint vk, bool bypassTrigger)
     {
-        // Low-level hooks receive repeated WM_KEYDOWN messages while a key is
-        // held. A cycle advances per physical press, not per repeat tick.
+        // Low-level hooks repeat WM_KEYDOWN while a key is held. A cycle advances
+        // per physical press, not per repeat tick.
         if (_pressedKeybinds.Contains(vk))
         {
             return true;
@@ -183,7 +290,8 @@ public sealed class GlobalHotkey : IDisposable
         for (var i = 0; i < _keybinds.Count; i++)
         {
             var keybind = _keybinds[i];
-            if (keybind.Vk != vk || keybind.Vk == _triggerVk || !ModifiersMatch(keybind.Modifiers))
+            if (keybind.Vk != vk || keybind.Vk == _triggerVk ||
+                keybind.BypassTrigger != bypassTrigger || !ModifiersMatch(keybind.Modifiers, TriggerModifierSide.Any))
             {
                 continue;
             }
@@ -197,7 +305,7 @@ public sealed class GlobalHotkey : IDisposable
         return false;
     }
 
-    private bool HandleKeyUp(uint vk)
+    private bool HandleKeyUpLocked(uint vk)
     {
         _pressedKeybinds.Remove(vk);
 
@@ -212,11 +320,50 @@ public sealed class GlobalHotkey : IDisposable
         }
 
         _triggerDown = false;
-        Dispatch(() => TriggerReleased?.Invoke());
+        if (!AnyTriggerHeld)
+        {
+            CompleteTriggerReleaseLocked();
+        }
+
         return true;
     }
 
-    private bool HandleCapture(uint vk)
+    private bool HandleMiddleButtonDownLocked()
+    {
+        if (_capturing || !_middleClickToTrigger)
+        {
+            return false;
+        }
+
+        if (!_middleTriggerDown)
+        {
+            _middleTriggerDown = true;
+            if (!_triggerDown)
+            {
+                BeginTriggerPressLocked();
+            }
+        }
+
+        return true;
+    }
+
+    private bool HandleMiddleButtonUpLocked()
+    {
+        if (!_middleTriggerDown)
+        {
+            return false;
+        }
+
+        _middleTriggerDown = false;
+        if (!AnyTriggerHeld)
+        {
+            CompleteTriggerReleaseLocked();
+        }
+
+        return true;
+    }
+
+    private bool HandleCaptureLocked(uint vk)
     {
         if (IsModifierKey(vk))
         {
@@ -238,7 +385,7 @@ public sealed class GlobalHotkey : IDisposable
             return true;
         }
 
-        var mods = CurrentModifiers();
+        var mods = CurrentModifiers(TriggerModifierSide.Any);
         if ((mods & NativeMethods.ModWin) != 0)
         {
             _capturing = false;
@@ -269,29 +416,196 @@ public sealed class GlobalHotkey : IDisposable
         return true;
     }
 
-    private static bool IsModifierKey(uint vk) =>
-        vk is VkShift or VkControl or VkMenu or VkLWin or VkRWin;
+    private void BeginTriggerPressLocked()
+    {
+        if (_doubleClickToTrigger)
+        {
+            var now = Environment.TickCount64;
+            var isSecondClick = _lastTriggerReleaseAt >= 0 &&
+                now - _lastTriggerReleaseAt <= NativeMethods.GetDoubleClickTime();
+            _lastTriggerReleaseAt = -1;
+            if (!isSecondClick)
+            {
+                return;
+            }
+        }
 
-    private static uint CurrentModifiers()
+        ScheduleActivationLocked();
+    }
+
+    private void ScheduleActivationLocked()
+    {
+        _activationTimer?.Dispose();
+        _activationTimer = null;
+        var version = ++_stateVersion;
+        if (_triggerDelayMilliseconds == 0)
+        {
+            ActivateTriggerLocked(version);
+            return;
+        }
+
+        _activationTimer = new ThreadTimer(
+            _ =>
+            {
+                lock (_stateGate)
+                {
+                    if (version == _stateVersion && AnyTriggerHeld)
+                    {
+                        _activationTimer?.Dispose();
+                        _activationTimer = null;
+                        ActivateTriggerLocked(version);
+                    }
+                }
+            },
+            null,
+            _triggerDelayMilliseconds,
+            Timeout.Infinite);
+    }
+
+    private void ActivateTriggerLocked(long version)
+    {
+        if (version != _stateVersion || !AnyTriggerHeld || _triggerActivated || _triggerTimedOut)
+        {
+            return;
+        }
+
+        _triggerActivated = true;
+        Dispatch(() => TriggerPressed?.Invoke());
+        if (_triggerTimeoutMilliseconds > 0)
+        {
+            _timeoutTimer?.Dispose();
+            _timeoutTimer = new ThreadTimer(
+                _ =>
+                {
+                    lock (_stateGate)
+                    {
+                        if (version != _stateVersion || !AnyTriggerHeld || !_triggerActivated)
+                        {
+                            return;
+                        }
+
+                        _triggerActivated = false;
+                        _triggerTimedOut = true;
+                        _timeoutTimer?.Dispose();
+                        _timeoutTimer = null;
+                        _stateVersion++;
+                        _pressedKeybinds.Clear();
+                        Dispatch(() => TriggerTimedOut?.Invoke());
+                    }
+                },
+                null,
+                _triggerTimeoutMilliseconds,
+                Timeout.Infinite);
+        }
+    }
+
+    private void CompleteTriggerReleaseLocked()
+    {
+        _activationTimer?.Dispose();
+        _activationTimer = null;
+        _timeoutTimer?.Dispose();
+        _timeoutTimer = null;
+        ++_stateVersion;
+
+        var wasActivated = _triggerActivated;
+        _triggerActivated = false;
+        _triggerTimedOut = false;
+        _pressedKeybinds.Clear();
+        _lastTriggerReleaseAt = _doubleClickToTrigger ? Environment.TickCount64 : -1;
+        if (wasActivated)
+        {
+            Dispatch(() => TriggerReleased?.Invoke());
+        }
+    }
+
+    private bool AnyTriggerHeld => _triggerDown || _middleTriggerDown;
+
+    private void UpdateMouseHookLocked()
+    {
+        if (_hookHandle == IntPtr.Zero || !_middleClickToTrigger)
+        {
+            if (_mouseHookHandle != IntPtr.Zero)
+            {
+                NativeMethods.UnhookWindowsHookEx(_mouseHookHandle);
+                _mouseHookHandle = IntPtr.Zero;
+            }
+
+            return;
+        }
+
+        if (_mouseHookHandle == IntPtr.Zero)
+        {
+            _mouseHookHandle = NativeMethods.SetWindowsHookEx(WhMouseLl, _mouseHookProc, IntPtr.Zero, 0);
+        }
+    }
+
+    private void ResetInputStateLocked(bool notify)
+    {
+        var wasActive = _triggerActivated;
+        _activationTimer?.Dispose();
+        _activationTimer = null;
+        _timeoutTimer?.Dispose();
+        _timeoutTimer = null;
+        ++_stateVersion;
+        _triggerDown = false;
+        _middleTriggerDown = false;
+        _triggerActivated = false;
+        _triggerTimedOut = false;
+        _lastTriggerReleaseAt = -1;
+        _pressedKeybinds.Clear();
+        if (notify && wasActive)
+        {
+            Dispatch(() => TriggerCancelled?.Invoke());
+        }
+    }
+
+    private static bool IsModifierKey(uint vk) =>
+        vk is VkShift or VkControl or VkMenu or VkLWin or VkRWin or 0xA0 or 0xA1 or 0xA2 or 0xA3 or 0xA4 or 0xA5;
+
+    private static uint CurrentModifiers(TriggerModifierSide side)
     {
         var mods = 0u;
-        if ((NativeMethods.GetAsyncKeyState((int)VkShift) & 0x8000) != 0)
+        var shiftDown = side switch
+        {
+            TriggerModifierSide.Left => IsDown(0xA0),
+            TriggerModifierSide.Right => IsDown(0xA1),
+            _ => IsDown(VkShift)
+        };
+        var controlDown = side switch
+        {
+            TriggerModifierSide.Left => IsDown(0xA2),
+            TriggerModifierSide.Right => IsDown(0xA3),
+            _ => IsDown(VkControl)
+        };
+        var altDown = side switch
+        {
+            TriggerModifierSide.Left => IsDown(0xA4),
+            TriggerModifierSide.Right => IsDown(0xA5),
+            _ => IsDown(VkMenu)
+        };
+        var winDown = side switch
+        {
+            TriggerModifierSide.Left => IsDown(VkLWin),
+            TriggerModifierSide.Right => IsDown(VkRWin),
+            _ => IsDown(VkLWin) || IsDown(VkRWin)
+        };
+
+        if (shiftDown)
         {
             mods |= NativeMethods.ModShift;
         }
 
-        if ((NativeMethods.GetAsyncKeyState((int)VkControl) & 0x8000) != 0)
+        if (controlDown)
         {
             mods |= NativeMethods.ModControl;
         }
 
-        if ((NativeMethods.GetAsyncKeyState((int)VkMenu) & 0x8000) != 0)
+        if (altDown)
         {
             mods |= NativeMethods.ModAlt;
         }
 
-        if ((NativeMethods.GetAsyncKeyState((int)VkLWin) & 0x8000) != 0 ||
-            (NativeMethods.GetAsyncKeyState((int)VkRWin) & 0x8000) != 0)
+        if (winDown)
         {
             mods |= NativeMethods.ModWin;
         }
@@ -299,7 +613,10 @@ public sealed class GlobalHotkey : IDisposable
         return mods;
     }
 
-    private static bool ModifiersMatch(uint expected) => CurrentModifiers() == expected;
+    private static bool IsDown(uint vk) => vk != 0 && (NativeMethods.GetAsyncKeyState((int)vk) & 0x8000) != 0;
+
+    private static bool ModifiersMatch(uint expected, TriggerModifierSide side) =>
+        CurrentModifiers(side) == expected;
 
     private static void Dispatch(Action action)
     {
@@ -309,27 +626,33 @@ public sealed class GlobalHotkey : IDisposable
 
 public static class HotkeyNames
 {
-    public static string For(uint modifiers, uint vk)
+    public static string For(uint modifiers, uint vk, TriggerModifierSide side = TriggerModifierSide.Any)
     {
         var parts = new List<string>(4);
+        var sideLabel = side switch
+        {
+            TriggerModifierSide.Left => "Left",
+            TriggerModifierSide.Right => "Right",
+            _ => string.Empty
+        };
         if ((modifiers & NativeMethods.ModControl) != 0)
         {
-            parts.Add("Ctrl");
+            parts.Add(string.IsNullOrEmpty(sideLabel) ? "Ctrl" : $"{sideLabel} Ctrl");
         }
 
         if ((modifiers & NativeMethods.ModAlt) != 0)
         {
-            parts.Add("Alt");
+            parts.Add(string.IsNullOrEmpty(sideLabel) ? "Alt" : $"{sideLabel} Alt");
         }
 
         if ((modifiers & NativeMethods.ModShift) != 0)
         {
-            parts.Add("Shift");
+            parts.Add(string.IsNullOrEmpty(sideLabel) ? "Shift" : $"{sideLabel} Shift");
         }
 
         if ((modifiers & NativeMethods.ModWin) != 0)
         {
-            parts.Add("Win");
+            parts.Add(string.IsNullOrEmpty(sideLabel) ? "Win" : $"{sideLabel} Win");
         }
 
         parts.Add(KeyName(vk));
