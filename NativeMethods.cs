@@ -14,6 +14,7 @@ internal static class NativeMethods
     public const uint ModNoRepeat = 0x4000;
     public const uint VkSpace = 0x20;
     public const uint VkCapital = 0x14;
+    public const int VkLButton = 0x01;
     public const int VkShift = 0x10;
     public const int SwRestore = 9;
     public const int SwShowMinimized = 2;
@@ -22,10 +23,17 @@ internal static class NativeMethods
     public const int SwHide = 0;
     public const int GwlStyle = -16;
     public const int WsChild = 0x40000000;
+    public const long WsCaption = 0x00C00000L;
     public const long WsExToolWindow = 0x00000080L;
     public const uint GwOwner = 4;
     public const int WmMButtonDown = 0x0207;
     public const int WmMButtonUp = 0x0208;
+    public const int WmLButtonDown = 0x0201;
+    public const int WmLButtonUp = 0x0202;
+    public const int WmMouseMove = 0x0200;
+    public const uint WmNcHitTest = 0x0084;
+    public const int HtCaption = 2;
+    public const uint GaRoot = 2;
     public const uint WpfRestoreToMaximized = 0x0002;
     public const uint WpfAsyncWindowPlacement = 0x0004;
     public const uint WmGetMinMaxInfo = 0x0024;
@@ -153,6 +161,12 @@ internal static class NativeMethods
     public static extern IntPtr GetWindow(IntPtr hWnd, uint command);
 
     [DllImport("user32.dll")]
+    public static extern IntPtr GetAncestor(IntPtr hWnd, uint flags);
+
+    [DllImport("user32.dll")]
+    public static extern IntPtr WindowFromPoint(Point point);
+
+    [DllImport("user32.dll")]
     public static extern bool IsWindowVisible(IntPtr hWnd);
 
     [DllImport("user32.dll")]
@@ -184,6 +198,9 @@ internal static class NativeMethods
 
     [DllImport("user32.dll", SetLastError = true)]
     public static extern IntPtr SendMessageTimeout(IntPtr hWnd, uint msg, IntPtr wParam, ref MinMaxInfo lParam, uint flags, uint timeout, out UIntPtr result);
+
+    [DllImport("user32.dll", EntryPoint = "SendMessageTimeoutW", SetLastError = true)]
+    public static extern IntPtr SendMessageTimeout(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam, uint flags, uint timeout, out UIntPtr result);
 
     [DllImport("user32.dll")]
     public static extern IntPtr MonitorFromWindow(IntPtr hWnd, uint flags);

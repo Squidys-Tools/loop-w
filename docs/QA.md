@@ -8,9 +8,9 @@ before testing minimize, hide, stash, or focus actions.
 Status: `[ ]` not run, `[x]` passed, `[!]` blocked or not supported on this
 Windows configuration.
 
-The recorded automated baseline is a warning-free build, 28 pure tests, live
-named-pipe responses, and a real Notepad right-half action. Re-run that baseline
-after every action-model change.
+The current automated baseline is a warning-free build and 31 pure tests. Live
+named-pipe responses and the real Notepad right-half action were recorded before
+drag snapping; rerun them with this feature's desktop QA pass.
 
 ## 1. Build and resident lifecycle
 

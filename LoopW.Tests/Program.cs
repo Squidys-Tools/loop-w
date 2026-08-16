@@ -10,6 +10,8 @@ internal static class Program
         ("radial catalog maps each octant", RadialCatalogMapsEachOctant),
         ("radial catalog exposes eight unique actions", RadialCatalogHasEightUniqueActions),
         ("zone frames cover expected halves and quarters", ZoneFramesCoverExpectedAreas),
+        ("drag snap resolves monitor edges and corners", DragSnapResolvesEdgesAndCorners),
+        ("drag snap ignores the monitor interior", DragSnapIgnoresMonitorInterior),
         ("zone frames split thirds without gaps", ZoneFramesSplitThirdsWithoutGaps),
         ("zone frames include center halves and fourths", ZoneFramesIncludeCenterHalvesAndFourths),
         ("axis maximize preserves the other dimension", AxisMaximizePreservesOtherDimension),
@@ -30,6 +32,7 @@ internal static class Program
         ("command parser rejects malformed commands", CommandParserRejectsMalformedCommands),
         ("command formatter includes configured keybinds", CommandFormatterIncludesKeybinds),
         ("trigger settings persist and normalize", TriggerSettingsPersistAndNormalize),
+        ("drag snap settings normalize", DragSnapSettingsNormalize),
         ("hotkey names show modifier side", HotkeyNamesShowModifierSide),
         ("command formatter marks trigger bypass", CommandFormatterMarksTriggerBypass),
         ("radial configuration preserves stable keybind targets", RadialConfigurationPreservesStableKeybindTargets),
@@ -87,6 +90,33 @@ internal static class Program
         Equal(Rect(600, 0, 1200, 800), WindowFrameMath.ZoneFrame(work, WindowAction.RightHalf));
         Equal(Rect(0, 0, 600, 400), WindowFrameMath.ZoneFrame(work, WindowAction.TopLeftQuarter));
         Equal(Rect(600, 400, 1200, 800), WindowFrameMath.ZoneFrame(work, WindowAction.BottomRightQuarter));
+    }
+
+    private static void DragSnapResolvesEdgesAndCorners()
+    {
+        var monitor = Rect(0, 0, 1920, 1080);
+        var work = Rect(0, 0, 1920, 1040);
+
+        True(DragSnapGeometry.TryResolve(monitor, work, Point(8, 8), 24, out var topLeft));
+        Equal(DragSnapZone.TopLeftQuarter, topLeft);
+        Equal(WindowAction.TopLeftQuarter, DragSnapGeometry.ActionOf(topLeft));
+
+        True(DragSnapGeometry.TryResolve(monitor, work, Point(1912, 500), 24, out var right));
+        Equal(DragSnapZone.RightHalf, right);
+        Equal(WindowAction.RightHalf, DragSnapGeometry.ActionOf(right));
+
+        True(DragSnapGeometry.TryResolve(monitor, work, Point(900, 1072), 24, out var bottom));
+        Equal(DragSnapZone.BottomHalf, bottom);
+    }
+
+    private static void DragSnapIgnoresMonitorInterior()
+    {
+        True(!DragSnapGeometry.TryResolve(
+            Rect(0, 0, 1920, 1080),
+            Rect(0, 0, 1920, 1040),
+            Point(960, 500),
+            24,
+            out _));
     }
 
     private static void ZoneFramesSplitThirdsWithoutGaps()
@@ -362,6 +392,19 @@ internal static class Program
         Equal(TriggerModifierSide.Any, restored.TriggerModifierSide);
         Equal(0, restored.TriggerDelayMilliseconds);
         Equal(10000, restored.TriggerTimeoutMilliseconds);
+    }
+
+    private static void DragSnapSettingsNormalize()
+    {
+        var settings = new AppSettings { DragSnapThreshold = 1000 };
+        settings.Normalize();
+        Equal(96, settings.DragSnapThreshold);
+
+        settings.DragSnapThreshold = -1;
+        settings.Normalize();
+        Equal(4, settings.DragSnapThreshold);
+        True(settings.DragSnapEnabled);
+        True(settings.RestorePreDragFrameOnSnapCancel);
     }
 
     private static void HotkeyNamesShowModifierSide()

@@ -289,6 +289,30 @@ public partial class SettingsWindow : UserControl
         SaveSettings("Preview size saved");
     }
 
+    private void DragSnap_Changed(object sender, RoutedEventArgs e)
+    {
+        if (_loading)
+        {
+            return;
+        }
+
+        _settings.DragSnapEnabled = DragSnapEnabledCheck.IsChecked == true;
+        _settings.RestorePreDragFrameOnSnapCancel = RestorePreDragFrameCheck.IsChecked == true;
+        SaveSettings("Drag snapping settings saved");
+    }
+
+    private void DragSnap_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (_loading)
+        {
+            return;
+        }
+
+        _settings.DragSnapThreshold = (int)Math.Round(DragSnapThresholdSlider.Value);
+        UpdateValueLabels();
+        SaveSettings("Snap threshold saved");
+    }
+
     private void AppearanceMode_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (_loading || AppearanceModeCombo.SelectedValue is not string mode)
@@ -522,6 +546,9 @@ public partial class SettingsWindow : UserControl
                 _settings.PreviewPadding = defaults.PreviewPadding;
                 _settings.PreviewCornerRadius = defaults.PreviewCornerRadius;
                 _settings.PreviewBorderWidth = defaults.PreviewBorderWidth;
+                _settings.DragSnapEnabled = defaults.DragSnapEnabled;
+                _settings.DragSnapThreshold = defaults.DragSnapThreshold;
+                _settings.RestorePreDragFrameOnSnapCancel = defaults.RestorePreDragFrameOnSnapCancel;
                 break;
             case "Appearance":
                 _settings.AppearanceMode = defaults.AppearanceMode;
@@ -624,6 +651,9 @@ public partial class SettingsWindow : UserControl
         PreviewPaddingSlider.Value = _settings.PreviewPadding;
         PreviewCornerSlider.Value = _settings.PreviewCornerRadius;
         PreviewBorderWidthSlider.Value = _settings.PreviewBorderWidth;
+        DragSnapEnabledCheck.IsChecked = _settings.DragSnapEnabled;
+        RestorePreDragFrameCheck.IsChecked = _settings.RestorePreDragFrameOnSnapCancel;
+        DragSnapThresholdSlider.Value = _settings.DragSnapThreshold;
         AppearanceModeCombo.SelectedValue = _settings.AppearanceMode;
         RefreshRadialControls();
         RefreshThemeFields();
@@ -745,6 +775,7 @@ public partial class SettingsWindow : UserControl
         PreviewPaddingValue.Text = $"{PreviewPaddingSlider.Value:0} px";
         PreviewCornerValue.Text = $"{PreviewCornerSlider.Value:0} px";
         PreviewBorderWidthValue.Text = $"{PreviewBorderWidthSlider.Value:0} px";
+        DragSnapThresholdValue.Text = $"{DragSnapThresholdSlider.Value:0} px";
     }
 
     private void UpdateKeybindEmptyState()
