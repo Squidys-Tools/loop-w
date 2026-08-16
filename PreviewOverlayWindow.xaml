@@ -18,10 +18,10 @@
             <Grid>
                 <Image x:Name="BackdropImage" Stretch="Fill" HorizontalAlignment="Left" VerticalAlignment="Top">
                     <Image.Effect>
-                        <BlurEffect Radius="18" />
+                        <BlurEffect Radius="12" />
                     </Image.Effect>
                 </Image>
-                <Border x:Name="SurfaceTint" Background="#1AFFFFFF" CornerRadius="11" />
+                <Border x:Name="SurfaceTint" Background="#4C101827" CornerRadius="11" />
             </Grid>
         </Border>
     </Canvas>

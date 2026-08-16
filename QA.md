@@ -13,8 +13,8 @@ radial-menu interaction.
 ## Resident lifecycle
 
 - [ ] Launch the app. The main window stays hidden and a LoopW tray icon appears.
-- [ ] Open LoopW from the tray. The main window appears and can be hidden again.
-- [ ] Open settings from the tray. Settings opens even while the main window is hidden.
+- [ ] Open LoopW from the tray. The main window appears with settings visible and can be hidden again.
+- [ ] Open settings from the tray. It activates the same main settings window.
 - [x] Start LoopW a second time. The existing instance is activated and no second tray icon or hook appears.
 - [x] Close the main window with the title-bar close button. It hides to the tray instead of exiting.
 - [ ] Choose Quit from the tray. The process and tray icon disappear.
@@ -60,9 +60,14 @@ radial-menu interaction.
 
 ## Settings and recovery
 
-- [ ] Change the trigger, radial size, preview settings, colors, and keybinds.
+- [ ] Open the settings surface from the tray and confirm the Behavior section is selected by default.
+- [ ] Navigate Behavior, Radial menu, Preview, Appearance, and Advanced with mouse and keyboard.
+- [ ] Change the trigger, radial size, preview settings, appearance mode, and curated style.
+- [ ] Add, rebind, cycle, and delete a keybind; duplicate key combinations are rejected inline.
 - [ ] Restart LoopW and confirm every changed setting persists.
-- [ ] Enter invalid color text. Settings falls back safely and the UI remains usable.
+- [ ] Enter invalid custom color text. Settings falls back safely and the UI remains usable.
+- [ ] Reset one section and confirm unrelated settings remain unchanged.
+- [ ] Confirm reset-all requires confirmation and restores the defaults.
 - [ ] Verify the preview follows the selected action and does not remain visible after canceling.
 
 ## Scripting / IPC

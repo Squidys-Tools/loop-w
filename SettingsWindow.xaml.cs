@@ -6,14 +6,27 @@ using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Media;
+using Brush = System.Windows.Media.Brush;
+using Brushes = System.Windows.Media.Brushes;
+using MessageBox = System.Windows.MessageBox;
 using Button = System.Windows.Controls.Button;
 using CheckBox = System.Windows.Controls.CheckBox;
 using ComboBox = System.Windows.Controls.ComboBox;
+using RadioButton = System.Windows.Controls.RadioButton;
+using UserControl = System.Windows.Controls.UserControl;
 
 namespace LoopW;
 
-public partial class SettingsWindow : Window
+public partial class SettingsWindow : UserControl
 {
+    private static readonly ThemePreset[] ThemePresets =
+    {
+        new("LoopWBlue", "#3D9BFF", "#7A3D9BFF", "#F03D9BFF", "#B61B212B", "#B83D9BFF"),
+        new("Cobalt", "#6AAEFF", "#7A6AAEFF", "#F06AAEFF", "#B61B2534", "#B86AAEFF"),
+        new("Violet", "#B39AFF", "#7AB39AFF", "#F0B39AFF", "#B6252333", "#B8B39AFF")
+    };
+
     public static IReadOnlyList<KeyValuePair<WindowAction, string>> ActionChoices { get; } =
         Enum.GetValues<WindowAction>()
             .Select(a => new KeyValuePair<WindowAction, string>(a, WindowActionService.ActionName(a)))
@@ -23,7 +36,8 @@ public partial class SettingsWindow : Window
     private readonly AppSettings _settings;
     private readonly ObservableCollection<KeybindRow> _rows = new();
     private bool _capturingUi;
-    private bool _loading;
+    private bool _loading = true;
+    private bool _initialized;
 
     public SettingsWindow(GlobalHotkey hotkey, AppSettings settings)
     {
@@ -35,52 +49,51 @@ public partial class SettingsWindow : Window
 
     public event Action<AppSettings>? SettingsChanged;
 
-    private void Window_SourceInitialized(object? sender, EventArgs e)
+    private void Window_Loaded(object sender, RoutedEventArgs e)
     {
-        var hwnd = new System.Windows.Interop.WindowInteropHelper(this).Handle;
-        if (hwnd == IntPtr.Zero)
+        if (_initialized)
         {
             return;
         }
 
-        foreach (var attribute in new[] { NativeMethods.DwmwaUseImmersiveDarkMode, NativeMethods.DwmwaUseImmersiveDarkModeBefore20h1 })
-        {
-            var enabled = 1;
-            if (NativeMethods.DwmSetWindowAttribute(hwnd, attribute, ref enabled, sizeof(int)) == 0)
-            {
-                break;
-            }
-        }
-    }
-
-    private void Window_Loaded(object sender, RoutedEventArgs e)
-    {
+        _initialized = true;
         _loading = true;
         foreach (var keybind in _settings.Keybinds)
         {
             _rows.Add(new KeybindRow(keybind));
         }
 
-        TriggerLabel.Text = HotkeyNames.For(_settings.TriggerModifiers, _settings.TriggerVk);
-        LaunchAtLoginCheck.IsChecked = _settings.LaunchAtLogin;
-        RadialEnabledCheck.IsChecked = _settings.RadialEnabled;
-        CursorInteractionCheck.IsChecked = _settings.CursorInteractionEnabled;
-        OuterRadiusSlider.Value = _settings.RadialOuterRadius;
-        InnerRadiusSlider.Value = _settings.RadialInnerRadius;
-        PreviewEnabledCheck.IsChecked = _settings.PreviewEnabled;
-        PreviewPaddingSlider.Value = _settings.PreviewPadding;
-        PreviewCornerSlider.Value = _settings.PreviewCornerRadius;
-        PreviewBorderWidthSlider.Value = _settings.PreviewBorderWidth;
-        AccentColorText.Text = _settings.AccentColor;
-        SectorFillText.Text = _settings.RadialSectorFill;
-        SectorStrokeText.Text = _settings.RadialSectorStroke;
-        RingFillText.Text = _settings.RadialRingFill;
-        PreviewBorderText.Text = _settings.PreviewBorderColor;
-        UpdateValueLabels();
+        RefreshControlsFromSettings();
         _loading = false;
+        ApplyThemeResources();
+        ShowSection("Behavior");
     }
 
-    private void Trigger_MouseLeftButtonUp(object sender, MouseButtonEventArgs e) => BeginTriggerCapture();
+    private void SectionNav_Checked(object sender, RoutedEventArgs e)
+    {
+        if (sender is RadioButton { Tag: string section })
+        {
+            ShowSection(section);
+        }
+    }
+
+    private void ShowSection(string section)
+    {
+        if (BehaviorSection == null || ContentScroller == null)
+        {
+            return;
+        }
+
+        _activeSection = section;
+        BehaviorSection.Visibility = section == "Behavior" ? Visibility.Visible : Visibility.Collapsed;
+        RadialSection.Visibility = section == "Radial" ? Visibility.Visible : Visibility.Collapsed;
+        PreviewSection.Visibility = section == "Preview" ? Visibility.Visible : Visibility.Collapsed;
+        AppearanceSection.Visibility = section == "Appearance" ? Visibility.Visible : Visibility.Collapsed;
+        AdvancedSection.Visibility = section == "Advanced" ? Visibility.Visible : Visibility.Collapsed;
+        ContentScroller.ScrollToTop();
+    }
+
+    private string _activeSection = "Behavior";
 
     private void Trigger_Click(object sender, RoutedEventArgs e) => BeginTriggerCapture();
 
@@ -98,18 +111,18 @@ public partial class SettingsWindow : Window
                 SetCapturingUi(false);
                 _settings.TriggerModifiers = mods;
                 _settings.TriggerVk = vk;
-                TriggerLabel.Text = HotkeyNames.For(mods, vk);
+                RefreshTriggerLabel();
                 SaveSettings("Trigger updated");
             },
             () =>
             {
                 SetCapturingUi(false);
-                StatusText.Text = "Trigger capture cancelled";
+                SetStatus("Trigger capture cancelled");
             },
             () =>
             {
                 SetCapturingUi(false);
-                StatusText.Text = "That key is reserved by the OS — try another";
+                SetStatus("That key is reserved by the OS — try another");
             });
     }
 
@@ -125,7 +138,7 @@ public partial class SettingsWindow : Window
             _loading = true;
             LaunchAtLoginCheck.IsChecked = _settings.LaunchAtLogin;
             _loading = false;
-            StatusText.Text = "Could not update launch-at-login";
+            SetStatus("Could not update launch-at-login", isError: true);
             return;
         }
 
@@ -147,14 +160,19 @@ public partial class SettingsWindow : Window
 
     private void Radial_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
     {
-        if (_loading)
+        if (_loading || OuterRadiusSlider is null || InnerRadiusSlider is null)
         {
             return;
         }
 
         _settings.RadialOuterRadius = OuterRadiusSlider.Value;
-        _settings.RadialInnerRadius = Math.Min(InnerRadiusSlider.Value, _settings.RadialOuterRadius - 8);
-        InnerRadiusSlider.Value = _settings.RadialInnerRadius;
+        var innerRadius = Math.Min(InnerRadiusSlider.Value, _settings.RadialOuterRadius - 8);
+        if (Math.Abs(InnerRadiusSlider.Value - innerRadius) > 0.001)
+        {
+            InnerRadiusSlider.Value = innerRadius;
+        }
+
+        _settings.RadialInnerRadius = innerRadius;
         UpdateValueLabels();
         SaveSettings("Radial size saved");
     }
@@ -184,6 +202,49 @@ public partial class SettingsWindow : Window
         SaveSettings("Preview size saved");
     }
 
+    private void AppearanceMode_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_loading || AppearanceModeCombo.SelectedValue is not string mode)
+        {
+            return;
+        }
+
+        _settings.AppearanceMode = mode;
+        ApplyThemeResources();
+        SaveSettings("Appearance saved");
+    }
+
+    private void Preset_Click(object sender, RoutedEventArgs e)
+    {
+        if (_loading || sender is not Button { Tag: string presetName })
+        {
+            return;
+        }
+
+        var preset = ThemePresets.FirstOrDefault(p => p.Name == presetName);
+        if (preset.Name is null)
+        {
+            return;
+        }
+
+        _settings.AccentColor = preset.Accent;
+        _settings.RadialSectorFill = preset.SectorFill;
+        _settings.RadialSectorStroke = preset.SectorStroke;
+        _settings.RadialRingFill = preset.RingFill;
+        _settings.PreviewBorderColor = preset.PreviewBorder;
+        RefreshThemeFields();
+        ApplyThemeResources();
+        SaveSettings($"{presetName} style applied");
+    }
+
+    private void Theme_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        if (!_loading)
+        {
+            UpdateColorSwatches();
+        }
+    }
+
     private void Theme_LostFocus(object sender, RoutedEventArgs e)
     {
         if (_loading)
@@ -197,13 +258,10 @@ public partial class SettingsWindow : Window
         _settings.RadialRingFill = RingFillText.Text;
         _settings.PreviewBorderColor = PreviewBorderText.Text;
         _settings.Save();
-        AccentColorText.Text = _settings.AccentColor;
-        SectorFillText.Text = _settings.RadialSectorFill;
-        SectorStrokeText.Text = _settings.RadialSectorStroke;
-        RingFillText.Text = _settings.RadialRingFill;
-        PreviewBorderText.Text = _settings.PreviewBorderColor;
-        SettingsChanged?.Invoke(_settings);
-        StatusText.Text = "Theme saved";
+        RefreshThemeFields();
+        ApplyThemeResources();
+        NotifySettingsChanged();
+        SetStatus("Custom colors saved");
     }
 
     private void Add_Click(object sender, RoutedEventArgs e)
@@ -218,24 +276,30 @@ public partial class SettingsWindow : Window
             (mods, vk) =>
             {
                 SetCapturingUi(false);
+                if (HasKeybindConflict(mods, vk))
+                {
+                    SetStatus("That key is already assigned — choose another", isError: true);
+                    return;
+                }
+
                 _rows.Add(new KeybindRow(new Keybind(mods, vk, WindowAction.RightHalf)));
                 SaveSettings("Keybind added");
             },
             () =>
             {
                 SetCapturingUi(false);
-                StatusText.Text = "Keybind capture cancelled";
+                SetStatus("Keybind capture cancelled");
             },
             () =>
             {
                 SetCapturingUi(false);
-                StatusText.Text = "That key is reserved by the OS — try another";
+                SetStatus("That key is reserved by the OS — try another");
             });
     }
 
-    private void KeyChip_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+    private void KeyChip_Click(object sender, RoutedEventArgs e)
     {
-        if (_capturingUi || sender is not TextBlock { DataContext: KeybindRow row })
+        if (_capturingUi || sender is not Button { DataContext: KeybindRow row })
         {
             return;
         }
@@ -245,6 +309,12 @@ public partial class SettingsWindow : Window
             (mods, vk) =>
             {
                 SetCapturingUi(false);
+                if (HasKeybindConflict(mods, vk, row.Keybind))
+                {
+                    SetStatus("That key is already assigned — choose another", isError: true);
+                    return;
+                }
+
                 row.Keybind.Modifiers = mods;
                 row.Keybind.Vk = vk;
                 row.Refresh();
@@ -253,13 +323,25 @@ public partial class SettingsWindow : Window
             () =>
             {
                 SetCapturingUi(false);
-                StatusText.Text = "Rebind cancelled";
+                SetStatus("Rebind cancelled");
             },
             () =>
             {
                 SetCapturingUi(false);
-                StatusText.Text = "That key is reserved by the OS — try another";
+                SetStatus("That key is reserved by the OS — try another");
             });
+    }
+
+    private bool HasKeybindConflict(uint modifiers, uint vk, Keybind? ignored = null)
+    {
+        if (modifiers == _settings.TriggerModifiers && vk == _settings.TriggerVk)
+        {
+            return true;
+        }
+
+        return _rows.Any(row => row.Keybind != ignored &&
+            row.Keybind.Modifiers == modifiers &&
+            row.Keybind.Vk == vk);
     }
 
     private void Action_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -300,32 +382,280 @@ public partial class SettingsWindow : Window
         }
     }
 
+    private void ResetSection_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button { Tag: string section })
+        {
+            return;
+        }
+
+        var defaults = new AppSettings();
+        switch (section)
+        {
+            case "Behavior":
+                if (!StartupManager.TrySetEnabled(defaults.LaunchAtLogin))
+                {
+                    SetStatus("Could not reset launch-at-login", isError: true);
+                    return;
+                }
+
+                _settings.TriggerModifiers = defaults.TriggerModifiers;
+                _settings.TriggerVk = defaults.TriggerVk;
+                _settings.LaunchAtLogin = defaults.LaunchAtLogin;
+                break;
+            case "Radial":
+                _settings.RadialEnabled = defaults.RadialEnabled;
+                _settings.CursorInteractionEnabled = defaults.CursorInteractionEnabled;
+                _settings.RadialOuterRadius = defaults.RadialOuterRadius;
+                _settings.RadialInnerRadius = defaults.RadialInnerRadius;
+                break;
+            case "Preview":
+                _settings.PreviewEnabled = defaults.PreviewEnabled;
+                _settings.PreviewPadding = defaults.PreviewPadding;
+                _settings.PreviewCornerRadius = defaults.PreviewCornerRadius;
+                _settings.PreviewBorderWidth = defaults.PreviewBorderWidth;
+                break;
+            case "Appearance":
+                _settings.AppearanceMode = defaults.AppearanceMode;
+                _settings.AccentColor = defaults.AccentColor;
+                _settings.RadialSectorFill = defaults.RadialSectorFill;
+                _settings.RadialSectorStroke = defaults.RadialSectorStroke;
+                _settings.RadialRingFill = defaults.RadialRingFill;
+                _settings.PreviewBorderColor = defaults.PreviewBorderColor;
+                break;
+            case "Advanced":
+                _settings.Keybinds = new List<Keybind>();
+                _rows.Clear();
+                break;
+            default:
+                return;
+        }
+
+        RefreshControlsFromSettings();
+        SaveSettings($"{section} reset");
+    }
+
+    private void ResetAll_Click(object sender, RoutedEventArgs e)
+    {
+        var result = MessageBox.Show(
+            Window.GetWindow(this),
+            "Reset all LoopW settings to their defaults? This will remove custom keybinds and visual choices.",
+            "Reset all settings",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Warning,
+            MessageBoxResult.No);
+
+        if (result != MessageBoxResult.Yes)
+        {
+            return;
+        }
+
+        if (!StartupManager.TrySetEnabled(false))
+        {
+            SetStatus("Could not reset launch-at-login", isError: true);
+            return;
+        }
+
+        _settings.ResetToDefaults();
+        _rows.Clear();
+        RefreshControlsFromSettings();
+        SaveSettings("All settings reset");
+    }
+
     private void SetCapturingUi(bool capturing)
     {
         _capturingUi = capturing;
         AddButton.IsEnabled = !capturing;
         TriggerButton.IsEnabled = !capturing;
-        StatusText.Text = capturing ? "Press a key or combo — Esc to cancel" : "Saved";
+        CaptureHint.Text = capturing ? "Press a key or key combination — Esc cancels." : string.Empty;
+        TriggerLabel.Content = capturing ? "Press a key…" : HotkeyNames.For(_hotkey.TriggerModifiers, _hotkey.TriggerVk);
+        SetStatus(capturing ? "Listening for a key…" : "Saved");
     }
 
     private void SaveSettings(string status)
     {
-        _settings.Keybinds = _rows.Select(r => r.Keybind).ToList();
+        _settings.Keybinds = _rows.Select(row => row.Keybind).ToList();
         _settings.Save();
         _hotkey.SetBinding(_settings.TriggerModifiers, _settings.TriggerVk);
         _hotkey.SetKeybinds(_settings.Keybinds);
-        SettingsChanged?.Invoke(_settings);
-        StatusText.Text = status;
+        ApplyThemeResources();
+        NotifySettingsChanged();
+        RefreshTriggerLabel();
+        RefreshThemeFields();
+        UpdateKeybindEmptyState();
+        SetStatus(status);
+    }
+
+    private void NotifySettingsChanged() => SettingsChanged?.Invoke(_settings);
+
+    private void RefreshControlsFromSettings()
+    {
+        _loading = true;
+        RefreshTriggerLabel();
+        LaunchAtLoginCheck.IsChecked = _settings.LaunchAtLogin;
+        RadialEnabledCheck.IsChecked = _settings.RadialEnabled;
+        CursorInteractionCheck.IsChecked = _settings.CursorInteractionEnabled;
+        OuterRadiusSlider.Value = _settings.RadialOuterRadius;
+        InnerRadiusSlider.Value = _settings.RadialInnerRadius;
+        PreviewEnabledCheck.IsChecked = _settings.PreviewEnabled;
+        PreviewPaddingSlider.Value = _settings.PreviewPadding;
+        PreviewCornerSlider.Value = _settings.PreviewCornerRadius;
+        PreviewBorderWidthSlider.Value = _settings.PreviewBorderWidth;
+        AppearanceModeCombo.SelectedValue = _settings.AppearanceMode;
+        RefreshThemeFields();
+        UpdateValueLabels();
+        UpdateKeybindEmptyState();
+        _loading = false;
+        ApplyThemeResources();
+    }
+
+    private void RefreshTriggerLabel()
+    {
+        if (TriggerLabel != null)
+        {
+            TriggerLabel.Content = HotkeyNames.For(_settings.TriggerModifiers, _settings.TriggerVk);
+        }
+    }
+
+    private void RefreshThemeFields()
+    {
+        if (AccentColorText == null)
+        {
+            return;
+        }
+
+        AccentColorText.Text = _settings.AccentColor;
+        SectorFillText.Text = _settings.RadialSectorFill;
+        SectorStrokeText.Text = _settings.RadialSectorStroke;
+        RingFillText.Text = _settings.RadialRingFill;
+        PreviewBorderText.Text = _settings.PreviewBorderColor;
+        UpdateColorSwatches();
+        UpdatePresetSelection();
     }
 
     private void UpdateValueLabels()
     {
+        if (OuterRadiusSlider == null)
+        {
+            return;
+        }
+
         OuterRadiusValue.Text = $"{OuterRadiusSlider.Value:0} px";
         InnerRadiusValue.Text = $"{InnerRadiusSlider.Value:0} px";
         PreviewPaddingValue.Text = $"{PreviewPaddingSlider.Value:0} px";
         PreviewCornerValue.Text = $"{PreviewCornerSlider.Value:0} px";
         PreviewBorderWidthValue.Text = $"{PreviewBorderWidthSlider.Value:0} px";
     }
+
+    private void UpdateKeybindEmptyState()
+    {
+        if (KeybindEmptyState == null)
+        {
+            return;
+        }
+
+        KeybindEmptyState.Visibility = _rows.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private void UpdateColorSwatches()
+    {
+        SetSwatch(AccentSwatch, AccentColorText.Text);
+        SetSwatch(SectorFillSwatch, SectorFillText.Text);
+        SetSwatch(SectorStrokeSwatch, SectorStrokeText.Text);
+        SetSwatch(RingFillSwatch, RingFillText.Text);
+        SetSwatch(PreviewBorderSwatch, PreviewBorderText.Text);
+    }
+
+    private void SetSwatch(Border swatch, string value)
+    {
+        swatch.Background = TryCreateBrush(value) ?? (Brush)FindResource("BorderBrush");
+    }
+
+    private void UpdatePresetSelection()
+    {
+        if (BluePresetButton == null)
+        {
+            return;
+        }
+
+        var selected = ThemePresets.FirstOrDefault(p =>
+            string.Equals(p.Accent, _settings.AccentColor, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(p.SectorFill, _settings.RadialSectorFill, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(p.SectorStroke, _settings.RadialSectorStroke, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(p.RingFill, _settings.RadialRingFill, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(p.PreviewBorder, _settings.PreviewBorderColor, StringComparison.OrdinalIgnoreCase));
+
+        var selectedName = selected.Name;
+        var defaultBorder = (Brush)FindResource("BorderBrush");
+        var accent = (Brush)FindResource("AccentBrush");
+        foreach (var button in new[] { BluePresetButton, CobaltPresetButton, VioletPresetButton })
+        {
+            var isSelected = button.Tag is string name && name == selectedName;
+            button.BorderBrush = isSelected ? accent : defaultBorder;
+            button.BorderThickness = isSelected ? new Thickness(1.5) : new Thickness(1);
+        }
+    }
+
+    private void ApplyThemeResources()
+    {
+        var light = _settings.IsLightAppearance;
+        var accent = TryCreateBrush(_settings.AccentColor) ?? CreateBrush(light ? "#1769D1" : "#3D9BFF");
+        Resources["PageBrush"] = CreateBrush(light ? "#F4F7FB" : "#101216");
+        Resources["NavigationBrush"] = CreateBrush(light ? "#EAF0F7" : "#151922");
+        Resources["PanelBrush"] = CreateBrush(light ? "#FFFFFF" : "#191E27");
+        Resources["CardBrush"] = CreateBrush(light ? "#FFFFFF" : "#202632");
+        Resources["CardHoverBrush"] = CreateBrush(light ? "#EEF4FA" : "#293342");
+        Resources["InputBrush"] = CreateBrush(light ? "#F6F8FB" : "#151A22");
+        Resources["BorderBrush"] = CreateBrush(light ? "#D7DFEA" : "#303A48");
+        Resources["PrimaryTextBrush"] = CreateBrush(light ? "#16202D" : "#F0F4FA");
+        Resources["SecondaryTextBrush"] = CreateBrush(light ? "#5E6B7C" : "#9DA9B9");
+        Resources["QuietTextBrush"] = CreateBrush(light ? "#748092" : "#6F7B8A");
+        Resources["AccentBrush"] = accent;
+        Resources["AccentSoftBrush"] = CreateBrush(light ? "#1A3D9BFF" : "#263D9BFF");
+        Resources["SuccessBrush"] = CreateBrush(light ? "#16734A" : "#6AD5A0");
+        Resources["WarningBrush"] = CreateBrush(light ? "#9A5B00" : "#F1B86A");
+        Resources["DangerBrush"] = CreateBrush(light ? "#B4232C" : "#FF8B91");
+        Resources["FocusBrush"] = CreateBrush(light ? "#1769D1" : "#78B9FF");
+        UpdatePresetSelection();
+        UpdateColorSwatches();
+    }
+
+    private static Brush CreateBrush(string value)
+    {
+        return TryCreateBrush(value) ?? Brushes.Transparent;
+    }
+
+    private static Brush? TryCreateBrush(string? value)
+    {
+        try
+        {
+            if (new BrushConverter().ConvertFromString(value ?? string.Empty) is Brush brush)
+            {
+                brush.Freeze();
+                return brush;
+            }
+        }
+        catch
+        {
+            // Invalid values are normalized by AppSettings.Save().
+        }
+
+        return null;
+    }
+
+    private void SetStatus(string text, bool isError = false)
+    {
+        StatusText.Text = text;
+        StatusText.Foreground = (Brush)FindResource(isError ? "DangerBrush" : "SecondaryTextBrush");
+    }
+
+    private readonly record struct ThemePreset(
+        string Name,
+        string Accent,
+        string SectorFill,
+        string SectorStroke,
+        string RingFill,
+        string PreviewBorder);
 }
 
 public sealed class KeybindRow : INotifyPropertyChanged

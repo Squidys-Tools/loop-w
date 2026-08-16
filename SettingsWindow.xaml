@@ -1,192 +1,814 @@
-<Window x:Class="LoopW.SettingsWindow"
-        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:local="clr-namespace:LoopW"
-        Title="LoopW Settings"
-        Height="620" Width="760"
-        MinHeight="520" MinWidth="640"
-        Background="#1E1E1E"
-        Foreground="#CCCCCC"
-        WindowStartupLocation="CenterScreen"
-        Loaded="Window_Loaded"
-        SourceInitialized="Window_SourceInitialized">
-    <Window.Resources>
-        <SolidColorBrush x:Key="PanelBrush" Color="#252526" />
-        <SolidColorBrush x:Key="MutedBrush" Color="#858585" />
-        <SolidColorBrush x:Key="AccentBrush" Color="#007AFF" />
-        <SolidColorBrush x:Key="CapBrush" Color="#333333" />
-        <Style TargetType="TextBox">
-            <Setter Property="Background" Value="#333333" />
-            <Setter Property="Foreground" Value="#EEEEEE" />
-            <Setter Property="BorderBrush" Value="#4A4A4A" />
-            <Setter Property="Padding" Value="8,5" />
-        </Style>
-        <Style TargetType="ComboBox">
-            <Setter Property="Background" Value="#333333" />
-            <Setter Property="Foreground" Value="#EEEEEE" />
-            <Setter Property="BorderBrush" Value="#4A4A4A" />
-        </Style>
-    </Window.Resources>
+<UserControl x:Class="LoopW.SettingsWindow"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="clr-namespace:LoopW"
+             Background="{DynamicResource PageBrush}"
+             Foreground="{DynamicResource PrimaryTextBrush}"
+             Loaded="Window_Loaded">
+    <UserControl.Resources>
+        <SolidColorBrush x:Key="PageBrush" Color="#101216" />
+        <SolidColorBrush x:Key="NavigationBrush" Color="#151922" />
+        <SolidColorBrush x:Key="PanelBrush" Color="#191E27" />
+        <SolidColorBrush x:Key="CardBrush" Color="#202632" />
+        <SolidColorBrush x:Key="CardHoverBrush" Color="#293342" />
+        <SolidColorBrush x:Key="InputBrush" Color="#151A22" />
+        <SolidColorBrush x:Key="BorderBrush" Color="#303A48" />
+        <SolidColorBrush x:Key="PrimaryTextBrush" Color="#F0F4FA" />
+        <SolidColorBrush x:Key="SecondaryTextBrush" Color="#9DA9B9" />
+        <SolidColorBrush x:Key="QuietTextBrush" Color="#6F7B8A" />
+        <SolidColorBrush x:Key="AccentBrush" Color="#3D9BFF" />
+        <SolidColorBrush x:Key="AccentSoftBrush" Color="#263D9BFF" />
+        <SolidColorBrush x:Key="SuccessBrush" Color="#6AD5A0" />
+        <SolidColorBrush x:Key="WarningBrush" Color="#F1B86A" />
+        <SolidColorBrush x:Key="DangerBrush" Color="#FF8B91" />
+        <SolidColorBrush x:Key="FocusBrush" Color="#78B9FF" />
 
-    <Grid Margin="28">
+        <Style x:Key="DescriptionStyle" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Foreground" Value="{DynamicResource SecondaryTextBrush}" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+        </Style>
+
+        <Style x:Key="SectionEyebrowStyle" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Foreground" Value="{DynamicResource AccentBrush}" />
+            <Setter Property="TextOptions.TextFormattingMode" Value="Display" />
+        </Style>
+
+        <Style x:Key="SettingLabelStyle" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="Foreground" Value="{DynamicResource PrimaryTextBrush}" />
+        </Style>
+
+        <Style x:Key="CardStyle" TargetType="Border">
+            <Setter Property="Background" Value="{DynamicResource CardBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="12" />
+            <Setter Property="Padding" Value="18" />
+        </Style>
+
+        <Style x:Key="BaseButtonStyle" TargetType="Button">
+            <Setter Property="Background" Value="{DynamicResource AccentBrush}" />
+            <Setter Property="Foreground" Value="White" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Padding" Value="13,8" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type Button}">
+                        <Border x:Name="ButtonChrome"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="8"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                              VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
+                                              RecognizesAccessKey="True" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="ButtonChrome" Property="Opacity" Value="0.88" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="ButtonChrome" Property="Opacity" Value="0.72" />
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="ButtonChrome" Property="BorderBrush" Value="{DynamicResource FocusBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="ButtonChrome" Property="Opacity" Value="0.42" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="QuietButtonStyle" TargetType="Button" BasedOn="{StaticResource BaseButtonStyle}">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Foreground" Value="{DynamicResource AccentBrush}" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="Padding" Value="8,6" />
+        </Style>
+
+        <Style x:Key="DangerButtonStyle" TargetType="Button" BasedOn="{StaticResource BaseButtonStyle}">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Foreground" Value="{DynamicResource DangerBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+        </Style>
+
+        <Style x:Key="NavButtonStyle" TargetType="RadioButton">
+            <Setter Property="Foreground" Value="{DynamicResource SecondaryTextBrush}" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="Margin" Value="0,2,0,2" />
+            <Setter Property="Padding" Value="13,11" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type RadioButton}">
+                        <Border x:Name="NavChrome"
+                                Background="{TemplateBinding Background}"
+                                CornerRadius="9"
+                                Padding="{TemplateBinding Padding}">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="4" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <Border x:Name="NavIndicator"
+                                        Width="3"
+                                        Height="20"
+                                        CornerRadius="2"
+                                        Background="Transparent"
+                                        HorizontalAlignment="Left"
+                                        VerticalAlignment="Center" />
+                                <ContentPresenter Grid.Column="1"
+                                                  Margin="10,0,0,0"
+                                                  VerticalAlignment="Center"
+                                                  RecognizesAccessKey="True"
+                                                  TextElement.Foreground="{TemplateBinding Foreground}" />
+                            </Grid>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="NavChrome" Property="Background" Value="{DynamicResource CardHoverBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="NavChrome" Property="Background" Value="{DynamicResource AccentSoftBrush}" />
+                                <Setter TargetName="NavIndicator" Property="Background" Value="{DynamicResource AccentBrush}" />
+                                <Setter Property="Foreground" Value="{DynamicResource PrimaryTextBrush}" />
+                                <Setter Property="FontWeight" Value="SemiBold" />
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="NavChrome" Property="BorderBrush" Value="{DynamicResource FocusBrush}" />
+                                <Setter TargetName="NavChrome" Property="BorderThickness" Value="1" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="ToggleCheckBoxStyle" TargetType="CheckBox">
+            <Setter Property="Foreground" Value="{DynamicResource PrimaryTextBrush}" />
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="Margin" Value="0,5,0,5" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type CheckBox}">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="42" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Border x:Name="Track"
+                                    Width="38"
+                                    Height="22"
+                                    Background="{DynamicResource InputBrush}"
+                                    BorderBrush="{DynamicResource BorderBrush}"
+                                    BorderThickness="1"
+                                    CornerRadius="11"
+                                    HorizontalAlignment="Left"
+                                    VerticalAlignment="Center">
+                                <Ellipse x:Name="Thumb"
+                                         Width="16"
+                                         Height="16"
+                                         Fill="{DynamicResource SecondaryTextBrush}"
+                                         HorizontalAlignment="Left"
+                                         Margin="2"
+                                         VerticalAlignment="Center" />
+                            </Border>
+                            <ContentPresenter Grid.Column="1"
+                                              Margin="10,0,0,0"
+                                              VerticalAlignment="Center"
+                                              RecognizesAccessKey="True"
+                                              TextElement.Foreground="{TemplateBinding Foreground}" />
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="Track" Property="Background" Value="{DynamicResource AccentBrush}" />
+                                <Setter TargetName="Track" Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+                                <Setter TargetName="Thumb" Property="Fill" Value="White" />
+                                <Setter TargetName="Thumb" Property="HorizontalAlignment" Value="Right" />
+                            </Trigger>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Track" Property="BorderBrush" Value="{DynamicResource FocusBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="Track" Property="BorderBrush" Value="{DynamicResource FocusBrush}" />
+                                <Setter TargetName="Track" Property="BorderThickness" Value="2" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.45" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style TargetType="TextBox">
+            <Setter Property="Background" Value="{DynamicResource InputBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource PrimaryTextBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Padding" Value="10,7" />
+            <Setter Property="FontSize" Value="12" />
+        </Style>
+
+        <Style TargetType="ComboBox">
+            <Setter Property="Background" Value="{DynamicResource InputBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource PrimaryTextBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Padding" Value="8,5" />
+            <Setter Property="FontSize" Value="12" />
+        </Style>
+
+        <Style TargetType="Slider">
+            <Setter Property="Foreground" Value="{DynamicResource AccentBrush}" />
+            <Setter Property="Background" Value="{DynamicResource InputBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+            <Setter Property="Margin" Value="0,8,0,0" />
+        </Style>
+
+        <Style x:Key="PresetButtonStyle" TargetType="Button" BasedOn="{StaticResource BaseButtonStyle}">
+            <Setter Property="Background" Value="{DynamicResource CardBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource PrimaryTextBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+            <Setter Property="HorizontalContentAlignment" Value="Left" />
+            <Setter Property="Padding" Value="12" />
+            <Setter Property="Margin" Value="0,0,10,0" />
+        </Style>
+
+        <Style x:Key="KeyChipStyle" TargetType="Button" BasedOn="{StaticResource BaseButtonStyle}">
+            <Setter Property="Background" Value="{DynamicResource InputBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource PrimaryTextBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+            <Setter Property="Padding" Value="10,6" />
+        </Style>
+    </UserControl.Resources>
+
+    <Grid Margin="24">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="190" />
+            <ColumnDefinition Width="24" />
+            <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
         <Grid.RowDefinitions>
-            <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <StackPanel Grid.Row="0" Margin="0,0,0,18">
-            <TextBlock Text="Settings" FontSize="24" FontWeight="SemiBold" />
-            <TextBlock Text="Shape the trigger, menu, preview, and shortcuts around how you work."
-                       FontSize="12" Foreground="{StaticResource MutedBrush}" Margin="0,5,0,0" />
-        </StackPanel>
+        <Border Grid.Column="0"
+                Grid.RowSpan="2"
+                Background="{DynamicResource NavigationBrush}"
+                BorderBrush="{DynamicResource BorderBrush}"
+                BorderThickness="1"
+                CornerRadius="16"
+                Padding="14">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
 
-        <TabControl x:Name="Tabs" Grid.Row="1" Background="Transparent" BorderThickness="0">
-            <TabItem Header="Behavior">
-                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="0,18,8,0">
-                    <StackPanel>
-                        <TextBlock Text="TRIGGER" FontSize="12" FontWeight="Bold" Foreground="{StaticResource AccentBrush}" />
-                        <TextBlock Text="The trigger is held while you choose an action, or before pressing a keybind."
-                                   FontSize="12" Foreground="{StaticResource MutedBrush}" Margin="0,4,0,14" />
-                        <Grid Background="{StaticResource PanelBrush}" Margin="0,0,0,18">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="Auto" />
-                            </Grid.ColumnDefinitions>
-                            <StackPanel Margin="14,12">
-                                <TextBlock Text="Trigger key" FontWeight="SemiBold" />
-                                <TextBlock Text="Click rebind, then press a key or combination." FontSize="12" Foreground="{StaticResource MutedBrush}" Margin="0,3,0,0" />
+                <StackPanel Margin="4,4,4,26">
+                    <TextBlock Text="LOOPW"
+                               FontSize="12"
+                               FontWeight="Bold"
+                               Foreground="{DynamicResource AccentBrush}"
+                               Margin="0,0,0,0" />
+                    <TextBlock Text="Settings"
+                               FontSize="22"
+                               FontWeight="SemiBold"
+                               Margin="0,7,0,0" />
+                    <TextBlock Text="Make LoopW yours."
+                               Style="{StaticResource DescriptionStyle}"
+                               Margin="0,5,0,0" />
+                </StackPanel>
+
+                <StackPanel Grid.Row="1">
+                    <TextBlock Text="SETTINGS"
+                               Style="{StaticResource SectionEyebrowStyle}"
+                               Margin="4,0,4,9" />
+                    <RadioButton Content="Behavior"
+                                 Tag="Behavior"
+                                 GroupName="SettingsSections"
+                                 IsChecked="True"
+                                 Style="{StaticResource NavButtonStyle}"
+                                 Checked="SectionNav_Checked" />
+                    <RadioButton Content="Radial menu"
+                                 Tag="Radial"
+                                 GroupName="SettingsSections"
+                                 Style="{StaticResource NavButtonStyle}"
+                                 Checked="SectionNav_Checked" />
+                    <RadioButton Content="Preview"
+                                 Tag="Preview"
+                                 GroupName="SettingsSections"
+                                 Style="{StaticResource NavButtonStyle}"
+                                 Checked="SectionNav_Checked" />
+                    <RadioButton Content="Appearance"
+                                 Tag="Appearance"
+                                 GroupName="SettingsSections"
+                                 Style="{StaticResource NavButtonStyle}"
+                                 Checked="SectionNav_Checked" />
+                    <RadioButton Content="Advanced"
+                                 Tag="Advanced"
+                                 GroupName="SettingsSections"
+                                 Style="{StaticResource NavButtonStyle}"
+                                 Checked="SectionNav_Checked" />
+                </StackPanel>
+
+                <StackPanel Grid.Row="2" Margin="4,24,4,4">
+                    <Border Height="1" Background="{DynamicResource BorderBrush}" Margin="0,0,0,12" />
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <Grid Grid.Column="2" Grid.Row="0">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+
+            <Grid Grid.Row="0" Margin="0,4,0,18">
+                <StackPanel>
+                    <TextBlock Text="Settings"
+                               FontSize="28"
+                               FontWeight="SemiBold" />
+                    <TextBlock Text="Tune how LoopW starts, feels, and responds."
+                               Style="{StaticResource DescriptionStyle}"
+                               Margin="0,5,0,0" />
+                </StackPanel>
+                <TextBlock Text="Changes save automatically"
+                           HorizontalAlignment="Right"
+                           VerticalAlignment="Bottom"
+                           FontSize="11"
+                           Foreground="{DynamicResource QuietTextBrush}" />
+            </Grid>
+
+            <ScrollViewer x:Name="ContentScroller"
+                          Grid.Row="1"
+                          VerticalScrollBarVisibility="Auto"
+                          HorizontalScrollBarVisibility="Disabled"
+                          Padding="2,0,10,4">
+                <Grid>
+                    <StackPanel x:Name="BehaviorSection">
+                        <Grid Margin="0,0,0,16">
+                            <StackPanel>
+                                <TextBlock Text="Behavior" FontSize="21" FontWeight="SemiBold" />
+                                <TextBlock Text="Choose how LoopW starts and how you call it into the flow."
+                                           Style="{StaticResource DescriptionStyle}"
+                                           Margin="0,5,0,0" />
                             </StackPanel>
-                            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,14,0">
-                                <Border Background="{StaticResource CapBrush}" CornerRadius="8" Padding="12,7" Cursor="Hand" MouseLeftButtonUp="Trigger_MouseLeftButtonUp">
-                                    <TextBlock x:Name="TriggerLabel" />
-                                </Border>
-                                <Button x:Name="TriggerButton" Content="rebind" Background="Transparent" Foreground="{StaticResource AccentBrush}" BorderThickness="0" Margin="8,0,0,0" Click="Trigger_Click" />
-                            </StackPanel>
+                            <Button Content="Reset section"
+                                    Tag="Behavior"
+                                    Style="{StaticResource QuietButtonStyle}"
+                                    HorizontalAlignment="Right"
+                                    VerticalAlignment="Bottom"
+                                    Click="ResetSection_Click" />
                         </Grid>
-                        <CheckBox x:Name="LaunchAtLoginCheck" Content="Launch LoopW when I sign in" Foreground="#CCCCCC" Checked="Behavior_Changed" Unchecked="Behavior_Changed" />
-                        <TextBlock Text="Tray startup and hiding the main window will be added with resident-app support."
-                                   FontSize="12" Foreground="{StaticResource MutedBrush}" Margin="24,5,0,0" TextWrapping="Wrap" />
-                    </StackPanel>
-                </ScrollViewer>
-            </TabItem>
 
-            <TabItem Header="Radial">
-                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="0,18,8,0">
-                    <StackPanel>
-                        <TextBlock Text="RADIAL MENU" FontSize="12" FontWeight="Bold" Foreground="{StaticResource AccentBrush}" />
-                        <TextBlock Text="Choose whether the menu appears and how much room its ring uses."
-                                   FontSize="12" Foreground="{StaticResource MutedBrush}" Margin="0,4,0,14" />
-                        <CheckBox x:Name="RadialEnabledCheck" Content="Show radial menu while the trigger is held" Foreground="#CCCCCC" Checked="Radial_Changed" Unchecked="Radial_Changed" />
-                        <CheckBox x:Name="CursorInteractionCheck" Content="Use cursor direction to select a wedge" Foreground="#CCCCCC" Margin="0,12,0,18" Checked="Radial_Changed" Unchecked="Radial_Changed" />
-                        <TextBlock Text="Outer radius" />
-                        <Slider x:Name="OuterRadiusSlider" Minimum="64" Maximum="140" TickFrequency="4" IsSnapToTickEnabled="True" ValueChanged="Radial_ValueChanged" />
-                        <TextBlock x:Name="OuterRadiusValue" FontSize="12" Foreground="{StaticResource MutedBrush}" />
-                        <TextBlock Text="Inner radius" Margin="0,16,0,0" />
-                        <Slider x:Name="InnerRadiusSlider" Minimum="24" Maximum="120" TickFrequency="4" IsSnapToTickEnabled="True" ValueChanged="Radial_ValueChanged" />
-                        <TextBlock x:Name="InnerRadiusValue" FontSize="12" Foreground="{StaticResource MutedBrush}" />
-                    </StackPanel>
-                </ScrollViewer>
-            </TabItem>
+                        <Border Style="{StaticResource CardStyle}">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel>
+                                    <TextBlock Text="Trigger key" FontSize="14" FontWeight="SemiBold" />
+                                    <TextBlock Text="Hold this key while choosing a window action."
+                                               Style="{StaticResource DescriptionStyle}"
+                                               Margin="0,4,0,0" />
+                                    <TextBlock x:Name="CaptureHint"
+                                               Text=""
+                                               Style="{StaticResource DescriptionStyle}"
+                                               Foreground="{DynamicResource AccentBrush}"
+                                               Margin="0,9,0,0" />
+                                </StackPanel>
+                                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                    <Button x:Name="TriggerLabel"
+                                            Content="Caps Lock"
+                                            Style="{StaticResource KeyChipStyle}"
+                                            Click="Trigger_Click"
+                                            ToolTip="Click to rebind the trigger key" />
+                                    <Button x:Name="TriggerButton"
+                                            Content="Rebind"
+                                            Style="{StaticResource QuietButtonStyle}"
+                                            Margin="8,0,0,0"
+                                            Click="Trigger_Click" />
+                                </StackPanel>
+                            </Grid>
+                        </Border>
 
-            <TabItem Header="Preview">
-                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="0,18,8,0">
-                    <StackPanel>
-                        <TextBlock Text="TARGET PREVIEW" FontSize="12" FontWeight="Bold" Foreground="{StaticResource AccentBrush}" />
-                        <TextBlock Text="The preview mirrors the frame your selected action will use."
-                                   FontSize="12" Foreground="{StaticResource MutedBrush}" Margin="0,4,0,14" />
-                        <CheckBox x:Name="PreviewEnabledCheck" Content="Show target preview" Foreground="#CCCCCC" Margin="0,0,0,18" Checked="Preview_Changed" Unchecked="Preview_Changed" />
-                        <TextBlock Text="Padding" />
-                        <Slider x:Name="PreviewPaddingSlider" Minimum="4" Maximum="48" TickFrequency="2" IsSnapToTickEnabled="True" ValueChanged="Preview_ValueChanged" />
-                        <TextBlock x:Name="PreviewPaddingValue" FontSize="12" Foreground="{StaticResource MutedBrush}" />
-                        <TextBlock Text="Corner radius" Margin="0,16,0,0" />
-                        <Slider x:Name="PreviewCornerSlider" Minimum="4" Maximum="32" TickFrequency="2" IsSnapToTickEnabled="True" ValueChanged="Preview_ValueChanged" />
-                        <TextBlock x:Name="PreviewCornerValue" FontSize="12" Foreground="{StaticResource MutedBrush}" />
-                        <TextBlock Text="Border width" Margin="0,16,0,0" />
-                        <Slider x:Name="PreviewBorderWidthSlider" Minimum="0" Maximum="6" TickFrequency="1" IsSnapToTickEnabled="True" ValueChanged="Preview_ValueChanged" />
-                        <TextBlock x:Name="PreviewBorderWidthValue" FontSize="12" Foreground="{StaticResource MutedBrush}" />
-                    </StackPanel>
-                </ScrollViewer>
-            </TabItem>
+                        <Border Style="{StaticResource CardStyle}" Margin="0,12,0,0">
+                            <StackPanel>
+                                <CheckBox x:Name="LaunchAtLoginCheck"
+                                          Content="Launch LoopW when I sign in"
+                                          Style="{StaticResource ToggleCheckBoxStyle}"
+                                          Checked="Behavior_Changed"
+                                          Unchecked="Behavior_Changed" />
+                                <TextBlock Text="LoopW starts quietly in the system tray and is ready when you need it."
+                                           Style="{StaticResource DescriptionStyle}"
+                                           Margin="52,4,0,0" />
+                            </StackPanel>
+                        </Border>
 
-            <TabItem Header="Keybinds">
-                <Grid Margin="0,18,0,0">
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="*" />
-                        <RowDefinition Height="Auto" />
-                    </Grid.RowDefinitions>
-                    <StackPanel Grid.Row="0" Margin="0,0,0,10">
-                        <TextBlock Text="KEYBINDS" FontSize="12" FontWeight="Bold" Foreground="{StaticResource AccentBrush}" />
-                        <TextBlock Text="Hold the trigger, then press a bound key. Repeat directional binds to cycle through sizes."
-                                   FontSize="12" Foreground="{StaticResource MutedBrush}" Margin="0,4,0,0" />
-                    </StackPanel>
-                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
-                        <ItemsControl x:Name="KeybindList">
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate>
-                                    <Border Background="{StaticResource PanelBrush}" CornerRadius="10" Padding="12,10" Margin="0,4" BorderBrush="#3C3C3C" BorderThickness="1">
-                                        <Grid>
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="Auto" />
-                                                <ColumnDefinition Width="*" />
-                                                <ColumnDefinition Width="Auto" />
-                                                <ColumnDefinition Width="Auto" />
-                                            </Grid.ColumnDefinitions>
-                                            <Border Background="#333333" CornerRadius="8" Padding="12,6" Cursor="Hand" ToolTip="Click to rebind the key">
-                                                <TextBlock Text="{Binding Display}" FontSize="12" MouseLeftButtonUp="KeyChip_MouseLeftButtonUp" />
+                        <Border Style="{StaticResource CardStyle}"
+                                Margin="0,12,0,0"
+                                Visibility="Collapsed">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
+                                <StackPanel>
+                                    <TextBlock Text="Keybinds" FontSize="14" FontWeight="SemiBold" />
+                                    <TextBlock Text="Hold the trigger, then press a bound key to apply an action instantly."
+                                               Style="{StaticResource DescriptionStyle}"
+                                               Margin="0,4,0,0" />
+                                </StackPanel>
+                                <TextBlock x:Name="KeybindEmptyState"
+                                           Grid.Row="1"
+                                           Text="No keybinds yet. Add one to build a direct keyboard path."
+                                           Style="{StaticResource DescriptionStyle}"
+                                           Margin="0,16,0,4" />
+                                <ItemsControl x:Name="KeybindList" Grid.Row="1" Margin="0,14,0,0">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Border Background="{DynamicResource InputBrush}"
+                                                    BorderBrush="{DynamicResource BorderBrush}"
+                                                    BorderThickness="1"
+                                                    CornerRadius="9"
+                                                    Padding="10,8"
+                                                    Margin="0,4">
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="Auto" />
+                                                        <ColumnDefinition Width="*" />
+                                                        <ColumnDefinition Width="Auto" />
+                                                        <ColumnDefinition Width="Auto" />
+                                                    </Grid.ColumnDefinitions>
+                                                    <Button Content="{Binding Display}"
+                                                            Style="{StaticResource KeyChipStyle}"
+                                                            Click="KeyChip_Click"
+                                                            ToolTip="Click to rebind this key" />
+                                                    <ComboBox Grid.Column="1"
+                                                              Margin="12,0,12,0"
+                                                              VerticalAlignment="Center"
+                                                              ItemsSource="{x:Static local:SettingsWindow.ActionChoices}"
+                                                              SelectedValuePath="Key"
+                                                              DisplayMemberPath="Value"
+                                                              SelectedValue="{Binding Keybind.Action}"
+                                                              SelectionChanged="Action_SelectionChanged" />
+                                                    <CheckBox Grid.Column="2"
+                                                              Content="Cycle"
+                                                              Style="{StaticResource ToggleCheckBoxStyle}"
+                                                              IsChecked="{Binding Keybind.CycleEnabled}"
+                                                              IsEnabled="{Binding CanCycle}"
+                                                              VerticalAlignment="Center"
+                                                              Margin="0,0,12,0"
+                                                              Checked="Cycle_Changed"
+                                                              Unchecked="Cycle_Changed" />
+                                                    <Button Grid.Column="3"
+                                                            Content="Delete"
+                                                            Style="{StaticResource DangerButtonStyle}"
+                                                            Click="Delete_Click"
+                                                            ToolTip="Delete this keybind" />
+                                                </Grid>
                                             </Border>
-                                            <ComboBox Grid.Column="1" Margin="12,0,12,0" VerticalAlignment="Center"
-                                                      ItemsSource="{x:Static local:SettingsWindow.ActionChoices}"
-                                                      SelectedValuePath="Key" DisplayMemberPath="Value"
-                                                      SelectedValue="{Binding Keybind.Action}"
-                                                      SelectionChanged="Action_SelectionChanged" />
-                                            <CheckBox Grid.Column="2" Content="Cycle" IsChecked="{Binding Keybind.CycleEnabled}" IsEnabled="{Binding CanCycle}" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" Margin="0,0,12,0" Checked="Cycle_Changed" Unchecked="Cycle_Changed" />
-                                            <Button Grid.Column="3" Content="✕" Background="Transparent" Foreground="{StaticResource MutedBrush}" BorderThickness="0" Cursor="Hand" ToolTip="Delete" Click="Delete_Click" />
-                                        </Grid>
-                                    </Border>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-                    </ScrollViewer>
-                    <Button x:Name="AddButton" Grid.Row="2" Content="Add keybind" HorizontalAlignment="Left" Margin="0,10,0,0" Background="{StaticResource AccentBrush}" Foreground="White" BorderThickness="0" Padding="16,8" Cursor="Hand" Click="Add_Click" />
-                </Grid>
-            </TabItem>
-
-            <TabItem Header="Theme">
-                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="0,18,8,0">
-                    <StackPanel>
-                        <TextBlock Text="COLORS" FontSize="12" FontWeight="Bold" Foreground="{StaticResource AccentBrush}" />
-                        <TextBlock Text="Use #RRGGBB or #AARRGGBB values. Changes apply to the main preview and new radial menus."
-                                   FontSize="12" Foreground="{StaticResource MutedBrush}" Margin="0,4,0,14" TextWrapping="Wrap" />
-                        <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="170" />
-                                <ColumnDefinition Width="*" />
-                            </Grid.ColumnDefinitions>
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="Auto" />
-                            </Grid.RowDefinitions>
-                            <TextBlock Text="Accent" Margin="0,0,0,10" />
-                            <TextBox x:Name="AccentColorText" Grid.Column="1" Margin="0,0,0,10" LostFocus="Theme_LostFocus" />
-                            <TextBlock Text="Sector fill" Grid.Row="1" Margin="0,0,0,10" />
-                            <TextBox x:Name="SectorFillText" Grid.Row="1" Grid.Column="1" Margin="0,0,0,10" LostFocus="Theme_LostFocus" />
-                            <TextBlock Text="Sector stroke" Grid.Row="2" Margin="0,0,0,10" />
-                            <TextBox x:Name="SectorStrokeText" Grid.Row="2" Grid.Column="1" Margin="0,0,0,10" LostFocus="Theme_LostFocus" />
-                            <TextBlock Text="Ring fill" Grid.Row="3" Margin="0,0,0,10" />
-                            <TextBox x:Name="RingFillText" Grid.Row="3" Grid.Column="1" Margin="0,0,0,10" LostFocus="Theme_LostFocus" />
-                            <TextBlock Text="Preview border" Grid.Row="4" />
-                            <TextBox x:Name="PreviewBorderText" Grid.Row="4" Grid.Column="1" LostFocus="Theme_LostFocus" />
-                        </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                                <Button x:Name="AddButton"
+                                        Grid.Row="2"
+                                        Content="Add keybind"
+                                        HorizontalAlignment="Left"
+                                        Margin="0,14,0,0"
+                                        Click="Add_Click" />
+                            </Grid>
+                        </Border>
                     </StackPanel>
-                </ScrollViewer>
-            </TabItem>
-        </TabControl>
 
-        <TextBlock x:Name="StatusText" Grid.Row="2" FontSize="12" Foreground="{StaticResource MutedBrush}" Margin="0,12,0,0" Text="Saved" />
+                    <StackPanel x:Name="RadialSection" Visibility="Collapsed">
+                        <Grid Margin="0,0,0,16">
+                            <StackPanel>
+                                <TextBlock Text="Radial menu" FontSize="21" FontWeight="SemiBold" />
+                                <TextBlock Text="Shape the ring that appears around your cursor."
+                                           Style="{StaticResource DescriptionStyle}"
+                                           Margin="0,5,0,0" />
+                            </StackPanel>
+                            <Button Content="Reset section"
+                                    Tag="Radial"
+                                    Style="{StaticResource QuietButtonStyle}"
+                                    HorizontalAlignment="Right"
+                                    VerticalAlignment="Bottom"
+                                    Click="ResetSection_Click" />
+                        </Grid>
+
+                        <Border Style="{StaticResource CardStyle}">
+                            <StackPanel>
+                                <CheckBox x:Name="RadialEnabledCheck"
+                                          Content="Show the radial menu while the trigger is held"
+                                          Style="{StaticResource ToggleCheckBoxStyle}"
+                                          Checked="Radial_Changed"
+                                          Unchecked="Radial_Changed" />
+                                <CheckBox x:Name="CursorInteractionCheck"
+                                          Content="Use cursor direction to select a wedge"
+                                          Style="{StaticResource ToggleCheckBoxStyle}"
+                                          Checked="Radial_Changed"
+                                          Unchecked="Radial_Changed" />
+                            </StackPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource CardStyle}" Margin="0,12,0,0">
+                            <StackPanel>
+                                <Grid>
+                                    <TextBlock Text="Outer radius" Style="{StaticResource SettingLabelStyle}" />
+                                    <TextBlock x:Name="OuterRadiusValue"
+                                               TextAlignment="Right"
+                                               Foreground="{DynamicResource SecondaryTextBrush}" />
+                                </Grid>
+                                <Slider x:Name="OuterRadiusSlider"
+                                        Minimum="64"
+                                        Maximum="140"
+                                        TickFrequency="4"
+                                        IsSnapToTickEnabled="True"
+                                        ValueChanged="Radial_ValueChanged" />
+                                <Grid Margin="0,18,0,0">
+                                    <TextBlock Text="Inner radius" Style="{StaticResource SettingLabelStyle}" />
+                                    <TextBlock x:Name="InnerRadiusValue"
+                                               TextAlignment="Right"
+                                               Foreground="{DynamicResource SecondaryTextBrush}" />
+                                </Grid>
+                                <Slider x:Name="InnerRadiusSlider"
+                                        Minimum="24"
+                                        Maximum="120"
+                                        TickFrequency="4"
+                                        IsSnapToTickEnabled="True"
+                                        ValueChanged="Radial_ValueChanged" />
+                                <TextBlock Text="The inner radius cannot approach the outer edge too closely."
+                                           Style="{StaticResource DescriptionStyle}"
+                                           Margin="0,8,0,0" />
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+
+                    <StackPanel x:Name="PreviewSection" Visibility="Collapsed">
+                        <Grid Margin="0,0,0,16">
+                            <StackPanel>
+                                <TextBlock Text="Preview" FontSize="21" FontWeight="SemiBold" />
+                                <TextBlock Text="Make the destination frame clear without interrupting your flow."
+                                           Style="{StaticResource DescriptionStyle}"
+                                           Margin="0,5,0,0" />
+                            </StackPanel>
+                            <Button Content="Reset section"
+                                    Tag="Preview"
+                                    Style="{StaticResource QuietButtonStyle}"
+                                    HorizontalAlignment="Right"
+                                    VerticalAlignment="Bottom"
+                                    Click="ResetSection_Click" />
+                        </Grid>
+
+                        <Border Style="{StaticResource CardStyle}">
+                            <StackPanel>
+                                <CheckBox x:Name="PreviewEnabledCheck"
+                                          Content="Show the target preview"
+                                          Style="{StaticResource ToggleCheckBoxStyle}"
+                                          Checked="Preview_Changed"
+                                          Unchecked="Preview_Changed" />
+                                <TextBlock Text="The preview mirrors the frame an action will use."
+                                           Style="{StaticResource DescriptionStyle}"
+                                           Margin="52,4,0,0" />
+                            </StackPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource CardStyle}" Margin="0,12,0,0">
+                            <StackPanel>
+                                <Grid>
+                                    <TextBlock Text="Padding" Style="{StaticResource SettingLabelStyle}" />
+                                    <TextBlock x:Name="PreviewPaddingValue"
+                                               TextAlignment="Right"
+                                               Foreground="{DynamicResource SecondaryTextBrush}" />
+                                </Grid>
+                                <Slider x:Name="PreviewPaddingSlider"
+                                        Minimum="4"
+                                        Maximum="48"
+                                        TickFrequency="2"
+                                        IsSnapToTickEnabled="True"
+                                        ValueChanged="Preview_ValueChanged" />
+                                <Grid Margin="0,18,0,0">
+                                    <TextBlock Text="Corner radius" Style="{StaticResource SettingLabelStyle}" />
+                                    <TextBlock x:Name="PreviewCornerValue"
+                                               TextAlignment="Right"
+                                               Foreground="{DynamicResource SecondaryTextBrush}" />
+                                </Grid>
+                                <Slider x:Name="PreviewCornerSlider"
+                                        Minimum="4"
+                                        Maximum="32"
+                                        TickFrequency="2"
+                                        IsSnapToTickEnabled="True"
+                                        ValueChanged="Preview_ValueChanged" />
+                                <Grid Margin="0,18,0,0">
+                                    <TextBlock Text="Border width" Style="{StaticResource SettingLabelStyle}" />
+                                    <TextBlock x:Name="PreviewBorderWidthValue"
+                                               TextAlignment="Right"
+                                               Foreground="{DynamicResource SecondaryTextBrush}" />
+                                </Grid>
+                                <Slider x:Name="PreviewBorderWidthSlider"
+                                        Minimum="0"
+                                        Maximum="6"
+                                        TickFrequency="1"
+                                        IsSnapToTickEnabled="True"
+                                        ValueChanged="Preview_ValueChanged" />
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+
+                    <StackPanel x:Name="AppearanceSection" Visibility="Collapsed">
+                        <Grid Margin="0,0,0,16">
+                            <StackPanel>
+                                <TextBlock Text="Appearance" FontSize="21" FontWeight="SemiBold" />
+                                <TextBlock Text="Choose a calm visual system for LoopW and its window surfaces."
+                                           Style="{StaticResource DescriptionStyle}"
+                                           Margin="0,5,0,0" />
+                            </StackPanel>
+                            <Button Content="Reset section"
+                                    Tag="Appearance"
+                                    Style="{StaticResource QuietButtonStyle}"
+                                    HorizontalAlignment="Right"
+                                    VerticalAlignment="Bottom"
+                                    Click="ResetSection_Click" />
+                        </Grid>
+
+                        <Border Style="{StaticResource CardStyle}">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="230" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel>
+                                    <TextBlock Text="App appearance" FontSize="14" FontWeight="SemiBold" />
+                                    <TextBlock Text="Dark is the LoopW standard. Follow Windows when you want the app to match your system."
+                                               Style="{StaticResource DescriptionStyle}"
+                                               Margin="0,4,0,0" />
+                                </StackPanel>
+                                <ComboBox x:Name="AppearanceModeCombo"
+                                          Grid.Column="1"
+                                          SelectedValuePath="Tag"
+                                          VerticalAlignment="Center"
+                                          SelectionChanged="AppearanceMode_SelectionChanged">
+                                    <ComboBoxItem Content="LoopW dark" Tag="Dark" />
+                                    <ComboBoxItem Content="Follow Windows" Tag="FollowWindows" />
+                                    <ComboBoxItem Content="LoopW light" Tag="Light" />
+                                </ComboBox>
+                            </Grid>
+                        </Border>
+
+                        <Border Style="{StaticResource CardStyle}" Margin="0,12,0,0">
+                            <StackPanel>
+                                <TextBlock Text="Curated styles" FontSize="14" FontWeight="SemiBold" />
+                                <TextBlock Text="Start with a coherent palette, then open custom colors when you want more control."
+                                           Style="{StaticResource DescriptionStyle}"
+                                           Margin="0,4,0,14" />
+                                <StackPanel Orientation="Horizontal">
+                                    <Button x:Name="BluePresetButton"
+                                            Tag="LoopWBlue"
+                                            Style="{StaticResource PresetButtonStyle}"
+                                            Click="Preset_Click">
+                                        <StackPanel>
+                                            <StackPanel Orientation="Horizontal">
+                                                <Border Width="14" Height="14" CornerRadius="7" Background="#3D9BFF" Margin="0,0,5,0" />
+                                                <Border Width="14" Height="14" CornerRadius="7" Background="#202632" />
+                                            </StackPanel>
+                                            <TextBlock Text="LoopW blue" Margin="0,9,0,0" />
+                                            <TextBlock Text="Focused and familiar" Style="{StaticResource DescriptionStyle}" FontSize="11" Margin="0,2,0,0" />
+                                        </StackPanel>
+                                    </Button>
+                                    <Button x:Name="CobaltPresetButton"
+                                            Tag="Cobalt"
+                                            Style="{StaticResource PresetButtonStyle}"
+                                            Click="Preset_Click">
+                                        <StackPanel>
+                                            <StackPanel Orientation="Horizontal">
+                                                <Border Width="14" Height="14" CornerRadius="7" Background="#6AAEFF" Margin="0,0,5,0" />
+                                                <Border Width="14" Height="14" CornerRadius="7" Background="#1B2534" />
+                                            </StackPanel>
+                                            <TextBlock Text="Cobalt" Margin="0,9,0,0" />
+                                            <TextBlock Text="Bright and crisp" Style="{StaticResource DescriptionStyle}" FontSize="11" Margin="0,2,0,0" />
+                                        </StackPanel>
+                                    </Button>
+                                    <Button x:Name="VioletPresetButton"
+                                            Tag="Violet"
+                                            Style="{StaticResource PresetButtonStyle}"
+                                            Click="Preset_Click">
+                                        <StackPanel>
+                                            <StackPanel Orientation="Horizontal">
+                                                <Border Width="14" Height="14" CornerRadius="7" Background="#B39AFF" Margin="0,0,5,0" />
+                                                <Border Width="14" Height="14" CornerRadius="7" Background="#252333" />
+                                            </StackPanel>
+                                            <TextBlock Text="Violet" Margin="0,9,0,0" />
+                                            <TextBlock Text="Soft and expressive" Style="{StaticResource DescriptionStyle}" FontSize="11" Margin="0,2,0,0" />
+                                        </StackPanel>
+                                    </Button>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+
+                        <Expander x:Name="CustomThemeExpander"
+                                  Header="Advanced custom colors"
+                                  Foreground="{DynamicResource PrimaryTextBrush}"
+                                  Margin="0,12,0,0"
+                                  Padding="4"
+                                  IsExpanded="False">
+                            <Border Style="{StaticResource CardStyle}" Margin="0,8,0,0">
+                                <StackPanel>
+                                    <TextBlock Text="Use #RRGGBB or #AARRGGBB values."
+                                               Style="{StaticResource DescriptionStyle}"
+                                               Margin="0,0,0,16" />
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="150" />
+                                            <ColumnDefinition Width="28" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                        </Grid.RowDefinitions>
+                                        <TextBlock Text="Accent" Style="{StaticResource SettingLabelStyle}" Margin="0,0,0,10" />
+                                        <Border x:Name="AccentSwatch" Grid.Column="1" Width="16" Height="16" CornerRadius="8" Margin="0,0,8,10" />
+                                        <TextBox x:Name="AccentColorText" Grid.Column="2" Margin="0,0,0,10" LostFocus="Theme_LostFocus" TextChanged="Theme_TextChanged" />
+                                        <TextBlock Text="Radial fill" Grid.Row="1" Style="{StaticResource SettingLabelStyle}" Margin="0,0,0,10" />
+                                        <Border x:Name="SectorFillSwatch" Grid.Row="1" Grid.Column="1" Width="16" Height="16" CornerRadius="8" Margin="0,0,8,10" />
+                                        <TextBox x:Name="SectorFillText" Grid.Row="1" Grid.Column="2" Margin="0,0,0,10" LostFocus="Theme_LostFocus" TextChanged="Theme_TextChanged" />
+                                        <TextBlock Text="Radial stroke" Grid.Row="2" Style="{StaticResource SettingLabelStyle}" Margin="0,0,0,10" />
+                                        <Border x:Name="SectorStrokeSwatch" Grid.Row="2" Grid.Column="1" Width="16" Height="16" CornerRadius="8" Margin="0,0,8,10" />
+                                        <TextBox x:Name="SectorStrokeText" Grid.Row="2" Grid.Column="2" Margin="0,0,0,10" LostFocus="Theme_LostFocus" TextChanged="Theme_TextChanged" />
+                                        <TextBlock Text="Ring fill" Grid.Row="3" Style="{StaticResource SettingLabelStyle}" Margin="0,0,0,10" />
+                                        <Border x:Name="RingFillSwatch" Grid.Row="3" Grid.Column="1" Width="16" Height="16" CornerRadius="8" Margin="0,0,8,10" />
+                                        <TextBox x:Name="RingFillText" Grid.Row="3" Grid.Column="2" Margin="0,0,0,10" LostFocus="Theme_LostFocus" TextChanged="Theme_TextChanged" />
+                                        <TextBlock Text="Preview border" Grid.Row="4" Style="{StaticResource SettingLabelStyle}" />
+                                        <Border x:Name="PreviewBorderSwatch" Grid.Row="4" Grid.Column="1" Width="16" Height="16" CornerRadius="8" />
+                                        <TextBox x:Name="PreviewBorderText" Grid.Row="4" Grid.Column="2" LostFocus="Theme_LostFocus" TextChanged="Theme_TextChanged" />
+                                    </Grid>
+                                </StackPanel>
+                            </Border>
+                        </Expander>
+                    </StackPanel>
+
+                    <StackPanel x:Name="AdvancedSection" Visibility="Collapsed">
+                        <Grid Margin="0,0,0,16">
+                            <StackPanel>
+                                <TextBlock Text="Advanced" FontSize="21" FontWeight="SemiBold" />
+                                <TextBlock Text="Keep recovery tools close at hand."
+                                           Style="{StaticResource DescriptionStyle}"
+                                           Margin="0,5,0,0" />
+                            </StackPanel>
+                            <Button Content="Reset section"
+                                    Tag="Advanced"
+                                    Style="{StaticResource QuietButtonStyle}"
+                                    HorizontalAlignment="Right"
+                                    VerticalAlignment="Bottom"
+                                    Click="ResetSection_Click" />
+                        </Grid>
+
+                        <Border Style="{StaticResource CardStyle}" Margin="0,12,0,0">
+                            <StackPanel>
+                                <TextBlock Text="Recovery" FontSize="14" FontWeight="SemiBold" />
+                                <TextBlock Text="Reset every LoopW setting to its original default. This does not affect open windows or tray state."
+                                           Style="{StaticResource DescriptionStyle}"
+                                           Margin="0,4,0,14" />
+                                <Button Content="Reset all settings"
+                                        Style="{StaticResource DangerButtonStyle}"
+                                        HorizontalAlignment="Left"
+                                        Click="ResetAll_Click" />
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </Grid>
+            </ScrollViewer>
+        </Grid>
+
+        <Grid Grid.Column="2" Grid.Row="1" Margin="0,12,10,0">
+            <TextBlock x:Name="StatusText"
+                       Text="Saved"
+                       FontSize="12"
+                       Foreground="{DynamicResource SecondaryTextBrush}" />
+        </Grid>
     </Grid>
-</Window>
+</UserControl>

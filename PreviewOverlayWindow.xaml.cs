@@ -9,6 +9,8 @@ namespace LoopW;
 
 public partial class PreviewOverlayWindow : Window
 {
+    private const double PreviewScreenGap = 8;
+
     private readonly AppSettings _settings;
     private readonly double _blurMargin;
     private double _workLeft;
@@ -24,9 +26,53 @@ public partial class PreviewOverlayWindow : Window
         _blurMargin = settings.PreviewPadding;
         PreviewSurface.CornerRadius = new CornerRadius(settings.PreviewCornerRadius);
         SurfaceTint.CornerRadius = new CornerRadius(Math.Max(1, settings.PreviewCornerRadius - 3));
-        PreviewSurface.BorderBrush = CreateBrush(settings.PreviewBorderColor, "#FFFFFFFF");
-        PreviewSurface.BorderThickness = new Thickness(settings.PreviewBorderWidth);
+        PreviewSurface.BorderBrush = CreateBrush(settings.PreviewBorderColor, "#B8007AFF");
+        // Keep a visible edge even for settings files written before the dark-glass
+        // preview became the default.
+        PreviewSurface.BorderThickness = new Thickness(Math.Max(2, settings.PreviewBorderWidth));
+
+        if (_settings.IsLightAppearance)
+        {
+            ApplyLightAppearance();
+        }
+        else
+        {
+            ApplyDarkAppearance();
+        }
+
         SourceInitialized += PreviewOverlayWindow_SourceInitialized;
+    }
+
+    private void ApplyLightAppearance()
+    {
+        PreviewSurface.BorderBrush = CreateBrush("#8CC6D4DF", "#8CC6D4DF");
+        PreviewSurface.BorderThickness = new Thickness(1);
+        PreviewSurface.Effect = new System.Windows.Media.Effects.DropShadowEffect
+        {
+            BlurRadius = 18,
+            Direction = 270,
+            ShadowDepth = 4,
+            Opacity = 0.2,
+            Color = System.Windows.Media.Color.FromRgb(0x40, 0x51, 0x5A)
+        };
+        BackdropImage.Effect = new System.Windows.Media.Effects.BlurEffect { Radius = 20 };
+        SurfaceTint.Background = CreateBrush("#30FFFFFF", "#30FFFFFF");
+    }
+
+    private void ApplyDarkAppearance()
+    {
+        PreviewSurface.BorderBrush = CreateBrush("#B840515A", "#B840515A");
+        PreviewSurface.BorderThickness = new Thickness(1);
+        PreviewSurface.Effect = new System.Windows.Media.Effects.DropShadowEffect
+        {
+            BlurRadius = 18,
+            Direction = 270,
+            ShadowDepth = 4,
+            Opacity = 0.32,
+            Color = System.Windows.Media.Color.FromRgb(0x00, 0x00, 0x00)
+        };
+        BackdropImage.Effect = new System.Windows.Media.Effects.BlurEffect { Radius = 20 };
+        SurfaceTint.Background = CreateBrush("#30101827", "#30101827");
     }
 
     private void PreviewOverlayWindow_SourceInitialized(object? sender, EventArgs e)
@@ -54,10 +100,10 @@ public partial class PreviewOverlayWindow : Window
 
         EnsureWindowCovering(workArea, scaleX, scaleY);
 
-        var localX = frame.Left * scaleX - _workLeft;
-        var localY = frame.Top * scaleY - _workTop;
-        var targetWidth = Math.Max(frame.Width * scaleX, 1);
-        var targetHeight = Math.Max(frame.Height * scaleY, 1);
+        var localX = frame.Left * scaleX - _workLeft + PreviewScreenGap;
+        var localY = frame.Top * scaleY - _workTop + PreviewScreenGap;
+        var targetWidth = Math.Max(frame.Width * scaleX - PreviewScreenGap * 2, 1);
+        var targetHeight = Math.Max(frame.Height * scaleY - PreviewScreenGap * 2, 1);
 
         // The window is sized to the work area, which never leaves the screen.
         // Clamp the surface into it so a few pixels of rounding (or a frame that
@@ -107,34 +153,20 @@ public partial class PreviewOverlayWindow : Window
         PreviewSurface.BeginAnimation(FrameworkElement.HeightProperty, new DoubleAnimation(oldHeight, targetHeight, duration) { EasingFunction = ease });
     }
 
-    internal void HideAnimated(bool destroy = false)
+    internal void HideImmediately(bool destroy = false)
     {
-        if (!IsVisible)
-        {
-            if (destroy)
-            {
-                Close();
-            }
-            return;
-        }
+        _backdrop = null;
+        PreviewSurface.BeginAnimation(UIElement.OpacityProperty, null);
+        PreviewSurface.Opacity = 1;
 
-        var animation = new DoubleAnimation(PreviewSurface.Opacity, 0, new Duration(TimeSpan.FromMilliseconds(100)))
+        if (destroy)
         {
-            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseIn }
-        };
-        animation.Completed += (_, _) =>
+            Close();
+        }
+        else
         {
-            _backdrop = null;
-            if (destroy)
-            {
-                Close();
-            }
-            else
-            {
-                Hide();
-            }
-        };
-        PreviewSurface.BeginAnimation(UIElement.OpacityProperty, animation);
+            Hide();
+        }
     }
 
     private void CaptureFullBackdrop(NativeMethods.Rect workArea, double dpiX, double dpiY)

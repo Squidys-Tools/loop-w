@@ -20,12 +20,16 @@ Window management made elegant, for Windows. A feature-by-feature port of
       can clear a selection). Cardinal halves and diagonal quarters.
 - [x] Live preview of the target frame (blurred backdrop, rounded, animated). `PreviewOverlayWindow.xaml(.cs)`
 - [x] Commit on trigger release / left-click / arrow keys; Esc cancels.
-- [x] Multi-DPI aware (per-monitor DPI via `shcore.dll`).
-- [x] Window placement hardening: restores maximized/minimized, clamps to min/max
-      track sizes, re-anchors to the zone edge so frames never overflow the screen,
+- [x] Multi-DPI aware (per-monitor DPI via `shcore.dll`).- [x] Window placement hardening: restores maximized/minimized, clamps to min/max track sizes, re-anchors to the zone edge so frames never overflow the screen,
       tolerates unresponsive apps. `WindowActionService.cs`
 
+> **Permanent radial-menu UI invariant:** The radial menu overlay must never contain
+> text. This applies when it is opened by the global hotkey and for every other
+> activation path; use geometry, cursor state, color, and preview only to communicate
+> selection.
+
 ---
+
 
 ## 1. Action library
 
@@ -92,15 +96,19 @@ Hide windows at the screen edge to declutter; reveal on hover or keybind.
 
 ## 5. Settings UI
 
-Loop has a Settings window with tabs (Behavior / Radial / Preview / Keybinds / Theming).
-The settings window now exposes the stored behavior, radial, preview, keybind,
-and theme options.
+Loop's main window is the settings surface, organized as a desktop-first sidebar
+with Behavior / Radial menu / Preview / Appearance / Advanced sections. Trigger-key
+rebinding lives in Behavior; the resident runtime continues to honor persisted
+keybind configurations.
 
-- [x] Settings window with tabbed layout.
-- [x] Behavior: trigger key and launch at login. Run-in-tray stays with resident-app plumbing (#7).
-- [x] Radial: enabled toggle, cursor-interaction toggle, radius controls, and colors.
+- [x] Main window hosts the sidebar settings surface directly; tray activation shows this same settings window.
+- [x] Behavior: inline trigger capture, launch-at-login control, and clear save/error feedback.
+- [x] Radial: enabled toggle, cursor-interaction toggle, radius controls, and preserved visual behavior.
 - [x] Preview: padding, corner radius, border color, border width, enabled toggle.
-- [x] Keybinds tab (wires into #2).
+- [x] Appearance: dark / Follow Windows / light modes, curated presets, and advanced custom colors.
+- [x] Advanced: keybind add/rebind/delete/cycle workflows, duplicate detection, section reset, and reset-all recovery.
+- [x] Trigger-key rebinding remains in Behavior; persisted keybind configurations
+      continue to be honored by the resident runtime.
 - [x] Persistence model for all of the above (extend `Settings.cs`).
 
 ---
@@ -200,6 +208,11 @@ Track decisions and progress here as work happens.
   Radial, Preview, Keybinds, and Theme tabs. Added validated persistence for the
   new settings, launch-at-login registration, live visual updates, and radial/
   preview options.
+- **2026-08-15** — Settings redesign: replaced the tab strip with a premium
+  sidebar/content layout, restored keybinds to an Advanced section, added
+  appearance modes and curated presets, inline custom color editing, duplicate
+  keybind detection, and section/global reset flows while preserving the
+  existing settings model and resident runtime behavior.
 - **2026-08-15** — Feature #7: added a resident app lifecycle with a system tray,
   single-instance activation, hidden startup, and explicit tray quit. Main-window
   close now hides to the tray, while tray activation restores the window or opens

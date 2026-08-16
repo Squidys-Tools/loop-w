@@ -1,6 +1,5 @@
 using System;
 using System.Windows;
-using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
@@ -27,7 +26,6 @@ public partial class RadialOverlayWindow : Window
     private readonly double _innerRadius;
     private readonly double _blurMargin;
     private readonly Path[] _wedgePaths;
-    private readonly TextBlock[] _labels;
     private WindowAction? _selected;
     private bool _closing;
     private double _dpiX = 96;
@@ -49,17 +47,17 @@ public partial class RadialOverlayWindow : Window
             RightWedge, BottomRightWedge, BottomWedge, BottomLeftWedge,
             LeftWedge, TopLeftWedge, TopWedge, TopRightWedge
         };
-        _labels = new[]
-        {
-            RightLabel, BottomRightLabel, BottomLabel, BottomLeftLabel,
-            LeftLabel, TopLeftLabel, TopLabel, TopRightLabel
-        };
         Width = _center * 2;
         Height = _center * 2;
         Resources["SectorFillBrush"] = CreateBrush(settings.RadialSectorFill, "#7A007AFF");
         Resources["SectorStrokeBrush"] = CreateBrush(settings.RadialSectorStroke, "#F0007AFF");
         Ring.Fill = CreateBrush(settings.RadialRingFill, "#B61E1E1E");
         BuildGeometry();
+
+        if (_settings.IsLightAppearance)
+        {
+            ApplyLightAppearance();
+        }
 
         // The ring's transparent center hole is skipped by Windows hit-testing, so
         // MouseMove never fires there and the dead-zone can't clear a selection.
@@ -77,7 +75,6 @@ public partial class RadialOverlayWindow : Window
         Ring.Data = RadialGeometry.BuildAnnulus(_center, _outerRadius, _innerRadius);
         BackdropImage.Clip = RadialGeometry.BuildAnnulus(_center + _blurMargin, _outerRadius, _innerRadius);
 
-        var labelDistance = (_innerRadius + _outerRadius) / 2;
         for (var i = 0; i < RadialActionCatalog.Slots.Count; i++)
         {
             var slot = RadialActionCatalog.Slots[i];
@@ -87,11 +84,26 @@ public partial class RadialOverlayWindow : Window
                 _innerRadius,
                 slot.FromDegrees,
                 slot.ToDegrees);
-            _labels[i].Text = slot.Label;
+        }
+    }
 
-            var angle = slot.CenterDegrees * Math.PI / 180;
-            Canvas.SetLeft(_labels[i], _center + Math.Cos(angle) * labelDistance - _labels[i].Width / 2);
-            Canvas.SetTop(_labels[i], _center + Math.Sin(angle) * labelDistance - 8);
+    private void ApplyLightAppearance()
+    {
+        Resources["SectorFillBrush"] = CreateBrush("#D9007AFF", "#D9007AFF");
+        Resources["SectorStrokeBrush"] = CreateBrush("#F0007AFF", "#F0007AFF");
+        Ring.Fill = CreateBrush("#E6F0F4F8", "#E6F0F4F8");
+        Ring.Effect = new System.Windows.Media.Effects.DropShadowEffect
+        {
+            BlurRadius = 14,
+            Direction = 270,
+            ShadowDepth = 3,
+            Opacity = 0.22,
+            Color = System.Windows.Media.Color.FromRgb(0x52, 0x61, 0x6B)
+        };
+
+        foreach (var wedge in _wedgePaths)
+        {
+            wedge.StrokeThickness = 0.8;
         }
     }
 
@@ -282,15 +294,25 @@ public partial class RadialOverlayWindow : Window
 
     private void SetSelection(WindowAction? selection)
     {
-        _selected = selection;
-        for (var i = 0; i < RadialActionCatalog.Slots.Count; i++)
+        if (_selected == selection)
         {
-            HighlightWedge(_wedgePaths[i], RadialActionCatalog.Slots[i].Action == selection);
+            return;
         }
 
-        CenterLabel.Text = selection.HasValue
-            ? WindowActionService.ActionName(selection.Value)
-            : "Choose an action";
+        var previous = _selected;
+        _selected = selection;
+
+        // Cursor polling runs every 20 ms, so only animate the paths whose state
+        // changed. Reapplying all eight animations on every tick creates and
+        // replaces hundreds of animation clocks per second while hovering.
+        for (var i = 0; i < RadialActionCatalog.Slots.Count; i++)
+        {
+            var action = RadialActionCatalog.Slots[i].Action;
+            if (action == previous || action == selection)
+            {
+                HighlightWedge(_wedgePaths[i], action == selection);
+            }
+        }
 
         if (_settings.PreviewEnabled && selection.HasValue && WindowActionService.TryGetTargetFrame(_targetWindow, selection.Value, out var frame, out _))
         {
@@ -316,9 +338,25 @@ public partial class RadialOverlayWindow : Window
 
     private static void HighlightWedge(Path wedge, bool on)
     {
-        var ease = new CubicEase { EasingMode = EasingMode.EaseOut };
-        var duration = new Duration(TimeSpan.FromMilliseconds(130));
-        wedge.BeginAnimation(UIElement.OpacityProperty, new DoubleAnimation(wedge.Opacity, on ? 1 : 0, duration) { EasingFunction = ease });
+        var target = on ? 1 : 0;
+        var from = wedge.Opacity;
+
+        // Remove the previous clock before setting the base value. This prevents
+        // finished/replaced hover animations from accumulating on the path.
+        wedge.BeginAnimation(UIElement.OpacityProperty, null);
+        wedge.Opacity = target;
+
+        if (Math.Abs(from - target) < 0.001)
+        {
+            return;
+        }
+
+        var animation = new DoubleAnimation(from, target, new Duration(TimeSpan.FromMilliseconds(130)))
+        {
+            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut },
+            FillBehavior = FillBehavior.Stop
+        };
+        wedge.BeginAnimation(UIElement.OpacityProperty, animation, HandoffBehavior.SnapshotAndReplace);
     }
 
     private void Commit(WindowAction action)
@@ -341,16 +379,8 @@ public partial class RadialOverlayWindow : Window
 
         _closing = true;
         _pollTimer.Stop();
-        _preview.HideAnimated(destroy: true);
-
-        var ease = new CubicEase { EasingMode = EasingMode.EaseIn };
-        var duration = new Duration(TimeSpan.FromMilliseconds(120));
-        var scale = (ScaleTransform)OverlaySurface.RenderTransform;
-        var opacity = new DoubleAnimation(OverlaySurface.Opacity, 0, duration) { EasingFunction = ease };
-        opacity.Completed += (_, _) => Close();
-        OverlaySurface.BeginAnimation(UIElement.OpacityProperty, opacity);
-        scale.BeginAnimation(ScaleTransform.ScaleXProperty, new DoubleAnimation(scale.ScaleX, 0.94, duration) { EasingFunction = ease });
-        scale.BeginAnimation(ScaleTransform.ScaleYProperty, new DoubleAnimation(scale.ScaleY, 0.94, duration) { EasingFunction = ease });
+        _preview.HideImmediately(destroy: true);
+        Close();
     }
 
     private static System.Windows.Media.Brush CreateBrush(string value, string fallback)

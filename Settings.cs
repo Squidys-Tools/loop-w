@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text.Json;
+using System.Text.Json.Serialization;
+using Microsoft.Win32;
 using System.Windows.Media;
 using MediaColor = System.Windows.Media.Color;
 using MediaColorConverter = System.Windows.Media.ColorConverter;
@@ -23,6 +25,12 @@ public sealed class AppSettings
 
     public bool LaunchAtLogin { get; set; }
 
+    public string AppearanceMode { get; set; } = "Dark";
+
+    [JsonIgnore]
+    public bool IsLightAppearance => AppearanceMode == "Light" ||
+        (AppearanceMode == "FollowWindows" && IsWindowsLightMode());
+
     public bool RadialEnabled { get; set; } = true;
 
     public bool CursorInteractionEnabled { get; set; } = true;
@@ -37,17 +45,17 @@ public sealed class AppSettings
 
     public double PreviewCornerRadius { get; set; } = 14;
 
-    public double PreviewBorderWidth { get; set; }
+    public double PreviewBorderWidth { get; set; } = 2;
 
-    public string AccentColor { get; set; } = "#007AFF";
+    public string AccentColor { get; set; } = "#3D9BFF";
 
-    public string RadialSectorFill { get; set; } = "#7A007AFF";
+    public string RadialSectorFill { get; set; } = "#7A3D9BFF";
 
-    public string RadialSectorStroke { get; set; } = "#F0007AFF";
+    public string RadialSectorStroke { get; set; } = "#F03D9BFF";
 
-    public string RadialRingFill { get; set; } = "#B61E1E1E";
+    public string RadialRingFill { get; set; } = "#B61B212B";
 
-    public string PreviewBorderColor { get; set; } = "#FFFFFFFF";
+    public string PreviewBorderColor { get; set; } = "#B83D9BFF";
 
     public static AppSettings Load()
     {
@@ -92,6 +100,9 @@ public sealed class AppSettings
         TriggerVk = TriggerVk == 0 ? NativeMethods.VkCapital : TriggerVk;
         TriggerModifiers &= NativeMethods.ModControl | NativeMethods.ModAlt | NativeMethods.ModShift | NativeMethods.ModWin;
         Keybinds ??= new List<Keybind>();
+        AppearanceMode = AppearanceMode is "Dark" or "FollowWindows" or "Light"
+            ? AppearanceMode
+            : "Dark";
 
         RadialOuterRadius = Clamp(RadialOuterRadius, 64, 140);
         RadialInnerRadius = Clamp(RadialInnerRadius, 24, RadialOuterRadius - 8);
@@ -103,7 +114,44 @@ public sealed class AppSettings
         RadialSectorFill = NormalizeColor(RadialSectorFill, "#7A007AFF");
         RadialSectorStroke = NormalizeColor(RadialSectorStroke, "#F0007AFF");
         RadialRingFill = NormalizeColor(RadialRingFill, "#B61E1E1E");
-        PreviewBorderColor = NormalizeColor(PreviewBorderColor, "#FFFFFFFF");
+        PreviewBorderColor = NormalizeColor(PreviewBorderColor, "#B8007AFF");
+    }
+
+    public void ResetToDefaults()
+    {
+        var defaults = new AppSettings();
+        TriggerVk = defaults.TriggerVk;
+        TriggerModifiers = defaults.TriggerModifiers;
+        Keybinds = new List<Keybind>();
+        LaunchAtLogin = defaults.LaunchAtLogin;
+        AppearanceMode = defaults.AppearanceMode;
+        RadialEnabled = defaults.RadialEnabled;
+        CursorInteractionEnabled = defaults.CursorInteractionEnabled;
+        RadialOuterRadius = defaults.RadialOuterRadius;
+        RadialInnerRadius = defaults.RadialInnerRadius;
+        PreviewEnabled = defaults.PreviewEnabled;
+        PreviewPadding = defaults.PreviewPadding;
+        PreviewCornerRadius = defaults.PreviewCornerRadius;
+        PreviewBorderWidth = defaults.PreviewBorderWidth;
+        AccentColor = defaults.AccentColor;
+        RadialSectorFill = defaults.RadialSectorFill;
+        RadialSectorStroke = defaults.RadialSectorStroke;
+        RadialRingFill = defaults.RadialRingFill;
+        PreviewBorderColor = defaults.PreviewBorderColor;
+    }
+
+    private static bool IsWindowsLightMode()
+    {
+        try
+        {
+            using var key = Registry.CurrentUser.OpenSubKey(
+                @"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize");
+            return key?.GetValue("AppsUseLightTheme") is int value && value != 0;
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     private static double Clamp(double value, double min, double max) =>

@@ -36,6 +36,11 @@ internal static class NativeMethods
     public const int WsExTransparent = 0x00000020;
     public const int DwmwaUseImmersiveDarkMode = 20;
     public const int DwmwaUseImmersiveDarkModeBefore20h1 = 19;
+    public const int DwmwaNcrenderingPolicy = 2;
+    public const int DwmNcrpDisabled = 1;
+    public const int DwmwaBorderColor = 34;
+    public const int DwmwaCaptionColor = 35;
+    public const int DwmwaTextColor = 36;
     public const uint SrcCopy = 0x00CC0020;
     public const uint AttachParentProcess = 0xFFFFFFFF;
 

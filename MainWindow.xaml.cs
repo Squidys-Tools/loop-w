@@ -20,7 +20,6 @@ public partial class MainWindow : Window
     private readonly AppSettings _settings;
     private IntPtr _targetWindow;
     private RadialOverlayWindow? _activeOverlay;
-    private SettingsWindow? _settingsWindow;
     private readonly DispatcherTimer _stashTimer;
     private bool _capturing;
     private bool _allowClose;
@@ -29,6 +28,11 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         _settings = AppSettings.Load();
+
+        var settingsPanel = new SettingsWindow(_hotkey, _settings);
+        settingsPanel.SettingsChanged += ApplySettings;
+        SettingsHost.Content = settingsPanel;
+
         _hotkey.SetBinding(_settings.TriggerModifiers, _settings.TriggerVk);
         _hotkey.SetKeybinds(_settings.Keybinds);
         _stashTimer = new DispatcherTimer(DispatcherPriority.Input)
@@ -69,6 +73,35 @@ public partial class MainWindow : Window
         _hotkey.Dispose();
     }
 
+    private void TitleBar_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (e.ChangedButton != MouseButton.Left)
+        {
+            return;
+        }
+
+        if (e.ClickCount == 2)
+        {
+            ToggleWindowState();
+            return;
+        }
+
+        DragMove();
+    }
+
+    private void MinimizeButton_Click(object sender, RoutedEventArgs e) => WindowState = WindowState.Minimized;
+
+    private void MaximizeButton_Click(object sender, RoutedEventArgs e) => ToggleWindowState();
+
+    private void CloseButton_Click(object sender, RoutedEventArgs e) => Close();
+
+    private void ToggleWindowState()
+    {
+        WindowState = WindowState == WindowState.Maximized
+            ? WindowState.Normal
+            : WindowState.Maximized;
+    }
+
     private void StashTimer_Tick(object? sender, EventArgs e)
     {
         if (NativeMethods.GetCursorPos(out var cursor) &&
@@ -102,7 +135,7 @@ public partial class MainWindow : Window
         Activate();
     }
 
-    internal void OpenSettingsFromTray() => OpenSettings();
+    internal void OpenSettingsFromTray() => ShowFromTray();
 
     internal string ExecuteExternalAction(WindowAction action)
     {
@@ -193,6 +226,9 @@ public partial class MainWindow : Window
             return;
         }
 
+        var ncrp = NativeMethods.DwmNcrpDisabled;
+        NativeMethods.DwmSetWindowAttribute(hwnd, NativeMethods.DwmwaNcrenderingPolicy, ref ncrp, sizeof(int));
+
         // 20 is the immersive dark-mode attribute on Windows 11 / 10 2004+;
         // 19 covers Windows 10 1903–1909.
         foreach (var attribute in new[] { NativeMethods.DwmwaUseImmersiveDarkMode, NativeMethods.DwmwaUseImmersiveDarkModeBefore20h1 })
@@ -203,6 +239,8 @@ public partial class MainWindow : Window
                 break;
             }
         }
+
+        ApplyWindowChromeTheme();
     }
 
     private void Hotkey_TriggerPressed()
@@ -333,18 +371,7 @@ public partial class MainWindow : Window
 
     private void Settings_MouseUp(object sender, MouseButtonEventArgs e) => OpenSettings();
 
-    private void OpenSettings()
-    {
-        if (_settingsWindow == null)
-        {
-            _settingsWindow = new SettingsWindow(_hotkey, _settings);
-            _settingsWindow.SettingsChanged += ApplySettings;
-            _settingsWindow.Closed += (_, _) => _settingsWindow = null;
-        }
-
-        _settingsWindow.Show();
-        _settingsWindow.Activate();
-    }
+    private void OpenSettings() => ShowFromTray();
 
     private void CommitOverlayAction(WindowAction action)
     {
@@ -416,10 +443,39 @@ public partial class MainWindow : Window
 
     private void ApplyVisualSettings()
     {
-        Resources["AccentBrush"] = CreateBrush(_settings.AccentColor, "#007AFF");
-        Resources["SectorFillBrush"] = CreateBrush(_settings.RadialSectorFill, "#7A007AFF");
-        Resources["SectorStrokeBrush"] = CreateBrush(_settings.RadialSectorStroke, "#F0007AFF");
-        RadialRing.Fill = CreateBrush(_settings.RadialRingFill, "#B61E1E1E");
+        Resources["AccentBrush"] = CreateBrush(_settings.AccentColor, "#3D9BFF");
+        Resources["SectorFillBrush"] = CreateBrush(_settings.RadialSectorFill, "#7A3D9BFF");
+        Resources["SectorStrokeBrush"] = CreateBrush(_settings.RadialSectorStroke, "#F03D9BFF");
+        RadialRing.Fill = CreateBrush(_settings.RadialRingFill, "#B61B212B");
+
+        var light = _settings.IsLightAppearance;
+        var surface = CreateBrush(light ? "#F4F7FB" : "#101216", "#101216");
+        Resources["WindowSurfaceBrush"] = surface;
+        Resources["TitleBarBrush"] = CreateBrush(light ? "#E9EFF6" : "#151A23", "#151A23");
+        Resources["WindowBorderBrush"] = CreateBrush(light ? "#D2DCE8" : "#2A3444", "#2A3444");
+        Resources["ChromeTextBrush"] = CreateBrush(light ? "#3D4B5E" : "#AAB6C8", "#AAB6C8");
+        Resources["ChromeMutedBrush"] = CreateBrush(light ? "#68778A" : "#6F7B8A", "#6F7B8A");
+        Resources["WindowControlHoverBrush"] = CreateBrush(light ? "#DCE5EF" : "#222C3A", "#222C3A");
+        Background = surface;
+        Foreground = CreateBrush(light ? "#16202D" : "#F0F4FA", "#F0F4FA");
+        SettingsHost.Background = surface;
+        ApplyWindowChromeTheme();
+    }
+
+    private void ApplyWindowChromeTheme()
+    {
+        var hwnd = new System.Windows.Interop.WindowInteropHelper(this).Handle;
+        if (hwnd == IntPtr.Zero)
+        {
+            return;
+        }
+
+        var light = _settings.IsLightAppearance;
+        var surfaceColor = light ? 0x00FBF7F4 : 0x00161210;
+        var titleTextColor = light ? 0x002D2016 : 0x00FAF4F0;
+        NativeMethods.DwmSetWindowAttribute(hwnd, NativeMethods.DwmwaBorderColor, ref surfaceColor, sizeof(int));
+        NativeMethods.DwmSetWindowAttribute(hwnd, NativeMethods.DwmwaCaptionColor, ref surfaceColor, sizeof(int));
+        NativeMethods.DwmSetWindowAttribute(hwnd, NativeMethods.DwmwaTextColor, ref titleTextColor, sizeof(int));
     }
 
     private static System.Windows.Media.Brush CreateBrush(string value, string fallback)
