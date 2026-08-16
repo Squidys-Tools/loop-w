@@ -25,6 +25,8 @@ internal static class Program
         ("stash frames keep a visible edge peek", StashFramesKeepVisiblePeek),
         ("stash identity matching rejects ambiguity", StashIdentityMatchingRejectsAmbiguity),
         ("stash settings normalize safely", StashSettingsNormalizeSafely),
+        ("stash settings keep newest records", StashSettingsKeepNewestRecords),
+        ("same-monitor DPI changes preserve stash frames", SameMonitorDpiChangesPreserveStashFrames),
         ("radial geometry creates annulus and wedge paths", RadialGeometryCreatesPaths),
         ("command parser maps direction aliases", CommandParserMapsDirectionAliases),
         ("command parser maps action names", CommandParserMapsActionNames),
@@ -311,6 +313,45 @@ internal static class Program
         Equal(2, settings.StashRecords.Count);
         True(settings.StashRecords.All(record => !string.IsNullOrWhiteSpace(record.Id)));
         True(settings.StashRecords.All(record => Enum.IsDefined(record.Edge)));
+    }
+
+    private static void StashSettingsKeepNewestRecords()
+    {
+        var settings = new AppSettings
+        {
+            StashRecords = Enumerable.Range(0, 66)
+                .Select(index => new StashRecord { Id = $"record-{index}" })
+                .ToList()
+        };
+
+        settings.Normalize();
+
+        Equal(64, settings.StashRecords.Count);
+        Equal("record-2", settings.StashRecords[0].Id);
+        Equal("record-65", settings.StashRecords[^1].Id);
+    }
+
+    private static void SameMonitorDpiChangesPreserveStashFrames()
+    {
+        var monitor = StashRect.FromNative(Rect(0, 0, 1920, 1080));
+        var work = StashRect.FromNative(Rect(0, 0, 1920, 1040));
+        var original = new StashMonitor
+        {
+            Monitor = monitor,
+            Work = work,
+            DpiX = 96,
+            DpiY = 96
+        };
+        var changedDpi = new StashMonitor
+        {
+            Monitor = StashRect.FromNative(Rect(0, 0, 1920, 1080)),
+            Work = StashRect.FromNative(Rect(0, 0, 1920, 1040)),
+            DpiX = 144,
+            DpiY = 144
+        };
+        var frame = Rect(100, 120, 700, 620);
+
+        Equal(frame, WindowStashService.RebaseRect(frame, original, changedDpi));
     }
 
     private static void RadialGeometryCreatesPaths()

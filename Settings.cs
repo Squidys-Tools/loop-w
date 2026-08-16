@@ -251,7 +251,9 @@ public sealed class AppSettings
         const int maxStashRecords = 64;
         if (StashRecords.Count > maxStashRecords)
         {
-            StashRecords.RemoveRange(maxStashRecords, StashRecords.Count - maxStashRecords);
+            // New records are appended. Keep the newest records so a buildup
+            // of old unmatched entries cannot evict a newly stashed window.
+            StashRecords.RemoveRange(0, StashRecords.Count - maxStashRecords);
         }
 
         var ids = new HashSet<string>(StringComparer.Ordinal);

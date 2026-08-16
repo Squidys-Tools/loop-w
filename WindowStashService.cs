@@ -365,10 +365,20 @@ internal static class WindowStashService
             return false;
         }
 
+        var previousPlacement = new NativeMethods.WindowPlacement
+        {
+            Length = Marshal.SizeOf<NativeMethods.WindowPlacement>()
+        };
+        if (!NativeMethods.GetWindowPlacement(window, ref previousPlacement))
+        {
+            return false;
+        }
+
         NativeMethods.ShowWindow(window, NativeMethods.SwRestore);
         if (!NativeMethods.GetWindowRect(window, out var current) ||
             !TryGetMonitorSnapshot(current, out var currentMonitor))
         {
+            RollbackPersistedRestore(window, previousPlacement, record);
             return false;
         }
 
@@ -384,6 +394,7 @@ internal static class WindowStashService
                 stashedFrame.Height,
                 NativeMethods.SwpNoActivate | NativeMethods.SwpNoZOrder | NativeMethods.SwpAsyncWindowPos))
         {
+            RollbackPersistedRestore(window, previousPlacement, record);
             return false;
         }
 
@@ -397,6 +408,22 @@ internal static class WindowStashService
             identity,
             record.Id);
         return true;
+    }
+
+    private static void RollbackPersistedRestore(
+        IntPtr window,
+        NativeMethods.WindowPlacement previousPlacement,
+        StashRecord record)
+    {
+        if (NativeMethods.SetWindowPlacement(window, ref previousPlacement))
+        {
+            return;
+        }
+
+        // If Windows also rejects the rollback, do not leave a record that can
+        // repeatedly act on a window whose state we can no longer control.
+        _settings.StashRecords.RemoveAll(candidate => candidate.Id == record.Id);
+        SavePersistence();
     }
 
     private static void PruneStaleEntries()
@@ -749,12 +776,20 @@ internal static class WindowStashService
         return true;
     }
 
-    private static NativeMethods.Rect RebaseRect(
+    internal static NativeMethods.Rect RebaseRect(
         NativeMethods.Rect rect,
         StashMonitor original,
         StashMonitor target)
     {
         if (!IsUsable(original.Work) || !IsUsable(target.Work))
+        {
+            return rect;
+        }
+
+        // WINDOWPLACEMENT coordinates are physical coordinates. Windows has
+        // already adjusted them when the DPI changed on this same monitor, so
+        // applying the ratio again would move and resize the window twice.
+        if (IsUsable(original.Monitor) && SameRect(original.Monitor, target.Monitor))
         {
             return rect;
         }
