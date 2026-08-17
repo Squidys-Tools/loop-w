@@ -90,6 +90,7 @@ public partial class SettingsWindow : UserControl
         BehaviorSection.Visibility = section == "Behavior" ? Visibility.Visible : Visibility.Collapsed;
         RadialSection.Visibility = section == "Radial" ? Visibility.Visible : Visibility.Collapsed;
         PreviewSection.Visibility = section == "Preview" ? Visibility.Visible : Visibility.Collapsed;
+        ScreensSection.Visibility = section == "Screens" ? Visibility.Visible : Visibility.Collapsed;
         AppearanceSection.Visibility = section == "Appearance" ? Visibility.Visible : Visibility.Collapsed;
         AdvancedSection.Visibility = section == "Advanced" ? Visibility.Visible : Visibility.Collapsed;
         ContentScroller.ScrollToTop();
@@ -338,6 +339,46 @@ public partial class SettingsWindow : UserControl
         SaveSettings("Stash timing saved");
     }
 
+    private void MonitorMovePolicy_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_loading || MonitorMovePolicyCombo.SelectedValue is not string value ||
+            !Enum.TryParse<MonitorMoveSizePolicy>(value, out var policy))
+        {
+            return;
+        }
+
+        _settings.MonitorMoveSizePolicy = policy;
+        SaveSettings("Monitor move policy saved");
+    }
+
+    private void ScreenPadding_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (_loading)
+        {
+            return;
+        }
+
+        _settings.GlobalScreenPadding = (int)Math.Round(GlobalScreenPaddingSlider.Value);
+        _settings.ScreenPaddingLeft = (int)Math.Round(ScreenPaddingLeftSlider.Value);
+        _settings.ScreenPaddingTop = (int)Math.Round(ScreenPaddingTopSlider.Value);
+        _settings.ScreenPaddingRight = (int)Math.Round(ScreenPaddingRightSlider.Value);
+        _settings.ScreenPaddingBottom = (int)Math.Round(ScreenPaddingBottomSlider.Value);
+        UpdateValueLabels();
+        SaveSettings("Screen padding saved");
+    }
+
+    private void Exclusions_LostFocus(object sender, RoutedEventArgs e)
+    {
+        if (_loading)
+        {
+            return;
+        }
+
+        _settings.ExcludedExecutablePaths = SplitLines(ExcludedExecutablePathsText.Text);
+        _settings.ExcludedProcessNames = SplitLines(ExcludedProcessNamesText.Text);
+        SaveSettings("Application exclusions saved");
+    }
+
     private void AppearanceMode_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (_loading || AppearanceModeCombo.SelectedValue is not string mode)
@@ -579,6 +620,16 @@ public partial class SettingsWindow : UserControl
                 _settings.StashHitZone = defaults.StashHitZone;
                 _settings.StashRevealDelayMilliseconds = defaults.StashRevealDelayMilliseconds;
                 break;
+            case "Screens":
+                _settings.MonitorMoveSizePolicy = defaults.MonitorMoveSizePolicy;
+                _settings.GlobalScreenPadding = defaults.GlobalScreenPadding;
+                _settings.ScreenPaddingLeft = defaults.ScreenPaddingLeft;
+                _settings.ScreenPaddingTop = defaults.ScreenPaddingTop;
+                _settings.ScreenPaddingRight = defaults.ScreenPaddingRight;
+                _settings.ScreenPaddingBottom = defaults.ScreenPaddingBottom;
+                _settings.ExcludedExecutablePaths = new List<string>();
+                _settings.ExcludedProcessNames = new List<string>();
+                break;
             case "Appearance":
                 _settings.AppearanceMode = defaults.AppearanceMode;
                 _settings.AccentColor = defaults.AccentColor;
@@ -687,6 +738,14 @@ public partial class SettingsWindow : UserControl
         StashEdgePeekSlider.Value = _settings.StashEdgePeek;
         StashHitZoneSlider.Value = _settings.StashHitZone;
         StashRevealDelaySlider.Value = _settings.StashRevealDelayMilliseconds;
+        MonitorMovePolicyCombo.SelectedValue = _settings.MonitorMoveSizePolicy.ToString();
+        GlobalScreenPaddingSlider.Value = _settings.GlobalScreenPadding;
+        ScreenPaddingLeftSlider.Value = _settings.ScreenPaddingLeft;
+        ScreenPaddingTopSlider.Value = _settings.ScreenPaddingTop;
+        ScreenPaddingRightSlider.Value = _settings.ScreenPaddingRight;
+        ScreenPaddingBottomSlider.Value = _settings.ScreenPaddingBottom;
+        ExcludedExecutablePathsText.Text = string.Join(Environment.NewLine, _settings.ExcludedExecutablePaths);
+        ExcludedProcessNamesText.Text = string.Join(Environment.NewLine, _settings.ExcludedProcessNames);
         AppearanceModeCombo.SelectedValue = _settings.AppearanceMode;
         RefreshRadialControls();
         RefreshThemeFields();
@@ -814,6 +873,11 @@ public partial class SettingsWindow : UserControl
         StashRevealDelayValue.Text = StashRevealDelaySlider.Value <= 0
             ? "Instant"
             : $"{StashRevealDelaySlider.Value:0} ms";
+        GlobalScreenPaddingValue.Text = $"{GlobalScreenPaddingSlider.Value:0} px";
+        ScreenPaddingLeftValue.Text = $"{ScreenPaddingLeftSlider.Value:0} px";
+        ScreenPaddingTopValue.Text = $"{ScreenPaddingTopSlider.Value:0} px";
+        ScreenPaddingRightValue.Text = $"{ScreenPaddingRightSlider.Value:0} px";
+        ScreenPaddingBottomValue.Text = $"{ScreenPaddingBottomSlider.Value:0} px";
     }
 
     private void UpdateKeybindEmptyState()
@@ -911,6 +975,12 @@ public partial class SettingsWindow : UserControl
 
         return null;
     }
+
+    private static List<string> SplitLines(string value) =>
+        value.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
+            .Select(line => line.Trim())
+            .Where(line => line.Length > 0)
+            .ToList();
 
     private void SetStatus(string text, bool isError = false)
     {

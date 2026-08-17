@@ -63,6 +63,22 @@ public sealed class AppSettings
 
     public bool StashPersistenceEnabled { get; set; } = true;
 
+    public MonitorMoveSizePolicy MonitorMoveSizePolicy { get; set; } = MonitorMoveSizePolicy.PreservePixels;
+
+    public int GlobalScreenPadding { get; set; }
+
+    public int ScreenPaddingLeft { get; set; }
+
+    public int ScreenPaddingTop { get; set; }
+
+    public int ScreenPaddingRight { get; set; }
+
+    public int ScreenPaddingBottom { get; set; }
+
+    public List<string> ExcludedExecutablePaths { get; set; } = new();
+
+    public List<string> ExcludedProcessNames { get; set; } = new();
+
     public int StashEdgePeek { get; set; } = 8;
 
     public int StashHitZone { get; set; } = 14;
@@ -149,6 +165,17 @@ public sealed class AppSettings
         PreviewCornerRadius = Clamp(PreviewCornerRadius, 4, 32);
         PreviewBorderWidth = Clamp(PreviewBorderWidth, 0, 6);
         DragSnapThreshold = Math.Clamp(DragSnapThreshold, 4, 96);
+        if (!Enum.IsDefined(MonitorMoveSizePolicy))
+        {
+            MonitorMoveSizePolicy = MonitorMoveSizePolicy.PreservePixels;
+        }
+
+        GlobalScreenPadding = Math.Clamp(GlobalScreenPadding, 0, 128);
+        ScreenPaddingLeft = Math.Clamp(ScreenPaddingLeft, 0, 128);
+        ScreenPaddingTop = Math.Clamp(ScreenPaddingTop, 0, 128);
+        ScreenPaddingRight = Math.Clamp(ScreenPaddingRight, 0, 128);
+        ScreenPaddingBottom = Math.Clamp(ScreenPaddingBottom, 0, 128);
+        NormalizeExclusions();
         StashEdgePeek = Math.Clamp(StashEdgePeek, 1, 48);
         StashHitZone = Math.Clamp(StashHitZone, 1, 96);
         StashRevealDelayMilliseconds = Math.Clamp(StashRevealDelayMilliseconds, 0, 2000);
@@ -185,6 +212,14 @@ public sealed class AppSettings
         DragSnapThreshold = defaults.DragSnapThreshold;
         RestorePreDragFrameOnSnapCancel = defaults.RestorePreDragFrameOnSnapCancel;
         StashPersistenceEnabled = defaults.StashPersistenceEnabled;
+        MonitorMoveSizePolicy = defaults.MonitorMoveSizePolicy;
+        GlobalScreenPadding = defaults.GlobalScreenPadding;
+        ScreenPaddingLeft = defaults.ScreenPaddingLeft;
+        ScreenPaddingTop = defaults.ScreenPaddingTop;
+        ScreenPaddingRight = defaults.ScreenPaddingRight;
+        ScreenPaddingBottom = defaults.ScreenPaddingBottom;
+        ExcludedExecutablePaths = new List<string>();
+        ExcludedProcessNames = new List<string>();
         StashEdgePeek = defaults.StashEdgePeek;
         StashHitZone = defaults.StashHitZone;
         StashRevealDelayMilliseconds = defaults.StashRevealDelayMilliseconds;
@@ -289,6 +324,37 @@ public sealed class AppSettings
             record.OriginalMonitor.Work ??= new StashRect();
             record.StashedFrame ??= new StashRect();
         }
+    }
+
+    private void NormalizeExclusions()
+    {
+        ExcludedExecutablePaths = NormalizeExclusionList(ExcludedExecutablePaths, path => path.Trim());
+        ExcludedProcessNames = NormalizeExclusionList(
+            ExcludedProcessNames,
+            name => Path.GetFileNameWithoutExtension(name.Trim()));
+    }
+
+    private static List<string> NormalizeExclusionList(
+        List<string>? values,
+        Func<string, string> normalize)
+    {
+        var normalized = new List<string>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var value in values ?? new List<string>())
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                continue;
+            }
+
+            var item = normalize(value);
+            if (!string.IsNullOrWhiteSpace(item) && seen.Add(item))
+            {
+                normalized.Add(item);
+            }
+        }
+
+        return normalized;
     }
 
     private void NormalizeRadialTargets()

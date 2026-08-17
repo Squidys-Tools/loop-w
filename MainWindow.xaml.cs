@@ -24,6 +24,7 @@ public partial class MainWindow : Window
     private RadialOverlayWindow? _activeOverlay;
     private readonly DispatcherTimer _stashTimer;
     private PreviewOverlayWindow? _dragPreview;
+    private System.Windows.Interop.HwndSource? _windowSource;
     private bool _capturing;
     private bool _allowClose;
 
@@ -31,6 +32,8 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         _settings = AppSettings.Load();
+        MonitorService.Configure(_settings);
+        WindowPolicy.Configure(_settings);
         WindowStashService.Configure(_settings);
         _radialTargets = RadialActionCatalog.LoadTargets(_settings);
 
@@ -91,6 +94,7 @@ public partial class MainWindow : Window
         _dragSnap.TargetChanged -= DragSnap_TargetChanged;
         _dragSnap.TargetCleared -= DragSnap_TargetCleared;
         _dragSnap.GestureEnded -= DragSnap_GestureEnded;
+        _windowSource?.RemoveHook(WindowMessageHook);
         _dragSnap.Dispose();
         _dragPreview?.Close();
         _hotkey.Dispose();
@@ -277,6 +281,9 @@ public partial class MainWindow : Window
             return;
         }
 
+        _windowSource = System.Windows.Interop.HwndSource.FromHwnd(hwnd);
+        _windowSource?.AddHook(WindowMessageHook);
+
         var ncrp = NativeMethods.DwmNcrpDisabled;
         NativeMethods.DwmSetWindowAttribute(hwnd, NativeMethods.DwmwaNcrenderingPolicy, ref ncrp, sizeof(int));
 
@@ -292,6 +299,27 @@ public partial class MainWindow : Window
         }
 
         ApplyWindowChromeTheme();
+    }
+
+    private IntPtr WindowMessageHook(
+        IntPtr hwnd,
+        int message,
+        IntPtr wParam,
+        IntPtr lParam,
+        ref bool handled)
+    {
+        if (message is NativeMethods.WmDisplayChange or
+            NativeMethods.WmDpiChanged or
+            NativeMethods.WmSettingChange or
+            NativeMethods.WmDeviceChange)
+        {
+            MonitorService.Invalidate();
+            _dragSnap.RefreshTarget();
+            _activeOverlay?.RefreshTargetFrame();
+            _dragPreview?.HideImmediately();
+        }
+
+        return IntPtr.Zero;
     }
 
     private void Hotkey_TriggerPressed()
@@ -516,6 +544,8 @@ public partial class MainWindow : Window
     private void ApplySettings(AppSettings settings)
     {
         WindowStashService.UpdateSettings(settings);
+        MonitorService.UpdateSettings(settings);
+        WindowPolicy.UpdateSettings(settings);
         _radialTargets = RadialActionCatalog.LoadTargets(settings);
         _hotkey.SetBinding(settings.TriggerModifiers, settings.TriggerVk);
         _hotkey.SetTriggerBehavior(

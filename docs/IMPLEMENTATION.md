@@ -194,17 +194,17 @@ never treats a persisted HWND as an identity.
 
 ### 6. Finish monitor, DPI, and app policies
 
-- [ ] Recompute monitor work areas after display, DPI, taskbar, and auto-hide
+- [x] Recompute monitor work areas after display, DPI, taskbar, and auto-hide
   changes.
-- [ ] Define whether monitor moves preserve pixel size or logical size, then
+- [x] Define whether monitor moves preserve pixel size or logical size, then
   verify that behavior on mixed-DPI displays.
-- [ ] Add global screen padding and per-edge padding.
-- [ ] Add an exclusion list by executable path and process name.
-- [ ] Apply exclusions consistently to actions, focus, fill, minimize-others,
+- [x] Add global screen padding and per-edge padding.
+- [x] Add an exclusion list by executable path and process name.
+- [x] Apply exclusions consistently to actions, focus, fill, minimize-others,
   snapping, stash, and IPC.
-- [ ] Define behavior for fullscreen, borderless fullscreen, UWP/WinUI, elevated,
+- [x] Define behavior for fullscreen, borderless fullscreen, UWP/WinUI, elevated,
   protected, and non-resizable windows.
-- [ ] Show a useful diagnostic when Windows denies access or a window cannot be
+- [x] Show a useful diagnostic when Windows denies access or a window cannot be
   resized or moved.
 
 Windows implementation:
@@ -213,6 +213,13 @@ Windows implementation:
   `MonitorFromWindow`, and `GetMonitorInfo` for display changes.
 - `DwmGetWindowAttribute` for reliable visible bounds and window state.
 - Process-path lookup for the exclusion list.
+
+Monitor moves preserve physical pixels by default. Users can switch to logical
+size in Screens & apps; that scales the frame and its offset by the source and
+destination monitor DPI. Borderless fullscreen targets are left to the owning
+application, while ordinary UWP/WinUI HWNDs follow the normal action path.
+Non-resizable windows support move, focus, minimize, and hide actions, but
+layout actions return a diagnostic instead of pretending to resize them.
 
 ### 7. Improve recovery and diagnostics
 

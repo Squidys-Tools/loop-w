@@ -65,6 +65,11 @@ internal static class WindowStashService
             return false;
         }
 
+        if (!WindowPolicy.TryAuthorizeAction(window, WindowAction.Stash, out message))
+        {
+            return false;
+        }
+
         if (Stashed.ContainsKey(window))
         {
             message = "The target window is already stashed.";
@@ -113,7 +118,7 @@ internal static class WindowStashService
                 NativeMethods.SwpNoActivate | NativeMethods.SwpNoZOrder | NativeMethods.SwpAsyncWindowPos))
         {
             RestoreOriginalPlacement(window, placement);
-            message = "Windows rejected the stash. The target may be elevated or non-movable.";
+            message = "Windows rejected the stash. The target may be elevated, protected, or non-movable.";
             return false;
         }
 
@@ -297,6 +302,12 @@ internal static class WindowStashService
         if (!Stashed.TryGetValue(window, out var stashed))
         {
             message = "The target window is not stashed.";
+            return false;
+        }
+
+        if (!WindowPolicy.IsEligibleForEnumeration(window, IntPtr.Zero))
+        {
+            message = "The stashed window is excluded or no longer an eligible target.";
             return false;
         }
 
@@ -554,6 +565,7 @@ internal static class WindowStashService
         {
             if (NativeMethods.GetWindowThreadProcessId(window, out var processId) == 0 ||
                 processId == Environment.ProcessId ||
+                !WindowPolicy.IsEligibleForEnumeration(window, IntPtr.Zero) ||
                 !TryReadWindowIdentity(window, out var identity))
             {
                 return true;
@@ -689,59 +701,33 @@ internal static class WindowStashService
 
     private static bool TryGetMonitorSnapshot(NativeMethods.Rect rect, out StashMonitor snapshot)
     {
-        var monitor = NativeMethods.MonitorFromRect(ref rect, NativeMethods.MonitorDefaultToNearest);
-        if (monitor == IntPtr.Zero)
+        if (!MonitorService.TryGetForRect(rect, out var current))
         {
             snapshot = new StashMonitor();
             return false;
         }
 
-        var info = new NativeMethods.MonitorInfo
-        {
-            Size = Marshal.SizeOf<NativeMethods.MonitorInfo>()
-        };
-        if (!NativeMethods.GetMonitorInfo(monitor, ref info))
-        {
-            snapshot = new StashMonitor();
-            return false;
-        }
-
-        NativeMethods.TryGetMonitorDpi(monitor, out var dpiX, out var dpiY);
         snapshot = new StashMonitor
         {
-            Monitor = StashRect.FromNative(info.Monitor),
-            Work = StashRect.FromNative(info.Work),
-            DpiX = NormalizeDpi(dpiX),
-            DpiY = NormalizeDpi(dpiY)
+            Monitor = StashRect.FromNative(current.Monitor),
+            Work = StashRect.FromNative(current.Work),
+            DpiX = current.DpiX,
+            DpiY = current.DpiY
         };
         return true;
     }
 
     private static IReadOnlyList<StashMonitor> EnumerateMonitors()
     {
-        var monitors = new List<StashMonitor>();
-        NativeMethods.EnumDisplayMonitors(IntPtr.Zero, IntPtr.Zero, (monitor, _, _, _) =>
-        {
-            var info = new NativeMethods.MonitorInfo
+        return MonitorService.GetAll()
+            .Select(monitor => new StashMonitor
             {
-                Size = Marshal.SizeOf<NativeMethods.MonitorInfo>()
-            };
-            if (!NativeMethods.GetMonitorInfo(monitor, ref info))
-            {
-                return true;
-            }
-
-            NativeMethods.TryGetMonitorDpi(monitor, out var dpiX, out var dpiY);
-            monitors.Add(new StashMonitor
-            {
-                Monitor = StashRect.FromNative(info.Monitor),
-                Work = StashRect.FromNative(info.Work),
-                DpiX = NormalizeDpi(dpiX),
-                DpiY = NormalizeDpi(dpiY)
-            });
-            return true;
-        }, IntPtr.Zero);
-        return monitors;
+                Monitor = StashRect.FromNative(monitor.Monitor),
+                Work = StashRect.FromNative(monitor.Work),
+                DpiX = monitor.DpiX,
+                DpiY = monitor.DpiY
+            })
+            .ToArray();
     }
 
     private static bool TryFindRestoreMonitor(StashMonitor original, out StashMonitor target)
@@ -787,11 +773,21 @@ internal static class WindowStashService
         }
 
         // WINDOWPLACEMENT coordinates are physical coordinates. Windows has
-        // already adjusted them when the DPI changed on this same monitor, so
-        // applying the ratio again would move and resize the window twice.
-        if (IsUsable(original.Monitor) && SameRect(original.Monitor, target.Monitor))
+        // already adjusted them when only the DPI changed on this same monitor,
+        // so applying the ratio again would move and resize the window twice.
+        if (IsUsable(original.Monitor) && SameRect(original.Monitor, target.Monitor) &&
+            SameRect(original.Work, target.Work))
         {
             return rect;
+        }
+
+        if (IsUsable(original.Monitor) && SameRect(original.Monitor, target.Monitor))
+        {
+            return Rect(
+                rect.Left - original.Work.Left + target.Work.Left,
+                rect.Top - original.Work.Top + target.Work.Top,
+                rect.Right - original.Work.Left + target.Work.Left,
+                rect.Bottom - original.Work.Top + target.Work.Top);
         }
 
         var scaleX = NormalizeDpi(target.DpiX) / NormalizeDpi(original.DpiX);

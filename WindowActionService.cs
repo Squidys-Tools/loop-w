@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Runtime.InteropServices;
 using System.Threading;
 
@@ -228,6 +229,11 @@ internal static class WindowActionService
             return false;
         }
 
+        if (!WindowPolicy.TryAuthorizeAction(window, action, out message))
+        {
+            return false;
+        }
+
         switch (action)
         {
             case WindowAction.Minimize:
@@ -270,7 +276,7 @@ internal static class WindowActionService
 
         if (!PlaceWindow(window, frame))
         {
-            message = "Windows rejected the move. The target may be elevated or non-resizable.";
+            message = "Windows rejected the move. The target may be elevated, protected, or non-resizable.";
             return false;
         }
 
@@ -309,18 +315,25 @@ internal static class WindowActionService
             return false;
         }
 
+        if (!WindowPolicy.TryAuthorizeAction(window, target.Action, out message))
+        {
+            return false;
+        }
+
         var ideal = target.Frame;
-        if (!NativeMethods.TryGetMonitorWorkRect(ideal, out var work))
+        if (!MonitorService.TryGetForRect(ideal, out var targetMonitor))
         {
             message = "Could not determine the snap monitor.";
             return false;
         }
 
+        var work = targetMonitor.Work;
+
         var frame = WindowFrameMath.FitFrame(work, target.Action, ideal, GetMinMaxInfo(window));
         PushUndo(window);
         if (!PlaceWindow(window, frame))
         {
-            message = "Windows rejected the snap. The target may be elevated or non-resizable.";
+            message = "Windows rejected the snap. The target may be elevated, protected, or non-resizable.";
             return false;
         }
 
@@ -356,6 +369,11 @@ internal static class WindowActionService
             return false;
         }
 
+        if (!WindowPolicy.TryAuthorizeAction(window, WindowAction.MoveRight, out message))
+        {
+            return false;
+        }
+
         if (!PlaceWindow(window, frame) ||
             !NativeMethods.GetWindowRect(window, out var actual))
         {
@@ -381,6 +399,11 @@ internal static class WindowActionService
         if (window == IntPtr.Zero || !NativeMethods.IsWindow(window))
         {
             error = "The target window is no longer available.";
+            return false;
+        }
+
+        if (!WindowPolicy.TryAuthorizeAction(window, action, out error))
+        {
             return false;
         }
 
@@ -461,13 +484,13 @@ internal static class WindowActionService
 
             case WindowAction.NextScreen:
             case WindowAction.PreviousScreen:
-                return TryScreenFrame(window, action, work, out target, out error);
+                return TryScreenFrame(window, action, out target, out error);
 
             case WindowAction.LeftScreen:
             case WindowAction.RightScreen:
             case WindowAction.TopScreen:
             case WindowAction.BottomScreen:
-                return TryDirectionalScreenFrame(window, action, work, out target, out error);
+                return TryDirectionalScreenFrame(window, action, out target, out error);
 
             case WindowAction.Larger:
             case WindowAction.Smaller:
@@ -621,7 +644,7 @@ internal static class WindowActionService
 
         if (!PlaceWindow(window, frame))
         {
-            message = "Windows rejected the restore. The target may be elevated or non-resizable.";
+            message = "Windows rejected the restore. The target may be elevated, protected, or non-resizable.";
             return false;
         }
 
@@ -662,19 +685,25 @@ internal static class WindowActionService
         }
     }
 
-    private static bool TryScreenFrame(IntPtr window, WindowAction action, NativeMethods.Rect currentWork, out NativeMethods.Rect target, out string error)
+    private static bool TryScreenFrame(IntPtr window, WindowAction action, out NativeMethods.Rect target, out string error)
     {
         target = default;
         error = string.Empty;
 
-        var monitors = GetMonitorWorkAreas();
+        if (!MonitorService.TryGetForWindow(window, out var currentMonitor))
+        {
+            error = "Could not determine the current monitor.";
+            return false;
+        }
+
+        var monitors = MonitorService.GetAll();
         if (monitors.Count < 2)
         {
             error = "Only one monitor is connected.";
             return false;
         }
 
-        var index = monitors.FindIndex(r => RectsEqual(r, currentWork));
+        var index = monitors.ToList().FindIndex(snapshot => RectsEqual(snapshot.Work, currentMonitor.Work));
         if (index < 0)
         {
             index = 0;
@@ -684,14 +713,24 @@ internal static class WindowActionService
             ? monitors[(index + 1) % monitors.Count]
             : monitors[(index - 1 + monitors.Count) % monitors.Count];
 
-        target = TranslateFrame(GetCurrentRect(window), currentWork, next);
+        target = MonitorService.TranslateFrame(
+            GetCurrentRect(window),
+            currentMonitor,
+            next,
+            MonitorService.MoveSizePolicy);
         return true;
     }
 
-    private static bool TryDirectionalScreenFrame(IntPtr window, WindowAction action, NativeMethods.Rect currentWork, out NativeMethods.Rect target, out string error)
+    private static bool TryDirectionalScreenFrame(IntPtr window, WindowAction action, out NativeMethods.Rect target, out string error)
     {
         target = default;
         error = string.Empty;
+
+        if (!MonitorService.TryGetForWindow(window, out var currentMonitor))
+        {
+            error = "Could not determine the current monitor.";
+            return false;
+        }
 
         var (dirX, dirY) = action switch
         {
@@ -702,20 +741,20 @@ internal static class WindowActionService
             _ => (0, 0)
         };
 
-        var curCenterX = currentWork.Left + currentWork.Width / 2;
-        var curCenterY = currentWork.Top + currentWork.Height / 2;
-        var best = currentWork;
+        var curCenterX = currentMonitor.Work.Left + currentMonitor.Work.Width / 2;
+        var curCenterY = currentMonitor.Work.Top + currentMonitor.Work.Height / 2;
+        var best = currentMonitor;
         var bestScore = double.NegativeInfinity;
 
-        foreach (var monitor in GetMonitorWorkAreas())
+        foreach (var monitor in MonitorService.GetAll())
         {
-            if (RectsEqual(monitor, currentWork))
+            if (RectsEqual(monitor.Work, currentMonitor.Work))
             {
                 continue;
             }
 
-            var dx = monitor.Left + monitor.Width / 2 - curCenterX;
-            var dy = monitor.Top + monitor.Height / 2 - curCenterY;
+            var dx = monitor.Work.Left + monitor.Work.Width / 2 - curCenterX;
+            var dy = monitor.Work.Top + monitor.Work.Height / 2 - curCenterY;
             var score = dx * dirX + dy * dirY;
 
             // Only move to a monitor that actually lies in the requested
@@ -731,21 +770,18 @@ internal static class WindowActionService
         // No monitor lies in the requested direction (e.g. LeftScreen on the
         // leftmost display): report a no-op instead of claiming success so the
         // caller does not push a redundant entry onto the undo history.
-        if (RectsEqual(best, currentWork))
+        if (RectsEqual(best.Work, currentMonitor.Work))
         {
             error = "No monitor in that direction.";
             return false;
         }
 
-        target = TranslateFrame(GetCurrentRect(window), currentWork, best);
+        target = MonitorService.TranslateFrame(
+            GetCurrentRect(window),
+            currentMonitor,
+            best,
+            MonitorService.MoveSizePolicy);
         return true;
-    }
-
-    private static NativeMethods.Rect TranslateFrame(NativeMethods.Rect current, NativeMethods.Rect from, NativeMethods.Rect to)
-    {
-        var left = to.Left + (current.Left - from.Left);
-        var top = to.Top + (current.Top - from.Top);
-        return Rect(left, top, left + current.Width, top + current.Height);
     }
 
     private static NativeMethods.Rect GetCurrentRect(IntPtr window)
@@ -756,10 +792,10 @@ internal static class WindowActionService
 
     private static double DpiScale(IntPtr window)
     {
-        var monitor = NativeMethods.MonitorFromWindow(window, NativeMethods.MonitorDefaultToNearest);
-        if (NativeMethods.TryGetMonitorDpi(monitor, out var dpiX, out _))
+        var dpi = NativeMethods.GetDpiForWindowSafe(window);
+        if (dpi > 0)
         {
-            return dpiX / 96.0;
+            return dpi / 96.0;
         }
 
         return 1.0;
@@ -882,15 +918,13 @@ internal static class WindowActionService
     {
         monitorRect = default;
         work = default;
-        var monitor = NativeMethods.MonitorFromWindow(window, NativeMethods.MonitorDefaultToNearest);
-        var info = new NativeMethods.MonitorInfo { Size = Marshal.SizeOf<NativeMethods.MonitorInfo>() };
-        if (monitor == IntPtr.Zero || !NativeMethods.GetMonitorInfo(monitor, ref info))
+        if (!MonitorService.TryGetForWindow(window, out var snapshot))
         {
             return false;
         }
 
-        monitorRect = info.Monitor;
-        work = info.Work;
+        monitorRect = snapshot.Monitor;
+        work = snapshot.Work;
         return true;
     }
 
@@ -898,15 +932,13 @@ internal static class WindowActionService
     {
         monitorRect = default;
         work = default;
-        var monitor = NativeMethods.MonitorFromRect(ref rect, NativeMethods.MonitorDefaultToNearest);
-        var info = new NativeMethods.MonitorInfo { Size = Marshal.SizeOf<NativeMethods.MonitorInfo>() };
-        if (monitor == IntPtr.Zero || !NativeMethods.GetMonitorInfo(monitor, ref info))
+        if (!MonitorService.TryGetForRect(rect, out var snapshot))
         {
             return false;
         }
 
-        monitorRect = info.Monitor;
-        work = info.Work;
+        monitorRect = snapshot.Monitor;
+        work = snapshot.Work;
         return true;
     }
 
@@ -914,23 +946,6 @@ internal static class WindowActionService
     {
         TryGetMonitorBounds(rect, out var monitorRect, out _);
         return monitorRect;
-    }
-
-    private static List<NativeMethods.Rect> GetMonitorWorkAreas()
-    {
-        var monitors = new List<NativeMethods.Rect>();
-        NativeMethods.EnumDisplayMonitors(IntPtr.Zero, IntPtr.Zero, (monitor, hdc, rect, data) =>
-        {
-            var info = new NativeMethods.MonitorInfo { Size = Marshal.SizeOf<NativeMethods.MonitorInfo>() };
-            if (NativeMethods.GetMonitorInfo(monitor, ref info))
-            {
-                monitors.Add(info.Work);
-            }
-
-            return true;
-        }, IntPtr.Zero);
-        monitors.Sort((a, b) => a.Left != b.Left ? a.Left.CompareTo(b.Left) : a.Top.CompareTo(b.Top));
-        return monitors;
     }
 
     private static NativeMethods.Rect Rect(int left, int top, int right, int bottom) =>
