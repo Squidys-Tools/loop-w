@@ -8,9 +8,9 @@ before testing minimize, hide, stash, or focus actions.
 Status: `[ ]` not run, `[x]` passed, `[!]` blocked or not supported on this
 Windows configuration.
 
-The automated test harness currently contains 39 pure tests. Live named-pipe
-responses and the real Notepad right-half action were recorded before drag
-snapping; rerun them with this feature's desktop QA pass.
+The current automated baseline is a warning-free build and 39 pure tests. Live
+named-pipe responses and desktop actions still require the manual checks below.
+Re-run the automated baseline after every action-model change.
 
 ## 1. Build and resident lifecycle
 
@@ -188,6 +188,6 @@ does not target its own settings, radial, preview, or tray surfaces.
 - [ ] Update the implementation plan with the verified status and any remaining
   Windows-specific limitations.
 
-Installer packaging, signing, update channels, and distribution beyond the
-tag-triggered zip release are not part of this port QA gate. They will be tested
-in a separate shipping plan.
+Packaging, signing, installer choice, update channels, and distribution are not
+part of this port QA gate. They will be tested in a separate shipping plan.
+

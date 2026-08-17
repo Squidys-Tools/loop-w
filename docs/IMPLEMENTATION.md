@@ -60,12 +60,10 @@ The app uses .NET 8, WPF, and native Windows APIs through `user32`, `dwmapi`,
 - [x] Same-user named-pipe server: `LoopW-Commands`.
 - [x] CLI commands for listing actions, listing keybinds, directional actions,
   and named actions.
-- [x] Pure tests for frame math, radial geometry, cycles, navigation, drag snap
-  geometry, settings, and command
+- [x] Pure tests for frame math, radial geometry, cycles, navigation, and command
   parsing.
-- [x] The automated test harness currently contains 39 pure tests. The live
-  pipe request and real Notepad action remain previously recorded checks and
-  should be rerun with the drag-snap QA pass.
+- [x] Last recorded verification: warning-free build, 28 passing tests, a live
+  pipe request, and a real Notepad right-half action.
 - [ ] Complete the interactive checks in [`QA.md`](QA.md).
 
 ## Remaining work
@@ -156,55 +154,46 @@ Implemented Windows design:
 
 ### 4. Add drag snapping
 
-- [x] Snap a title-bar dragged window to screen edges and supported half/quarter zones.
-- [x] Show the target frame before committing the snap.
-- [x] Add a configurable snap threshold.
-- [x] Optionally restore the pre-drag frame when a snap is canceled.
-- [x] Handle capture loss, canceled moves, monitor changes, fullscreen windows,
+- [ ] Snap a dragged window to screen edges and supported zones.
+- [ ] Show the target frame before committing the snap.
+- [ ] Add a configurable snap threshold.
+- [ ] Optionally restore the pre-drag frame when a snap is canceled.
+- [ ] Handle capture loss, canceled moves, monitor changes, fullscreen windows,
   and applications that reject the requested frame.
-- [x] Do not interfere with Windows Snap Assist or snap LoopW's own windows.
+- [ ] Do not interfere with Windows Snap Assist or snap LoopW's own windows.
 
 Windows implementation:
 
-- `DragSnapService` observes a narrowly scoped `WH_MOUSE_LL` title-bar drag
-  lifecycle without swallowing input or taking mouse capture. It polls the
-  left-button state so capture loss and canceled moves close the gesture.
-- `DragSnapGeometry` resolves half and quarter zones from the physical monitor
-  edge while `WindowFrameMath` computes the work-area frame.
-- The existing `PreviewOverlayWindow` renders the resolved frame before release.
-- `WindowActionService.TryApplySnap` restores and places the frame on the
-  cursor's monitor, reports min/max-size or placement rejection, and records a
-  successful snap in undo history.
-- Fullscreen, maximized, borderless, tool, owned, hidden, and LoopW windows are
-  ignored at the drag boundary. Mouse messages continue to Windows so native
-  resize and Snap Assist behavior remains available.
+- Track move/size lifecycle with `SetWinEventHook` or a narrowly scoped mouse
+  hook plus foreground-window tracking.
+- Reuse the existing preview and frame-calculation code.
+- Use DWM attributes and monitor work areas to keep previews accurate.
 
 ### 5. Harden stash and window identity
 
-- [x] Remove stash entries when a window is destroyed or its process exits.
-- [x] Restore maximized/minimized state and original monitor/DPI information.
-- [x] Add configurable edge peek size, hit-zone size, and reveal delay.
-- [x] Persist stash metadata across restart using executable path, process ID,
+- [ ] Remove stash entries when a window is destroyed or its process exits.
+- [ ] Restore maximized/minimized state and original monitor/DPI information.
+- [ ] Add configurable edge peek size, hit-zone size, and reveal delay.
+- [ ] Persist stash metadata across restart using executable path, process ID,
   window class, and title as matching hints.
-- [x] Restore only an unambiguous match. Never trust a reused HWND by itself.
+- [ ] Restore only an unambiguous match. Never trust a reused HWND by itself.
 
-Stash records are stored with the application settings. Cross-restart restoration
-requires the executable path plus at least two independent metadata hints, and
-never treats a persisted HWND as an identity.
+The current stash store is session-only. Cross-restart restoration must remain
+conservative because Windows HWND values are not permanent window identities.
 
 ### 6. Finish monitor, DPI, and app policies
 
-- [x] Recompute monitor work areas after display, DPI, taskbar, and auto-hide
+- [ ] Recompute monitor work areas after display, DPI, taskbar, and auto-hide
   changes.
-- [x] Define whether monitor moves preserve pixel size or logical size, then
+- [ ] Define whether monitor moves preserve pixel size or logical size, then
   verify that behavior on mixed-DPI displays.
-- [x] Add global screen padding and per-edge padding.
-- [x] Add an exclusion list by executable path and process name.
-- [x] Apply exclusions consistently to actions, focus, fill, minimize-others,
+- [ ] Add global screen padding and per-edge padding.
+- [ ] Add an exclusion list by executable path and process name.
+- [ ] Apply exclusions consistently to actions, focus, fill, minimize-others,
   snapping, stash, and IPC.
-- [x] Define behavior for fullscreen, borderless fullscreen, UWP/WinUI, elevated,
+- [ ] Define behavior for fullscreen, borderless fullscreen, UWP/WinUI, elevated,
   protected, and non-resizable windows.
-- [x] Show a useful diagnostic when Windows denies access or a window cannot be
+- [ ] Show a useful diagnostic when Windows denies access or a window cannot be
   resized or moved.
 
 Windows implementation:
@@ -213,13 +202,6 @@ Windows implementation:
   `MonitorFromWindow`, and `GetMonitorInfo` for display changes.
 - `DwmGetWindowAttribute` for reliable visible bounds and window state.
 - Process-path lookup for the exclusion list.
-
-Monitor moves preserve physical pixels by default. Users can switch to logical
-size in Screens & apps; that scales the frame and its offset by the source and
-destination monitor DPI. Borderless fullscreen targets are left to the owning
-application, while ordinary UWP/WinUI HWNDs follow the normal action path.
-Non-resizable windows support move, focus, minimize, and hide actions, but
-layout actions return a diagnostic instead of pretending to resize them.
 
 ### 7. Improve recovery and diagnostics
 
@@ -245,9 +227,8 @@ The Windows port is ready for packaging work when:
    mixed DPI, taskbar positions, elevated apps, and RDP limitations.
 5. The build is warning-free and the automated test suite passes.
 
-Installer packaging, signing, update channels, and distribution beyond the
-tag-triggered zip release are a separate project after this definition of done
-is met.
+Packaging, signing, installer choice, update channels, and distribution are a
+separate project after this definition of done is met.
 
 ## Build and run
 
@@ -264,13 +245,13 @@ keyboard and mouse hooks are acceptable.
 
 ## GitHub Actions
 
-The repository has one publishing workflow at
-`.github/workflows/publish.yml`.
+The repository has one publishing workflow at `.github/workflows/publish.yml`.
 
 - A tag matching `v*` runs the automated tests, publishes a self-contained
-  `win-x64` single-file build, creates a zip and SHA-256 checksum, and creates a
-  GitHub Release with both files attached.
+  `win-x64` single-file build, creates a zip and SHA-256 checksum, and creates
+  a GitHub Release with both files attached.
 - A manual workflow dispatch runs the same build and tests, then stores the zip
   and checksum as a workflow artifact without creating a GitHub Release.
 - The workflow does not run for ordinary pushes or pull requests. Desktop
   behavior remains covered by the manual checklist in [`QA.md`](QA.md).
+

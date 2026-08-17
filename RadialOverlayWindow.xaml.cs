@@ -1,11 +1,9 @@
 using System;
-using System.Collections.Generic;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
-using System.Windows.Shapes;
 using System.Windows.Threading;
 using KeyEventArgs = System.Windows.Input.KeyEventArgs;
 using MouseEventArgs = System.Windows.Input.MouseEventArgs;
@@ -24,11 +22,6 @@ public partial class RadialOverlayWindow : Window
     private readonly RadialTarget _centerTarget;
     private readonly PreviewOverlayWindow _preview;
     private readonly DispatcherTimer _pollTimer;
-    private readonly double _center;
-    private readonly double _outerRadius;
-    private readonly double _innerRadius;
-    private readonly double _blurMargin;
-    private readonly Path[] _wedgePaths;
     private RadialSelection? _selected;
     private bool _closing;
     private double _dpiX = 96;
@@ -43,74 +36,24 @@ public partial class RadialOverlayWindow : Window
         _slotTargets = RadialActionCatalog.LoadTargets(settings);
         _centerTarget = RadialTargetResolver.Resolve(settings.CenterTarget, settings.Keybinds);
         _preview = new PreviewOverlayWindow(settings);
-        _outerRadius = settings.RadialOuterRadius * OverlayScale;
-        _innerRadius = settings.RadialInnerRadius * OverlayScale;
-        _center = _outerRadius * 1.1;
-        _blurMargin = _outerRadius * 0.27;
-        _wedgePaths = new[]
-        {
-            RightWedge, BottomRightWedge, BottomWedge, BottomLeftWedge,
-            LeftWedge, TopLeftWedge, TopWedge, TopRightWedge
-        };
-        Width = _center * 2;
-        Height = _center * 2;
-        Resources["SectorFillBrush"] = CreateBrush(settings.RadialSectorFill, "#7A007AFF");
-        Resources["SectorStrokeBrush"] = CreateBrush(settings.RadialSectorStroke, "#F0007AFF");
-        Ring.Fill = CreateBrush(settings.RadialRingFill, "#B61E1E1E");
-        BuildGeometry();
+        MenuSurface.ApplySettings(settings, OverlayScale);
 
-        if (_settings.IsLightAppearance)
+        var enabled = new bool[_slotTargets.Count];
+        for (var i = 0; i < enabled.Length; i++)
         {
-            ApplyLightAppearance();
+            enabled[i] = _slotTargets[i] is not RadialTarget.None;
         }
 
-        // The ring's transparent center hole is skipped by Windows hit-testing, so
-        // MouseMove never fires there and the dead-zone can't clear a selection.
-        // Poll the real cursor position instead so selection stays accurate even
-        // over the hole and after mouse-move coalescing.
+        MenuSurface.SetSelectableSlots(enabled);
+        MenuSurface.SetCenterEnabled(_centerTarget is not RadialTarget.None);
+        Width = MenuSurface.Width;
+        Height = MenuSurface.Height;
+
         _pollTimer = new DispatcherTimer(DispatcherPriority.Input)
         {
             Interval = TimeSpan.FromMilliseconds(20)
         };
         _pollTimer.Tick += PollTimer_Tick;
-    }
-
-    private void BuildGeometry()
-    {
-        Ring.Data = RadialGeometry.BuildAnnulus(_center, _outerRadius, _innerRadius);
-        CenterHighlight.Data = new EllipseGeometry(new Point(_center, _center), _innerRadius, _innerRadius);
-        BackdropImage.Clip = RadialGeometry.BuildAnnulus(_center + _blurMargin, _outerRadius, _innerRadius);
-
-        for (var i = 0; i < RadialActionCatalog.Geometry.Count; i++)
-        {
-            var slot = RadialActionCatalog.Geometry[i];
-            _wedgePaths[i].Data = RadialGeometry.BuildWedge(
-                _center,
-                _outerRadius,
-                _innerRadius,
-                slot.FromDegrees,
-                slot.ToDegrees);
-        }
-    }
-
-    private void ApplyLightAppearance()
-    {
-        Resources["SectorFillBrush"] = CreateBrush("#D9007AFF", "#D9007AFF");
-        Resources["SectorStrokeBrush"] = CreateBrush("#F0007AFF", "#F0007AFF");
-        Ring.Fill = CreateBrush("#E6F0F4F8", "#E6F0F4F8");
-        Ring.Effect = new System.Windows.Media.Effects.DropShadowEffect
-        {
-            BlurRadius = 14,
-            Direction = 270,
-            ShadowDepth = 3,
-            Opacity = 0.22,
-            Color = System.Windows.Media.Color.FromRgb(0x52, 0x61, 0x6B)
-        };
-
-        foreach (var wedge in _wedgePaths)
-        {
-            wedge.StrokeThickness = 0.8;
-        }
     }
 
     private void Overlay_Loaded(object sender, RoutedEventArgs e)
@@ -146,7 +89,6 @@ public partial class RadialOverlayWindow : Window
 
         _dpiX = dpiX;
         _dpiY = dpiY;
-
         CaptureBlurredBackdrop(dpiX, dpiY);
 
         Show();
@@ -180,29 +122,24 @@ public partial class RadialOverlayWindow : Window
     {
         try
         {
-            var margin = (int)Math.Round(_blurMargin * dpiX / 96);
+            var margin = (int)Math.Round(MenuSurface.BlurMargin * dpiX / 96);
             var left = (int)Math.Round(Left * dpiX / 96) - margin;
             var top = (int)Math.Round(Top * dpiY / 96) - margin;
             var width = (int)Math.Round(Width * dpiX / 96) + margin * 2;
             var height = (int)Math.Round(Height * dpiY / 96) + margin * 2;
-
             var source = ScreenCapture.CaptureRegion(left, top, width, height);
             if (source != null)
             {
                 source.Freeze();
-                BackdropImage.Source = source;
+                MenuSurface.BackdropImageElement.Source = source;
             }
         }
         catch
         {
-            // blur is decorative; the ring still renders without a backdrop
+            // The backdrop is decorative; the ring still renders without it.
         }
     }
 
-    /// <summary>
-    /// Called when the trigger key is released: commit the current selection,
-    /// or close without committing if nothing was chosen.
-    /// </summary>
     internal void CommitOrClose()
     {
         if (_closing)
@@ -220,15 +157,7 @@ public partial class RadialOverlayWindow : Window
         }
     }
 
-    /// <summary>
-    /// Closes the overlay without committing a selection. Used when a keybind
-    /// fires while the overlay is open so releasing the trigger cannot apply a
-    /// second (unintended) wedge action.
-    /// </summary>
-    internal void Dismiss()
-    {
-        CloseOverlay();
-    }
+    internal void Dismiss() => CloseOverlay();
 
     internal void RefreshTargetFrame()
     {
@@ -238,30 +167,27 @@ public partial class RadialOverlayWindow : Window
         }
     }
 
-    private void Overlay_MouseMove(object sender, MouseEventArgs e)
-    {
-        if (!_settings.CursorInteractionEnabled)
-        {
-            return;
-        }
-
+    private void Overlay_MouseMove(object sender, MouseEventArgs e) =>
         UpdateSelection(e.GetPosition(this));
-    }
 
     private void UpdateSelection(Point point)
     {
-        var dx = point.X - _center;
-        var dy = point.Y - _center;
-
-        if (Math.Sqrt(dx * dx + dy * dy) < _innerRadius)
+        var slot = MenuSurface.SlotAt(point);
+        if (slot is int index && index < _slotTargets.Count && _slotTargets[index] is not RadialTarget.None)
         {
-            SetSelection(CreateCenterSelection());
+            SetSelection(new RadialSelection.Wedge(index, _slotTargets[index]));
             return;
         }
 
-        var index = RadialActionCatalog.IndexAt(Math.Atan2(dy, dx) * 180 / Math.PI);
+        var dx = point.X - MenuSurface.Center;
+        var dy = point.Y - MenuSurface.Center;
+        if (Math.Sqrt(dx * dx + dy * dy) < MenuSurface.InnerRadius && _centerTarget is not RadialTarget.None)
+        {
+            SetSelection(new RadialSelection.Center(_centerTarget));
+            return;
+        }
 
-        SetSelection(CreateWedgeSelection(index));
+        SetSelection(null);
     }
 
     private void Overlay_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
@@ -299,12 +225,12 @@ public partial class RadialOverlayWindow : Window
             _ => -1
         };
 
-        if (index >= 0)
+        if (index >= 0 && index < _slotTargets.Count)
         {
-            var selection = CreateWedgeSelection(index);
-            if (selection is { } resolved)
+            var target = _slotTargets[index];
+            if (target is not RadialTarget.None)
             {
-                Commit(resolved.Target);
+                Commit(target);
             }
             else
             {
@@ -322,23 +248,9 @@ public partial class RadialOverlayWindow : Window
             return;
         }
 
-        var previous = _selected;
         _selected = selection;
-
-        // Cursor polling runs every 20 ms, so only animate the paths whose state
-        // changed. Reapplying all eight animations on every tick creates and
-        // replaces hundreds of animation clocks per second while hovering.
-        var previousIndex = previous is RadialSelection.Wedge previousWedge ? previousWedge.Index : -1;
-        var selectedIndex = selection is RadialSelection.Wedge selectedWedge ? selectedWedge.Index : -1;
-        for (var i = 0; i < RadialActionCatalog.Geometry.Count; i++)
-        {
-            if (i == previousIndex || i == selectedIndex)
-            {
-                HighlightWedge(_wedgePaths[i], i == selectedIndex);
-            }
-        }
-
-        HighlightCenter(selection is RadialSelection.Center);
+        MenuSurface.SetSelectedSlot(selection is RadialSelection.Wedge wedge ? wedge.Index : null);
+        MenuSurface.SetSelectedCenter(selection is RadialSelection.Center);
 
         ShowPreviewFor(selection);
     }
@@ -348,7 +260,8 @@ public partial class RadialOverlayWindow : Window
         var action = selection is { } resolvedSelection
             ? RadialTargetResolver.ActionOf(resolvedSelection.Target)
             : null;
-        if (_settings.PreviewEnabled && action.HasValue && WindowActionService.TryGetTargetFrame(_targetWindow, action.Value, out var frame, out _))
+        if (_settings.PreviewEnabled && action.HasValue &&
+            WindowActionService.TryGetTargetFrame(_targetWindow, action.Value, out var frame, out _))
         {
             _preview.ShowFrame(frame, action.Value);
             _preview.Topmost = true;
@@ -370,43 +283,6 @@ public partial class RadialOverlayWindow : Window
         }
     }
 
-    private static void HighlightWedge(Path wedge, bool on)
-    {
-        var target = on ? 1 : 0;
-        var from = wedge.Opacity;
-
-        // Remove the previous clock before setting the base value. This prevents
-        // finished/replaced hover animations from accumulating on the path.
-        wedge.BeginAnimation(UIElement.OpacityProperty, null);
-        wedge.Opacity = target;
-
-        if (Math.Abs(from - target) < 0.001)
-        {
-            return;
-        }
-
-        var animation = new DoubleAnimation(from, target, new Duration(TimeSpan.FromMilliseconds(130)))
-        {
-            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut },
-            FillBehavior = FillBehavior.Stop
-        };
-        wedge.BeginAnimation(UIElement.OpacityProperty, animation, HandoffBehavior.SnapshotAndReplace);
-    }
-
-    private RadialSelection? CreateWedgeSelection(int index)
-    {
-        if (index < 0 || index >= _slotTargets.Count || _slotTargets[index] is RadialTarget.None)
-        {
-            return null;
-        }
-
-        return new RadialSelection.Wedge(index, _slotTargets[index]);
-    }
-
-    private RadialSelection? CreateCenterSelection() => _centerTarget is RadialTarget.None
-        ? null
-        : new RadialSelection.Center(_centerTarget);
-
     private void Commit(RadialTarget target)
     {
         if (_closing)
@@ -416,28 +292,6 @@ public partial class RadialOverlayWindow : Window
 
         _commit(target);
         CloseOverlay();
-    }
-
-    private void HighlightCenter(bool on)
-    {
-        var target = on ? 1 : 0;
-        var from = CenterHighlight.Opacity;
-        CenterHighlight.BeginAnimation(UIElement.OpacityProperty, null);
-        CenterHighlight.Opacity = target;
-
-        if (Math.Abs(from - target) < 0.001)
-        {
-            return;
-        }
-
-        CenterHighlight.BeginAnimation(
-            UIElement.OpacityProperty,
-            new DoubleAnimation(from, target, new Duration(TimeSpan.FromMilliseconds(130)))
-            {
-                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut },
-                FillBehavior = FillBehavior.Stop
-            },
-            HandoffBehavior.SnapshotAndReplace);
     }
 
     private void CloseOverlay()
@@ -451,24 +305,5 @@ public partial class RadialOverlayWindow : Window
         _pollTimer.Stop();
         _preview.HideImmediately(destroy: true);
         Close();
-    }
-
-    private static System.Windows.Media.Brush CreateBrush(string value, string fallback)
-    {
-        try
-        {
-            if (new System.Windows.Media.BrushConverter().ConvertFromString(value) is System.Windows.Media.Brush brush)
-            {
-                brush.Freeze();
-                return brush;
-            }
-        }
-        catch
-        {
-            // Invalid in-memory values use a safe fallback.
-        }
-
-        return new System.Windows.Media.BrushConverter().ConvertFromString(fallback) as System.Windows.Media.Brush
-            ?? System.Windows.Media.Brushes.Transparent;
     }
 }
