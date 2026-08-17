@@ -3,17 +3,18 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Linq;
+using System.Threading;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using Wpf.Ui;
+using Wpf.Ui.Appearance;
+using Wpf.Ui.Controls;
 using Brush = System.Windows.Media.Brush;
-using Brushes = System.Windows.Media.Brushes;
-using MessageBox = System.Windows.MessageBox;
 using Button = System.Windows.Controls.Button;
-using CheckBox = System.Windows.Controls.CheckBox;
 using ComboBox = System.Windows.Controls.ComboBox;
-using RadioButton = System.Windows.Controls.RadioButton;
+using ToggleButton = System.Windows.Controls.Primitives.ToggleButton;
 using UserControl = System.Windows.Controls.UserControl;
 
 namespace LoopW;
@@ -35,9 +36,14 @@ public partial class SettingsWindow : UserControl
     private readonly GlobalHotkey _hotkey;
     private readonly AppSettings _settings;
     private readonly ObservableCollection<KeybindRow> _rows = new();
+    private readonly ObservableCollection<RadialSlotRow> _radialRows = new();
+    private readonly ContentDialogService _dialogService = new();
+    private readonly SnackbarService _snackbarService = new();
     private bool _capturingUi;
     private bool _loading = true;
     private bool _initialized;
+    private ApplicationTheme? _appliedTheme;
+    private string? _appliedAccent;
 
     public SettingsWindow(GlobalHotkey hotkey, AppSettings settings)
     {
@@ -45,6 +51,9 @@ public partial class SettingsWindow : UserControl
         _hotkey = hotkey;
         _settings = settings;
         KeybindList.ItemsSource = _rows;
+        RadialSlotList.ItemsSource = _radialRows;
+        _dialogService.SetDialogHost(ContentDialogHost);
+        _snackbarService.SetSnackbarPresenter(SnackbarPresenter);
     }
 
     public event Action<AppSettings>? SettingsChanged;
@@ -63,16 +72,36 @@ public partial class SettingsWindow : UserControl
             _rows.Add(new KeybindRow(keybind));
         }
 
+        RefreshRadialControls();
+
         RefreshControlsFromSettings();
         _loading = false;
         ApplyThemeResources();
+        BehaviorNavigationItem.Activate(NavigationMenu);
         ShowSection("Behavior");
     }
 
-    private void SectionNav_Checked(object sender, RoutedEventArgs e)
+    private void SectionNav_SelectionChanged(NavigationView sender, RoutedEventArgs e)
     {
-        if (sender is RadioButton { Tag: string section })
+        if (sender.SelectedItem is NavigationViewItem { Tag: string section })
         {
+            ShowSection(section);
+        }
+    }
+
+    private void SectionNavItem_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is NavigationViewItem { Tag: string section } item)
+        {
+            foreach (var navigationItem in NavigationMenu.MenuItems.OfType<NavigationViewItem>())
+            {
+                if (!ReferenceEquals(navigationItem, item))
+                {
+                    navigationItem.Deactivate(NavigationMenu);
+                }
+            }
+
+            item.Activate(NavigationMenu);
             ShowSection(section);
         }
     }
@@ -146,6 +175,43 @@ public partial class SettingsWindow : UserControl
         SaveSettings(enabled ? "Launch at login enabled" : "Launch at login disabled");
     }
 
+    private void TriggerBehavior_Changed(object sender, RoutedEventArgs e)
+    {
+        if (_loading)
+        {
+            return;
+        }
+
+        _settings.DoubleClickToTrigger = DoubleClickTriggerCheck.IsChecked == true;
+        _settings.MiddleClickToTrigger = MiddleClickTriggerCheck.IsChecked == true;
+        SaveSettings("Trigger behavior saved");
+    }
+
+    private void TriggerBehavior_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (_loading || TriggerDelaySlider is null || TriggerTimeoutSlider is null)
+        {
+            return;
+        }
+
+        _settings.TriggerDelayMilliseconds = (int)Math.Round(TriggerDelaySlider.Value);
+        _settings.TriggerTimeoutMilliseconds = (int)Math.Round(TriggerTimeoutSlider.Value);
+        UpdateTriggerBehaviorLabels();
+        SaveSettings("Trigger timing saved");
+    }
+
+    private void TriggerSide_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_loading || TriggerSideCombo.SelectedValue is not string value ||
+            !Enum.TryParse<TriggerModifierSide>(value, out var side))
+        {
+            return;
+        }
+
+        _settings.TriggerModifierSide = side;
+        SaveSettings("Trigger side saved");
+    }
+
     private void Radial_Changed(object sender, RoutedEventArgs e)
     {
         if (_loading)
@@ -165,6 +231,92 @@ public partial class SettingsWindow : UserControl
             return;
         }
 
+        SaveRadialSize();
+    }
+
+    private void RadialSlot_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_loading || sender is not ComboBox { DataContext: RadialSlotRow row, SelectedItem: RadialChoice choice })
+        {
+            return;
+        }
+
+        if (Matches(choice, row.Target))
+        {
+            return;
+        }
+
+        row.Select(choice);
+        SaveSettings("Wedge assignment saved");
+    }
+
+    private void RadialSlotCycle_Changed(object sender, RoutedEventArgs e)
+    {
+        if (_loading || sender is not ToggleButton { DataContext: RadialSlotRow row, IsChecked: bool enabled })
+        {
+            return;
+        }
+
+        row.CycleEnabled = enabled;
+        SaveSettings("Wedge cycle setting saved");
+    }
+
+    private void CenterAction_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_loading || CenterActionCombo.SelectedItem is not RadialChoice choice)
+        {
+            return;
+        }
+
+        if (Matches(choice, _settings.CenterTarget))
+        {
+            CenterCycleCheck.IsChecked = _settings.CenterTarget.CycleEnabled;
+            CenterCycleCheck.IsEnabled = CanCycle(choice);
+            return;
+        }
+
+        ApplyChoice(_settings.CenterTarget, choice);
+        CenterCycleCheck.IsChecked = _settings.CenterTarget.CycleEnabled;
+        CenterCycleCheck.IsEnabled = CanCycle(choice);
+        SaveSettings("Center action saved");
+    }
+
+    private void CenterCycle_Changed(object sender, RoutedEventArgs e)
+    {
+        if (_loading || CenterActionCombo.SelectedItem is not RadialChoice choice ||
+            choice.Kind == RadialTargetKind.None)
+        {
+            return;
+        }
+
+        _settings.CenterTarget.CycleEnabled = CenterCycleCheck.IsChecked == true;
+        CenterCycleCheck.IsEnabled = CanCycle(choice);
+        SaveSettings("Center cycle setting saved");
+    }
+
+    private void RadialNumber_ValueChanged(object sender, NumberBoxValueChangedEventArgs e)
+    {
+        if (_loading || e.NewValue is not double value)
+        {
+            return;
+        }
+
+        _loading = true;
+        if (ReferenceEquals(sender, OuterRadiusInput))
+        {
+            OuterRadiusSlider.Value = value;
+        }
+        else if (ReferenceEquals(sender, InnerRadiusInput))
+        {
+            InnerRadiusSlider.Value = value;
+        }
+
+        _loading = false;
+        SaveRadialSize();
+    }
+
+    private void SaveRadialSize()
+    {
         _settings.RadialOuterRadius = OuterRadiusSlider.Value;
         var innerRadius = Math.Min(InnerRadiusSlider.Value, _settings.RadialOuterRadius - 8);
         if (Math.Abs(InnerRadiusSlider.Value - innerRadius) > 0.001)
@@ -195,6 +347,36 @@ public partial class SettingsWindow : UserControl
             return;
         }
 
+        SavePreviewSize();
+    }
+
+    private void PreviewNumber_ValueChanged(object sender, NumberBoxValueChangedEventArgs e)
+    {
+        if (_loading || e.NewValue is not double value)
+        {
+            return;
+        }
+
+        _loading = true;
+        if (ReferenceEquals(sender, PreviewPaddingInput))
+        {
+            PreviewPaddingSlider.Value = value;
+        }
+        else if (ReferenceEquals(sender, PreviewCornerInput))
+        {
+            PreviewCornerSlider.Value = value;
+        }
+        else if (ReferenceEquals(sender, PreviewBorderWidthInput))
+        {
+            PreviewBorderWidthSlider.Value = value;
+        }
+
+        _loading = false;
+        SavePreviewSize();
+    }
+
+    private void SavePreviewSize()
+    {
         _settings.PreviewPadding = PreviewPaddingSlider.Value;
         _settings.PreviewCornerRadius = PreviewCornerSlider.Value;
         _settings.PreviewBorderWidth = PreviewBorderWidthSlider.Value;
@@ -366,10 +548,24 @@ public partial class SettingsWindow : UserControl
             return;
         }
 
-        if (sender is CheckBox { DataContext: KeybindRow row, IsChecked: bool enabled })
+        if (sender is ToggleButton { DataContext: KeybindRow row, IsChecked: bool enabled })
         {
             row.Keybind.CycleEnabled = enabled;
             SaveSettings("Cycle setting saved");
+        }
+    }
+
+    private void Bypass_Changed(object sender, RoutedEventArgs e)
+    {
+        if (_loading)
+        {
+            return;
+        }
+
+        if (sender is ToggleButton { DataContext: KeybindRow row, IsChecked: bool enabled })
+        {
+            row.Keybind.BypassTrigger = enabled;
+            SaveSettings("Trigger bypass saved");
         }
     }
 
@@ -401,6 +597,11 @@ public partial class SettingsWindow : UserControl
 
                 _settings.TriggerModifiers = defaults.TriggerModifiers;
                 _settings.TriggerVk = defaults.TriggerVk;
+                _settings.TriggerModifierSide = defaults.TriggerModifierSide;
+                _settings.TriggerDelayMilliseconds = defaults.TriggerDelayMilliseconds;
+                _settings.TriggerTimeoutMilliseconds = defaults.TriggerTimeoutMilliseconds;
+                _settings.DoubleClickToTrigger = defaults.DoubleClickToTrigger;
+                _settings.MiddleClickToTrigger = defaults.MiddleClickToTrigger;
                 _settings.LaunchAtLogin = defaults.LaunchAtLogin;
                 break;
             case "Radial":
@@ -408,6 +609,8 @@ public partial class SettingsWindow : UserControl
                 _settings.CursorInteractionEnabled = defaults.CursorInteractionEnabled;
                 _settings.RadialOuterRadius = defaults.RadialOuterRadius;
                 _settings.RadialInnerRadius = defaults.RadialInnerRadius;
+                _settings.RadialSlots = RadialConfiguration.CreateDefaultSlots();
+                _settings.CenterTarget = RadialConfiguration.CreateDefaultCenter();
                 break;
             case "Preview":
                 _settings.PreviewEnabled = defaults.PreviewEnabled;
@@ -435,17 +638,20 @@ public partial class SettingsWindow : UserControl
         SaveSettings($"{section} reset");
     }
 
-    private void ResetAll_Click(object sender, RoutedEventArgs e)
+    private async void ResetAll_Click(object sender, RoutedEventArgs e)
     {
-        var result = MessageBox.Show(
-            Window.GetWindow(this),
-            "Reset all LoopW settings to their defaults? This will remove custom keybinds and visual choices.",
-            "Reset all settings",
-            MessageBoxButton.YesNo,
-            MessageBoxImage.Warning,
-            MessageBoxResult.No);
+        var result = await _dialogService.ShowAsync(new ContentDialog
+        {
+            Title = "Reset all settings?",
+            Content = "This removes custom keybinds and visual choices. Tray state and open windows are not affected.",
+            PrimaryButtonText = "Reset all settings",
+            CloseButtonText = "Keep settings",
+            PrimaryButtonAppearance = ControlAppearance.Danger,
+            CloseButtonAppearance = ControlAppearance.Secondary,
+            DefaultButton = ContentDialogButton.Close
+        }, CancellationToken.None);
 
-        if (result != MessageBoxResult.Yes)
+        if (result != ContentDialogResult.Primary)
         {
             return;
         }
@@ -467,8 +673,11 @@ public partial class SettingsWindow : UserControl
         _capturingUi = capturing;
         AddButton.IsEnabled = !capturing;
         TriggerButton.IsEnabled = !capturing;
+        NavigationMenu.IsEnabled = !capturing;
         CaptureHint.Text = capturing ? "Press a key or key combination — Esc cancels." : string.Empty;
-        TriggerLabel.Content = capturing ? "Press a key…" : HotkeyNames.For(_hotkey.TriggerModifiers, _hotkey.TriggerVk);
+        TriggerLabel.Content = capturing
+            ? "Press a key…"
+            : HotkeyNames.For(_hotkey.TriggerModifiers, _hotkey.TriggerVk, _settings.TriggerModifierSide);
         SetStatus(capturing ? "Listening for a key…" : "Saved");
     }
 
@@ -477,13 +686,26 @@ public partial class SettingsWindow : UserControl
         _settings.Keybinds = _rows.Select(row => row.Keybind).ToList();
         _settings.Save();
         _hotkey.SetBinding(_settings.TriggerModifiers, _settings.TriggerVk);
+        _hotkey.SetTriggerBehavior(
+            _settings.TriggerModifierSide,
+            _settings.TriggerDelayMilliseconds,
+            _settings.TriggerTimeoutMilliseconds,
+            _settings.DoubleClickToTrigger,
+            _settings.MiddleClickToTrigger);
         _hotkey.SetKeybinds(_settings.Keybinds);
         ApplyThemeResources();
+        RefreshRadialControls();
         NotifySettingsChanged();
         RefreshTriggerLabel();
         RefreshThemeFields();
         UpdateKeybindEmptyState();
         SetStatus(status);
+        if (status is "Trigger updated" or "Keybind added" or "Keybind rebound" or "Keybind deleted" ||
+            status.Contains("reset", StringComparison.OrdinalIgnoreCase) ||
+            status.Contains("style applied", StringComparison.OrdinalIgnoreCase))
+        {
+            ShowFeedback("LoopW", status);
+        }
     }
 
     private void NotifySettingsChanged() => SettingsChanged?.Invoke(_settings);
@@ -492,16 +714,28 @@ public partial class SettingsWindow : UserControl
     {
         _loading = true;
         RefreshTriggerLabel();
+        DoubleClickTriggerCheck.IsChecked = _settings.DoubleClickToTrigger;
+        MiddleClickTriggerCheck.IsChecked = _settings.MiddleClickToTrigger;
+        TriggerSideCombo.SelectedValue = _settings.TriggerModifierSide.ToString();
+        TriggerDelaySlider.Value = _settings.TriggerDelayMilliseconds;
+        TriggerTimeoutSlider.Value = _settings.TriggerTimeoutMilliseconds;
+        UpdateTriggerBehaviorLabels();
         LaunchAtLoginCheck.IsChecked = _settings.LaunchAtLogin;
         RadialEnabledCheck.IsChecked = _settings.RadialEnabled;
         CursorInteractionCheck.IsChecked = _settings.CursorInteractionEnabled;
         OuterRadiusSlider.Value = _settings.RadialOuterRadius;
         InnerRadiusSlider.Value = _settings.RadialInnerRadius;
+        OuterRadiusInput.Value = _settings.RadialOuterRadius;
+        InnerRadiusInput.Value = _settings.RadialInnerRadius;
         PreviewEnabledCheck.IsChecked = _settings.PreviewEnabled;
         PreviewPaddingSlider.Value = _settings.PreviewPadding;
         PreviewCornerSlider.Value = _settings.PreviewCornerRadius;
         PreviewBorderWidthSlider.Value = _settings.PreviewBorderWidth;
+        PreviewPaddingInput.Value = _settings.PreviewPadding;
+        PreviewCornerInput.Value = _settings.PreviewCornerRadius;
+        PreviewBorderWidthInput.Value = _settings.PreviewBorderWidth;
         AppearanceModeCombo.SelectedValue = _settings.AppearanceMode;
+        RefreshRadialControls();
         RefreshThemeFields();
         UpdateValueLabels();
         UpdateKeybindEmptyState();
@@ -513,7 +747,10 @@ public partial class SettingsWindow : UserControl
     {
         if (TriggerLabel != null)
         {
-            TriggerLabel.Content = HotkeyNames.For(_settings.TriggerModifiers, _settings.TriggerVk);
+            TriggerLabel.Content = HotkeyNames.For(
+                _settings.TriggerModifiers,
+                _settings.TriggerVk,
+                _settings.TriggerModifierSide);
         }
     }
 
@@ -540,11 +777,97 @@ public partial class SettingsWindow : UserControl
             return;
         }
 
-        OuterRadiusValue.Text = $"{OuterRadiusSlider.Value:0} px";
-        InnerRadiusValue.Text = $"{InnerRadiusSlider.Value:0} px";
-        PreviewPaddingValue.Text = $"{PreviewPaddingSlider.Value:0} px";
-        PreviewCornerValue.Text = $"{PreviewCornerSlider.Value:0} px";
-        PreviewBorderWidthValue.Text = $"{PreviewBorderWidthSlider.Value:0} px";
+        SyncNumberInputs();
+    }
+
+    private void UpdateTriggerBehaviorLabels()
+    {
+        if (TriggerDelayValue == null || TriggerTimeoutValue == null)
+        {
+            return;
+        }
+
+        TriggerDelayValue.Text = $"{TriggerDelaySlider.Value:0} ms";
+        TriggerTimeoutValue.Text = TriggerTimeoutSlider.Value <= 0
+            ? "Off"
+            : $"{TriggerTimeoutSlider.Value:0} ms";
+    }
+
+    private void SyncNumberInputs()
+    {
+        var wasLoading = _loading;
+        _loading = true;
+        OuterRadiusInput.Value = OuterRadiusSlider.Value;
+        InnerRadiusInput.Value = InnerRadiusSlider.Value;
+        PreviewPaddingInput.Value = PreviewPaddingSlider.Value;
+        PreviewCornerInput.Value = PreviewCornerSlider.Value;
+        PreviewBorderWidthInput.Value = PreviewBorderWidthSlider.Value;
+        _loading = wasLoading;
+    }
+
+    private void RefreshRadialControls()
+    {
+        if (RadialSlotList == null || CenterActionCombo == null || _settings.RadialSlots == null)
+        {
+            return;
+        }
+
+        var wasLoading = _loading;
+        _loading = true;
+
+        var choices = BuildRadialChoices();
+        _radialRows.Clear();
+        for (var i = 0; i < RadialConfiguration.SlotCount; i++)
+        {
+            var row = new RadialSlotRow(RadialActionCatalog.Geometry[i].Label, _settings.RadialSlots[i]);
+            row.RefreshChoices(choices);
+            _radialRows.Add(row);
+        }
+
+        CenterActionCombo.ItemsSource = choices;
+        CenterActionCombo.SelectedItem = choices.First(choice => Matches(choice, _settings.CenterTarget));
+        CenterCycleCheck.IsChecked = _settings.CenterTarget.CycleEnabled;
+        CenterCycleCheck.IsEnabled = CenterActionCombo.SelectedItem is RadialChoice centerChoice && CanCycle(centerChoice);
+        _loading = wasLoading;
+    }
+
+    private List<RadialChoice> BuildRadialChoices()
+    {
+        var choices = new List<RadialChoice>
+        {
+            new(RadialTargetKind.None, default, string.Empty, "No action", false)
+        };
+        choices.AddRange(ActionChoices.Select(choice =>
+            new RadialChoice(
+                RadialTargetKind.Action,
+                choice.Key,
+                string.Empty,
+                choice.Value,
+                WindowCycleService.CanCycle(choice.Key))));
+        choices.AddRange(_rows.Select(row => new RadialChoice(
+            RadialTargetKind.Keybind,
+            row.Keybind.Action,
+            row.Keybind.Id,
+            $"{row.Display} · {WindowActionService.ActionName(row.Keybind.Action)}",
+            row.Keybind.CycleEnabled)));
+        return choices;
+    }
+
+    private static bool Matches(RadialChoice choice, RadialTargetSettings target) =>
+        choice.Kind == target.Kind &&
+        (choice.Kind == RadialTargetKind.None ||
+         (choice.Kind == RadialTargetKind.Action && choice.Action == target.Action) ||
+         (choice.Kind == RadialTargetKind.Keybind && choice.KeybindId == target.KeybindId));
+
+    private static bool CanCycle(RadialChoice choice) =>
+        choice.Kind != RadialTargetKind.None && WindowCycleService.CanCycle(choice.Action);
+
+    private static void ApplyChoice(RadialTargetSettings target, RadialChoice choice)
+    {
+        target.Kind = choice.Kind;
+        target.Action = choice.Action;
+        target.KeybindId = choice.KeybindId;
+        target.CycleEnabled = choice.Kind != RadialTargetKind.None && choice.DefaultCycle;
     }
 
     private void UpdateKeybindEmptyState()
@@ -568,7 +891,7 @@ public partial class SettingsWindow : UserControl
 
     private void SetSwatch(Border swatch, string value)
     {
-        swatch.Background = TryCreateBrush(value) ?? (Brush)FindResource("BorderBrush");
+        swatch.Background = TryCreateBrush(value) ?? ApplicationAccentColorManager.PrimaryAccentBrush;
     }
 
     private void UpdatePresetSelection()
@@ -586,43 +909,53 @@ public partial class SettingsWindow : UserControl
             string.Equals(p.PreviewBorder, _settings.PreviewBorderColor, StringComparison.OrdinalIgnoreCase));
 
         var selectedName = selected.Name;
-        var defaultBorder = (Brush)FindResource("BorderBrush");
-        var accent = (Brush)FindResource("AccentBrush");
         foreach (var button in new[] { BluePresetButton, CobaltPresetButton, VioletPresetButton })
         {
             var isSelected = button.Tag is string name && name == selectedName;
-            button.BorderBrush = isSelected ? accent : defaultBorder;
-            button.BorderThickness = isSelected ? new Thickness(1.5) : new Thickness(1);
+            button.Appearance = isSelected ? ControlAppearance.Primary : ControlAppearance.Secondary;
         }
     }
 
     private void ApplyThemeResources()
     {
         var light = _settings.IsLightAppearance;
-        var accent = TryCreateBrush(_settings.AccentColor) ?? CreateBrush(light ? "#1769D1" : "#3D9BFF");
-        Resources["PageBrush"] = CreateBrush(light ? "#F4F7FB" : "#101216");
-        Resources["NavigationBrush"] = CreateBrush(light ? "#EAF0F7" : "#151922");
-        Resources["PanelBrush"] = CreateBrush(light ? "#FFFFFF" : "#191E27");
-        Resources["CardBrush"] = CreateBrush(light ? "#FFFFFF" : "#202632");
-        Resources["CardHoverBrush"] = CreateBrush(light ? "#EEF4FA" : "#293342");
-        Resources["InputBrush"] = CreateBrush(light ? "#F6F8FB" : "#151A22");
-        Resources["BorderBrush"] = CreateBrush(light ? "#D7DFEA" : "#303A48");
-        Resources["PrimaryTextBrush"] = CreateBrush(light ? "#16202D" : "#F0F4FA");
-        Resources["SecondaryTextBrush"] = CreateBrush(light ? "#5E6B7C" : "#9DA9B9");
-        Resources["QuietTextBrush"] = CreateBrush(light ? "#748092" : "#6F7B8A");
-        Resources["AccentBrush"] = accent;
-        Resources["AccentSoftBrush"] = CreateBrush(light ? "#1A3D9BFF" : "#263D9BFF");
-        Resources["SuccessBrush"] = CreateBrush(light ? "#16734A" : "#6AD5A0");
-        Resources["WarningBrush"] = CreateBrush(light ? "#9A5B00" : "#F1B86A");
-        Resources["DangerBrush"] = CreateBrush(light ? "#B4232C" : "#FF8B91");
-        Resources["FocusBrush"] = CreateBrush(light ? "#1769D1" : "#78B9FF");
+        var theme = light ? ApplicationTheme.Light : ApplicationTheme.Dark;
+        var themeChanged = _appliedTheme != theme;
+        if (themeChanged)
+        {
+            ApplicationThemeManager.Apply(theme, WindowBackdropType.None, updateAccent: false);
+            _appliedTheme = theme;
+        }
+
+        if (themeChanged || !string.Equals(_appliedAccent, _settings.AccentColor, StringComparison.OrdinalIgnoreCase))
+        {
+            if (TryCreateColor(_settings.AccentColor, out var accent))
+            {
+                ApplicationAccentColorManager.Apply(accent, theme, systemGlassColor: false, systemAccentColor: false);
+            }
+            else
+            {
+                ApplicationAccentColorManager.ApplySystemAccent();
+            }
+
+            _appliedAccent = _settings.AccentColor;
+        }
+
         UpdatePresetSelection();
         UpdateColorSwatches();
-    }
+        SettingsRadialSurface?.ApplySettings(_settings);
+        if (SettingsRadialSurface != null)
+        {
+            var enabled = new bool[RadialConfiguration.SlotCount];
+            for (var i = 0; i < enabled.Length; i++)
+            {
+                enabled[i] = _settings.RadialSlots[i].Kind != RadialTargetKind.None;
+            }
 
-    private static Brush CreateBrush(string value)
-    {
-        return TryCreateBrush(value) ?? Brushes.Transparent;
+            SettingsRadialSurface.SetSelectableSlots(enabled);
+            SettingsRadialSurface.SetCenterEnabled(_settings.CenterTarget.Kind != RadialTargetKind.None);
+        }
+        SettingsPreviewSurface?.ApplySettings(_settings);
     }
 
     private static Brush? TryCreateBrush(string? value)
@@ -643,10 +976,38 @@ public partial class SettingsWindow : UserControl
         return null;
     }
 
+    private static bool TryCreateColor(string? value, out Color color)
+    {
+        if (TryCreateBrush(value) is SolidColorBrush brush)
+        {
+            color = brush.Color;
+            return true;
+        }
+
+        color = default;
+        return false;
+    }
+
     private void SetStatus(string text, bool isError = false)
     {
         StatusText.Text = text;
-        StatusText.Foreground = (Brush)FindResource(isError ? "DangerBrush" : "SecondaryTextBrush");
+        StatusText.Foreground = (Brush)FindResource(isError ? "SystemFillColorCriticalBrush" : "TextFillColorSecondaryBrush");
+        StatusSuccessIcon.Visibility = isError ? Visibility.Collapsed : Visibility.Visible;
+        StatusErrorIcon.Visibility = isError ? Visibility.Visible : Visibility.Collapsed;
+        if (isError)
+        {
+            ShowFeedback("LoopW could not apply that change", text, isError: true);
+        }
+    }
+
+    private void ShowFeedback(string title, string message, bool isError = false)
+    {
+        _snackbarService.Show(
+            title,
+            message,
+            isError ? ControlAppearance.Danger : ControlAppearance.Success,
+            new SymbolIcon { Symbol = isError ? SymbolRegular.ErrorCircle16 : SymbolRegular.CheckmarkCircle16 },
+            TimeSpan.FromSeconds(2.4));
     }
 
     private readonly record struct ThemePreset(
@@ -675,6 +1036,113 @@ public sealed class KeybindRow : INotifyPropertyChanged
     {
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Display)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CanCycle)));
+    }
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+}
+
+public sealed class RadialChoice
+{
+    public RadialChoice(
+        RadialTargetKind kind,
+        WindowAction action,
+        string keybindId,
+        string display,
+        bool defaultCycle)
+    {
+        Kind = kind;
+        Action = action;
+        KeybindId = keybindId;
+        Display = display;
+        DefaultCycle = defaultCycle;
+    }
+
+    public RadialTargetKind Kind { get; }
+
+    public WindowAction Action { get; }
+
+    public string KeybindId { get; }
+
+    public string Display { get; }
+
+    public bool DefaultCycle { get; }
+}
+
+public sealed class RadialSlotRow : INotifyPropertyChanged
+{
+    private RadialChoice? _selectedChoice;
+
+    public RadialSlotRow(string label, RadialTargetSettings target)
+    {
+        Label = label;
+        Target = target;
+    }
+
+    public string Label { get; }
+
+    public RadialTargetSettings Target { get; }
+
+    public ObservableCollection<RadialChoice> Choices { get; } = new();
+
+    public RadialChoice? SelectedChoice
+    {
+        get => _selectedChoice;
+        set
+        {
+            if (ReferenceEquals(_selectedChoice, value))
+            {
+                return;
+            }
+
+            _selectedChoice = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SelectedChoice)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CanCycle)));
+        }
+    }
+
+    public bool CycleEnabled
+    {
+        get => Target.CycleEnabled;
+        set
+        {
+            if (Target.CycleEnabled == value)
+            {
+                return;
+            }
+
+            Target.CycleEnabled = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CycleEnabled)));
+        }
+    }
+
+    public bool CanCycle => SelectedChoice is { Kind: not RadialTargetKind.None } choice &&
+        WindowCycleService.CanCycle(choice.Action);
+
+    public void RefreshChoices(IEnumerable<RadialChoice> choices)
+    {
+        Choices.Clear();
+        foreach (var choice in choices)
+        {
+            Choices.Add(choice);
+        }
+
+        SelectedChoice = Choices.FirstOrDefault(choice =>
+            choice.Kind == Target.Kind &&
+            (choice.Kind == RadialTargetKind.None ||
+             (choice.Kind == RadialTargetKind.Action && choice.Action == Target.Action) ||
+             (choice.Kind == RadialTargetKind.Keybind && choice.KeybindId == Target.KeybindId)));
+        SelectedChoice ??= Choices[0];
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CycleEnabled)));
+    }
+
+    public void Select(RadialChoice choice)
+    {
+        Target.Kind = choice.Kind;
+        Target.Action = choice.Action;
+        Target.KeybindId = choice.KeybindId;
+        Target.CycleEnabled = choice.Kind != RadialTargetKind.None && choice.DefaultCycle;
+        SelectedChoice = choice;
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CycleEnabled)));
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;

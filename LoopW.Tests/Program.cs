@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Windows.Media;
 
 namespace LoopW.Tests;
@@ -10,17 +11,30 @@ internal static class Program
         ("radial catalog exposes eight unique actions", RadialCatalogHasEightUniqueActions),
         ("zone frames cover expected halves and quarters", ZoneFramesCoverExpectedAreas),
         ("zone frames split thirds without gaps", ZoneFramesSplitThirdsWithoutGaps),
+        ("zone frames include center halves and fourths", ZoneFramesIncludeCenterHalvesAndFourths),
+        ("axis maximize preserves the other dimension", AxisMaximizePreservesOtherDimension),
         ("center frame preserves the current size", CenterFramePreservesCurrentSize),
         ("fit frame clamps size and keeps right edge anchored", FitFrameClampsAndAnchors),
         ("manipulation frame scales by DPI", ManipulationFrameScalesByDpi),
+        ("scale and axis manipulation stay centered", ScaleAndAxisManipulationStayCentered),
+        ("fill available frame avoids neighboring windows", FillAvailableFrameAvoidsObstacles),
+        ("directional navigation chooses the nearest window", DirectionalNavigationChoosesNearestWindow),
+        ("stack navigation wraps to the next window", StackNavigationWraps),
         ("stash frames keep a visible edge peek", StashFramesKeepVisiblePeek),
         ("radial geometry creates annulus and wedge paths", RadialGeometryCreatesPaths),
         ("command parser maps direction aliases", CommandParserMapsDirectionAliases),
         ("command parser maps action names", CommandParserMapsActionNames),
+        ("action names cover every action", ActionNamesCoverEveryAction),
         ("command parser maps activation", CommandParserMapsActivation),
         ("command parser exposes list commands", CommandParserExposesListCommands),
         ("command parser rejects malformed commands", CommandParserRejectsMalformedCommands),
-        ("command formatter includes configured keybinds", CommandFormatterIncludesKeybinds)
+        ("command formatter includes configured keybinds", CommandFormatterIncludesKeybinds),
+        ("trigger settings persist and normalize", TriggerSettingsPersistAndNormalize),
+        ("hotkey names show modifier side", HotkeyNamesShowModifierSide),
+        ("command formatter marks trigger bypass", CommandFormatterMarksTriggerBypass),
+        ("radial configuration preserves stable keybind targets", RadialConfigurationPreservesStableKeybindTargets),
+        ("radial configuration normalizes invalid targets", RadialConfigurationNormalizesInvalidTargets),
+        ("radial configuration resolves center and wedge targets", RadialConfigurationResolvesTargets)
     };
 
     public static int Main()
@@ -91,6 +105,29 @@ internal static class Program
         Equal(work.Right, right.Right);
     }
 
+    private static void ZoneFramesIncludeCenterHalvesAndFourths()
+    {
+        var work = Rect(0, 0, 1200, 800);
+
+        Equal(Rect(300, 0, 900, 800), WindowFrameMath.ZoneFrame(work, WindowAction.HorizontalCenterHalf));
+        Equal(Rect(0, 200, 1200, 600), WindowFrameMath.ZoneFrame(work, WindowAction.VerticalCenterHalf));
+        Equal(Rect(0, 0, 300, 800), WindowFrameMath.ZoneFrame(work, WindowAction.FirstFourth));
+        Equal(Rect(300, 0, 600, 800), WindowFrameMath.ZoneFrame(work, WindowAction.SecondFourth));
+        Equal(Rect(600, 0, 900, 800), WindowFrameMath.ZoneFrame(work, WindowAction.ThirdFourth));
+        Equal(Rect(900, 0, 1200, 800), WindowFrameMath.ZoneFrame(work, WindowAction.FourthFourth));
+        Equal(Rect(0, 0, 900, 800), WindowFrameMath.ZoneFrame(work, WindowAction.LeftThreeFourths));
+        Equal(Rect(300, 0, 1200, 800), WindowFrameMath.ZoneFrame(work, WindowAction.RightThreeFourths));
+    }
+
+    private static void AxisMaximizePreservesOtherDimension()
+    {
+        var work = Rect(0, 0, 1200, 800);
+        var current = Rect(100, 120, 500, 620);
+
+        Equal(Rect(100, 0, 500, 800), WindowFrameMath.MaximizeHeightFrame(work, current));
+        Equal(Rect(0, 120, 1200, 620), WindowFrameMath.MaximizeWidthFrame(work, current));
+    }
+
     private static void CenterFramePreservesCurrentSize()
     {
         var work = Rect(0, 0, 1200, 800);
@@ -118,6 +155,59 @@ internal static class Program
         var resized = WindowFrameMath.ManipulateFrame(Rect(0, 0, 1200, 800), WindowAction.GrowRight, current, 1.25);
 
         Equal(Rect(100, 100, 560, 400), resized);
+    }
+
+    private static void ScaleAndAxisManipulationStayCentered()
+    {
+        var work = Rect(0, 0, 1200, 800);
+        var current = Rect(100, 100, 500, 400);
+
+        Equal(Rect(80, 85, 520, 415), WindowFrameMath.ManipulateFrame(work, WindowAction.ScaleUp, current, 1));
+        Equal(Rect(40, 100, 560, 400), WindowFrameMath.ManipulateFrame(work, WindowAction.GrowHorizontal, current, 1.25));
+        Equal(Rect(100, 160, 500, 340), WindowFrameMath.ManipulateFrame(work, WindowAction.ShrinkVertical, current, 1.25));
+    }
+
+    private static void FillAvailableFrameAvoidsObstacles()
+    {
+        var work = Rect(0, 0, 1200, 800);
+        var current = Rect(600, 100, 1000, 700);
+        var obstacle = Rect(1000, 0, 1200, 800);
+
+        Equal(
+            Rect(0, 0, 1000, 800),
+            WindowFrameMath.FillAvailableFrame(work, current, new[] { obstacle }));
+    }
+
+    private static void DirectionalNavigationChoosesNearestWindow()
+    {
+        var current = new WindowCandidate(new IntPtr(1), Rect(400, 300, 800, 700));
+        var candidates = new[]
+        {
+            current,
+            new WindowCandidate(new IntPtr(2), Rect(800, 320, 1000, 520)),
+            new WindowCandidate(new IntPtr(3), Rect(1100, 320, 1300, 520)),
+            new WindowCandidate(new IntPtr(4), Rect(600, 800, 800, 1000))
+        };
+
+        True(WindowNavigation.TryFindDirectional(
+            current.Frame,
+            candidates,
+            WindowNavigationDirection.Right,
+            out var target));
+        Equal(new IntPtr(2), target);
+    }
+
+    private static void StackNavigationWraps()
+    {
+        var candidates = new[]
+        {
+            new WindowCandidate(new IntPtr(1), Rect(0, 0, 200, 200)),
+            new WindowCandidate(new IntPtr(2), Rect(200, 0, 400, 200)),
+            new WindowCandidate(new IntPtr(3), Rect(400, 0, 600, 200))
+        };
+
+        True(WindowNavigation.TryFindNextInStack(candidates, new IntPtr(3), out var target));
+        Equal(new IntPtr(1), target);
     }
 
     private static void StashFramesKeepVisiblePeek()
@@ -156,6 +246,50 @@ internal static class Program
 
         True(LoopCommandParser.TryParse("action/RevealStashed", out command, out _));
         Equal(new LoopCommand.Apply(WindowAction.RevealStashed), command);
+
+        True(LoopCommandParser.TryParse("action/maximize-height", out command, out _));
+        Equal(new LoopCommand.Apply(WindowAction.MaximizeHeight), command);
+
+        True(LoopCommandParser.TryParse("action/focus-next-in-stack", out command, out _));
+        Equal(new LoopCommand.Apply(WindowAction.FocusNextInStack), command);
+    }
+
+    private static void ActionNamesCoverEveryAction()
+    {
+        var newActions = new[]
+        {
+            WindowAction.MaximizeHeight,
+            WindowAction.MaximizeWidth,
+            WindowAction.FillAvailableSpace,
+            WindowAction.MinimizeOthers,
+            WindowAction.HorizontalCenterHalf,
+            WindowAction.VerticalCenterHalf,
+            WindowAction.FirstFourth,
+            WindowAction.SecondFourth,
+            WindowAction.ThirdFourth,
+            WindowAction.FourthFourth,
+            WindowAction.LeftThreeFourths,
+            WindowAction.RightThreeFourths,
+            WindowAction.ScaleUp,
+            WindowAction.ScaleDown,
+            WindowAction.GrowHorizontal,
+            WindowAction.GrowVertical,
+            WindowAction.ShrinkHorizontal,
+            WindowAction.ShrinkVertical,
+            WindowAction.FocusUp,
+            WindowAction.FocusDown,
+            WindowAction.FocusLeft,
+            WindowAction.FocusRight,
+            WindowAction.FocusNextInStack
+        };
+
+        foreach (var action in newActions)
+        {
+            if (string.Equals(WindowActionService.ActionName(action), action.ToString(), StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException($"No display name for {action}.");
+            }
+        }
     }
 
     private static void CommandParserExposesListCommands()
@@ -192,6 +326,145 @@ internal static class Program
         var text = LoopCommandFormatter.Keybinds(keybinds, NativeMethods.ModShift, NativeMethods.VkCapital);
         True(text.Contains("Shift + Caps Lock", StringComparison.Ordinal));
         True(text.Contains("Ctrl + R -> action/righthalf (cycle)", StringComparison.Ordinal));
+    }
+
+    private static void TriggerSettingsPersistAndNormalize()
+    {
+        var settings = new AppSettings
+        {
+            TriggerModifierSide = TriggerModifierSide.Right,
+            TriggerDelayMilliseconds = 250,
+            TriggerTimeoutMilliseconds = 1500,
+            DoubleClickToTrigger = true,
+            MiddleClickToTrigger = true,
+            Keybinds = new List<Keybind>
+            {
+                new(NativeMethods.ModControl, 0x52, WindowAction.RightHalf)
+                {
+                    BypassTrigger = true
+                }
+            }
+        };
+
+        var restored = JsonSerializer.Deserialize<AppSettings>(JsonSerializer.Serialize(settings));
+        True(restored != null);
+        Equal(TriggerModifierSide.Right, restored!.TriggerModifierSide);
+        Equal(250, restored.TriggerDelayMilliseconds);
+        Equal(1500, restored.TriggerTimeoutMilliseconds);
+        True(restored.DoubleClickToTrigger);
+        True(restored.MiddleClickToTrigger);
+        True(restored.Keybinds[0].BypassTrigger);
+
+        restored.TriggerModifierSide = (TriggerModifierSide)99;
+        restored.TriggerDelayMilliseconds = -1;
+        restored.TriggerTimeoutMilliseconds = 99999;
+        restored.Normalize();
+        Equal(TriggerModifierSide.Any, restored.TriggerModifierSide);
+        Equal(0, restored.TriggerDelayMilliseconds);
+        Equal(10000, restored.TriggerTimeoutMilliseconds);
+    }
+
+    private static void HotkeyNamesShowModifierSide()
+    {
+        Equal(
+            "Right Ctrl + B",
+            HotkeyNames.For(NativeMethods.ModControl, 0x42, TriggerModifierSide.Right));
+        Equal(
+            "Left Ctrl + B",
+            HotkeyNames.For(NativeMethods.ModControl, 0x42, TriggerModifierSide.Left));
+    }
+
+    private static void CommandFormatterMarksTriggerBypass()
+    {
+        var keybinds = new List<Keybind>
+        {
+            new(NativeMethods.ModControl, 0x52, WindowAction.RightHalf)
+            {
+                BypassTrigger = true
+            }
+        };
+
+        var text = LoopCommandFormatter.Keybinds(
+            keybinds,
+            NativeMethods.ModControl,
+            NativeMethods.VkCapital,
+            TriggerModifierSide.Right);
+        True(text.Contains("trigger: Right Ctrl + Caps Lock", StringComparison.Ordinal));
+        True(text.Contains("(bypass trigger)", StringComparison.Ordinal));
+    }
+
+    private static void RadialConfigurationPreservesStableKeybindTargets()
+    {
+        var keybind = new Keybind(NativeMethods.ModControl, 0x52, WindowAction.RightHalf);
+        var settings = new AppSettings
+        {
+            Keybinds = new List<Keybind> { keybind },
+            RadialSlots = RadialConfiguration.CreateDefaultSlots(),
+            CenterTarget = new RadialTargetSettings
+            {
+                Kind = RadialTargetKind.Keybind,
+                KeybindId = keybind.Id,
+                CycleEnabled = true
+            }
+        };
+
+        settings.Normalize();
+        var resolved = RadialTargetResolver.Resolve(settings.CenterTarget, settings.Keybinds);
+        True(resolved is RadialTarget.KeybindAction keybindTarget &&
+            ReferenceEquals(keybind, keybindTarget.Binding));
+
+        settings.Keybinds.Reverse();
+        settings.Normalize();
+        resolved = RadialTargetResolver.Resolve(settings.CenterTarget, settings.Keybinds);
+        True(resolved is RadialTarget.KeybindAction keybindTargetAfterReorder &&
+            ReferenceEquals(keybind, keybindTargetAfterReorder.Binding));
+    }
+
+    private static void RadialConfigurationNormalizesInvalidTargets()
+    {
+        var settings = new AppSettings
+        {
+            RadialSlots = new List<RadialTargetSettings>
+            {
+                new() { Kind = RadialTargetKind.Action, Action = (WindowAction)999 },
+                new() { Kind = RadialTargetKind.Keybind, KeybindId = "missing" }
+            },
+            CenterTarget = new RadialTargetSettings
+            {
+                Kind = (RadialTargetKind)999
+            }
+        };
+
+        settings.Normalize();
+        Equal(RadialConfiguration.SlotCount, settings.RadialSlots.Count);
+        Equal(RadialTargetKind.None, settings.RadialSlots[0].Kind);
+        Equal(RadialTargetKind.None, settings.RadialSlots[1].Kind);
+        Equal(RadialTargetKind.None, settings.CenterTarget.Kind);
+    }
+
+    private static void RadialConfigurationResolvesTargets()
+    {
+        var keybind = new Keybind(0, 0x46, WindowAction.FocusRight);
+        var slots = RadialConfiguration.CreateDefaultSlots();
+        slots[0] = new RadialTargetSettings
+        {
+            Kind = RadialTargetKind.Action,
+            Action = WindowAction.Maximize,
+            CycleEnabled = false
+        };
+        slots[4] = new RadialTargetSettings
+        {
+            Kind = RadialTargetKind.Keybind,
+            KeybindId = keybind.Id,
+            CycleEnabled = true
+        };
+
+        var targets = RadialTargetResolver.ResolveSlots(slots, new[] { keybind });
+        True(targets[0] is RadialTarget.BuiltInAction { Value: WindowAction.Maximize, CycleEnabled: false });
+        True(targets[4] is RadialTarget.KeybindAction { Binding.Action: WindowAction.FocusRight, CycleEnabled: true });
+        True(RadialTargetResolver.Resolve(
+            RadialConfiguration.CreateDefaultCenter(),
+            Array.Empty<Keybind>()) is RadialTarget.None);
     }
 
     private static NativeMethods.Rect Rect(int left, int top, int right, int bottom) =>

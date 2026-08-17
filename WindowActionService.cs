@@ -33,6 +33,20 @@ public enum WindowAction
     Maximize,
     AlmostMaximize,
     Fullscreen,
+    MaximizeHeight,
+    MaximizeWidth,
+    FillAvailableSpace,
+    MinimizeOthers,
+
+    HorizontalCenterHalf,
+    VerticalCenterHalf,
+
+    FirstFourth,
+    SecondFourth,
+    ThirdFourth,
+    FourthFourth,
+    LeftThreeFourths,
+    RightThreeFourths,
 
     NextScreen,
     PreviousScreen,
@@ -43,18 +57,30 @@ public enum WindowAction
 
     Larger,
     Smaller,
+    ScaleUp,
+    ScaleDown,
     GrowLeft,
     GrowRight,
     GrowTop,
     GrowBottom,
+    GrowHorizontal,
+    GrowVertical,
     ShrinkLeft,
     ShrinkRight,
     ShrinkTop,
     ShrinkBottom,
+    ShrinkHorizontal,
+    ShrinkVertical,
     MoveLeft,
     MoveRight,
     MoveUp,
     MoveDown,
+
+    FocusUp,
+    FocusDown,
+    FocusLeft,
+    FocusRight,
+    FocusNextInStack,
 
     Minimize,
     Stash,
@@ -104,6 +130,18 @@ internal static class WindowActionService
         WindowAction.Maximize => "Maximize",
         WindowAction.AlmostMaximize => "Almost maximize",
         WindowAction.Fullscreen => "Fullscreen",
+        WindowAction.MaximizeHeight => "Maximize height",
+        WindowAction.MaximizeWidth => "Maximize width",
+        WindowAction.FillAvailableSpace => "Fill available space",
+        WindowAction.MinimizeOthers => "Minimize other windows",
+        WindowAction.HorizontalCenterHalf => "Horizontal center half",
+        WindowAction.VerticalCenterHalf => "Vertical center half",
+        WindowAction.FirstFourth => "First fourth",
+        WindowAction.SecondFourth => "Second fourth",
+        WindowAction.ThirdFourth => "Third fourth",
+        WindowAction.FourthFourth => "Fourth fourth",
+        WindowAction.LeftThreeFourths => "Left three-fourths",
+        WindowAction.RightThreeFourths => "Right three-fourths",
         WindowAction.NextScreen => "Next screen",
         WindowAction.PreviousScreen => "Previous screen",
         WindowAction.LeftScreen => "Screen to the left",
@@ -112,18 +150,29 @@ internal static class WindowActionService
         WindowAction.BottomScreen => "Screen below",
         WindowAction.Larger => "Larger",
         WindowAction.Smaller => "Smaller",
+        WindowAction.ScaleUp => "Scale up",
+        WindowAction.ScaleDown => "Scale down",
         WindowAction.GrowLeft => "Grow left",
         WindowAction.GrowRight => "Grow right",
         WindowAction.GrowTop => "Grow top",
         WindowAction.GrowBottom => "Grow bottom",
+        WindowAction.GrowHorizontal => "Grow horizontally",
+        WindowAction.GrowVertical => "Grow vertically",
         WindowAction.ShrinkLeft => "Shrink left",
         WindowAction.ShrinkRight => "Shrink right",
         WindowAction.ShrinkTop => "Shrink top",
         WindowAction.ShrinkBottom => "Shrink bottom",
+        WindowAction.ShrinkHorizontal => "Shrink horizontally",
+        WindowAction.ShrinkVertical => "Shrink vertically",
         WindowAction.MoveLeft => "Move left",
         WindowAction.MoveRight => "Move right",
         WindowAction.MoveUp => "Move up",
         WindowAction.MoveDown => "Move down",
+        WindowAction.FocusUp => "Focus up",
+        WindowAction.FocusDown => "Focus down",
+        WindowAction.FocusLeft => "Focus left",
+        WindowAction.FocusRight => "Focus right",
+        WindowAction.FocusNextInStack => "Focus next in stack",
         WindowAction.Minimize => "Minimize",
         WindowAction.Stash => "Stash at edge",
         WindowAction.RevealStashed => "Reveal stashed window",
@@ -183,6 +232,15 @@ internal static class WindowActionService
         {
             case WindowAction.Minimize:
                 return ShowAndReport(window, NativeMethods.SwMinimize, ActionName(action), out message);
+            case WindowAction.MinimizeOthers:
+                return MinimizeOtherWindows(window, out message);
+            case WindowAction.FocusUp:
+            case WindowAction.FocusDown:
+            case WindowAction.FocusLeft:
+            case WindowAction.FocusRight:
+                return FocusDirectionalWindow(window, action, out message);
+            case WindowAction.FocusNextInStack:
+                return FocusNextWindow(window, out message);
             case WindowAction.Stash:
                 return WindowStashService.TryStash(window, out message);
             case WindowAction.Hide:
@@ -273,6 +331,14 @@ internal static class WindowActionService
             case WindowAction.TopRightQuarter:
             case WindowAction.BottomLeftQuarter:
             case WindowAction.BottomRightQuarter:
+            case WindowAction.HorizontalCenterHalf:
+            case WindowAction.VerticalCenterHalf:
+            case WindowAction.FirstFourth:
+            case WindowAction.SecondFourth:
+            case WindowAction.ThirdFourth:
+            case WindowAction.FourthFourth:
+            case WindowAction.LeftThreeFourths:
+            case WindowAction.RightThreeFourths:
             case WindowAction.LeftThird:
             case WindowAction.LeftTwoThirds:
             case WindowAction.HorizontalCenterThird:
@@ -288,6 +354,21 @@ internal static class WindowActionService
 
             case WindowAction.Maximize:
                 target = work;
+                return true;
+
+            case WindowAction.MaximizeHeight:
+                target = WindowFrameMath.MaximizeHeightFrame(work, GetCurrentRect(window));
+                return true;
+
+            case WindowAction.MaximizeWidth:
+                target = WindowFrameMath.MaximizeWidthFrame(work, GetCurrentRect(window));
+                return true;
+
+            case WindowAction.FillAvailableSpace:
+                target = WindowFrameMath.FillAvailableFrame(
+                    work,
+                    GetCurrentRect(window),
+                    WindowQuery.GetLayoutWindows(window));
                 return true;
 
             case WindowAction.Fullscreen:
@@ -321,14 +402,20 @@ internal static class WindowActionService
 
             case WindowAction.Larger:
             case WindowAction.Smaller:
+            case WindowAction.ScaleUp:
+            case WindowAction.ScaleDown:
             case WindowAction.GrowLeft:
             case WindowAction.GrowRight:
             case WindowAction.GrowTop:
             case WindowAction.GrowBottom:
+            case WindowAction.GrowHorizontal:
+            case WindowAction.GrowVertical:
             case WindowAction.ShrinkLeft:
             case WindowAction.ShrinkRight:
             case WindowAction.ShrinkTop:
             case WindowAction.ShrinkBottom:
+            case WindowAction.ShrinkHorizontal:
+            case WindowAction.ShrinkVertical:
             case WindowAction.MoveLeft:
             case WindowAction.MoveRight:
             case WindowAction.MoveUp:
@@ -351,6 +438,84 @@ internal static class WindowActionService
         }
 
         message = $"Applied {label} to target window";
+        return true;
+    }
+
+    private static bool MinimizeOtherWindows(IntPtr targetWindow, out string message)
+    {
+        var minimized = 0;
+        foreach (var candidate in WindowQuery.GetMinimizableWindows(targetWindow))
+        {
+            NativeMethods.ShowWindow(candidate.Handle, NativeMethods.SwMinimize);
+            if (NativeMethods.IsIconic(candidate.Handle))
+            {
+                minimized++;
+            }
+        }
+
+        if (minimized == 0)
+        {
+            message = "No other eligible windows were found.";
+            return false;
+        }
+
+        message = $"Minimized {minimized} other window{(minimized == 1 ? string.Empty : "s")}";
+        return true;
+    }
+
+    private static bool FocusDirectionalWindow(IntPtr currentWindow, WindowAction action, out string message)
+    {
+        var direction = action switch
+        {
+            WindowAction.FocusLeft => WindowNavigationDirection.Left,
+            WindowAction.FocusRight => WindowNavigationDirection.Right,
+            WindowAction.FocusUp => WindowNavigationDirection.Up,
+            WindowAction.FocusDown => WindowNavigationDirection.Down,
+            _ => throw new ArgumentOutOfRangeException(nameof(action), action, "Not a directional focus action.")
+        };
+
+        if (!NativeMethods.GetWindowRect(currentWindow, out var currentFrame) ||
+            !WindowNavigation.TryFindDirectional(
+                currentFrame,
+                WindowQuery.GetFocusableWindows(currentWindow),
+                direction,
+                out var targetWindow))
+        {
+            message = $"No eligible window found {ActionName(action)[6..].ToLowerInvariant()}.";
+            return false;
+        }
+
+        return FocusWindow(targetWindow, ActionName(action), out message);
+    }
+
+    private static bool FocusNextWindow(IntPtr currentWindow, out string message)
+    {
+        if (!WindowNavigation.TryFindNextInStack(
+                WindowQuery.GetFocusableWindows(currentWindow),
+                currentWindow,
+                out var targetWindow))
+        {
+            message = "No other eligible window was found in the window stack.";
+            return false;
+        }
+
+        return FocusWindow(targetWindow, ActionName(WindowAction.FocusNextInStack), out message);
+    }
+
+    private static bool FocusWindow(IntPtr targetWindow, string actionLabel, out string message)
+    {
+        if (NativeMethods.IsIconic(targetWindow))
+        {
+            NativeMethods.ShowWindow(targetWindow, NativeMethods.SwRestore);
+        }
+
+        if (!NativeMethods.SetForegroundWindow(targetWindow))
+        {
+            message = "Windows rejected the focus request.";
+            return false;
+        }
+
+        message = $"Applied {actionLabel} to target window";
         return true;
     }
 

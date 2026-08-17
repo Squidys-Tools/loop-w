@@ -1,14 +1,14 @@
 # LoopW Settings UI Redesign Specification
 
-**Status:** Ready for implementation planning  
-**Date:** 2026-08-15  
-**Scope:** Settings surface redesign only; no behavior or persistence changes unless explicitly required to support the new presentation.
+**Status:** WPF UI implementation direction recorded; functional and visual QA scenarios retained
+**Date:** 2026-08-16
+**Scope:** Settings surface redesign plus integration of the advanced trigger/radial settings already introduced by `origin/main`; preserve all existing behavior and persistence contracts.
 
 ## 1. Summary
 
 Redesign the LoopW settings experience into a modern, polished, premium, and coherent native Windows settings surface. The redesign should feel like a carefully crafted desktop utility rather than a collection of styled controls: quiet, confident, highly scannable, and precise.
 
-The product should retain its existing dark visual identity and blue-accent lineage, but evolve the palette and component system into a more sophisticated tonal system. The redesign should reorganize the current settings lightly rather than replace the information architecture wholesale. It should preserve all currently supported settings and their existing persistence semantics while improving hierarchy, navigation, feedback, accessibility, and visual coherence.
+The product should retain its existing dark visual identity and blue-accent lineage, but let WPF UI 4.3.0 provide the Fluent palette, control templates, navigation states, title-bar controls, and density foundation. The redesign should reorganize the current settings lightly rather than replace the information architecture wholesale. It should preserve all currently supported settings and their existing persistence semantics while improving hierarchy, navigation, feedback, accessibility, and visual coherence. LoopW-specific XAML is limited to the shared, text-free radial and window-preview surfaces plus the persisted appearance values and geometry behavior those surfaces consume.
 
 This is an **Operate** surface: users come here to configure LoopW quickly, understand what each option does, and leave without friction. Utility, scanability, and native Windows expectations outrank decoration.
 
@@ -45,11 +45,14 @@ Current relevant behavior and constraints:
 - `MainWindow` starts hidden for resident/tray operation and is shown or activated from the tray.
 - Closing the main window hides it to the tray rather than exiting.
 - Settings changes are currently persisted automatically to `%LOCALAPPDATA%\\LoopW\\settings.json`.
-- The settings control currently uses left-positioned WPF tabs for Behavior, Radial menu, Preview, a hidden Keybinds tab, and Theme.
+- The settings control is hosted as a `UserControl` inside `MainWindow.SettingsHost`; the redesign uses a persistent WPF UI navigation pane for General, Radial menu, Preview, Appearance, and Advanced. General is the user-facing name for the existing behavior group. The visible settings surface does not add a resident-status badge.
 - Trigger rebinding uses `GlobalHotkey.BeginCapture`; Esc cancels and reserved OS keys are rejected.
-- Keybinds remain part of the persisted model and are honored by the resident runtime, even though their existing UI is currently hidden.
-- Radial settings include enabled state, cursor interaction, outer radius, inner radius, and color tokens.
+- Keybinds remain part of the persisted model and are honored by the resident runtime; the Advanced section exposes add, rebind, action, cycle, bypass, and delete controls.
+- Radial settings include enabled state, cursor interaction, outer radius, inner radius, per-wedge targets, center target, cycle behavior, and color tokens.
+- Trigger behavior includes modifier-side selection, activation delay, activation timeout, optional double-click activation, and optional middle-mouse activation.
+- The Radial menu page puts the large, text-free shared radial surface first; Interaction and Ring geometry follow below it. The surface uses the same `RadialMenuSurface` component as the hotkey overlay, so it is quiet at rest and only the hovered sector uses the configured sector fill/stroke.
 - Preview settings include enabled state, padding, corner radius, border width, and border color.
+- The Preview page puts the large, text-free shared window-preview surface first; its geometry settings follow below it.
 - Theme settings currently expose accent, radial sector fill/stroke, ring fill, and preview border values as raw text fields.
 - Existing visual defaults are dark surfaces with blue accent values and semi-transparent color tokens.
 - The radial overlay itself must never contain text. This invariant applies to the global-hotkey activation path and all other activation paths; the settings UI may explain radial actions in its own surface.
@@ -72,11 +75,11 @@ The redesign must not accidentally change window action behavior, global hotkey 
 
 ## 5. Non-goals
 
-- Do not redesign the radial overlay itself as part of this work.
+- Do not change the radial overlay’s interaction model or add settings-only visual behavior as part of this work; its renderer may be shared with the settings surface.
 - Do not add text labels to the radial overlay.
-- Do not change the action catalog, placement algorithms, global hook, tray lifecycle, IPC, or keybind execution semantics.
+- Do not regress the action catalog, placement algorithms, global hook, tray lifecycle, IPC, or keybind execution semantics. New trigger and radial configuration options documented in section 17 are explicitly supported integration scope.
 - Do not turn settings into a dashboard or marketing page.
-- Do not introduce a web-based UI framework or third-party UI dependency without a separate decision.
+- Do not introduce a web-based UI framework. The explicit WPF UI adoption decision in the implementation guidance is the approved native control-library exception for this redesign.
 - Do not require a full light theme as the default design deliverable; the standard product appearance remains dark.
 - Do not remove raw theme customization; it should be available as an advanced option.
 - Do not bury trigger rebinding, launch-at-login, keybinds, or reset/recovery behind unexplained overflow menus.
@@ -87,7 +90,8 @@ Use a persistent left sidebar and a single active content pane. The sidebar shou
 
 Recommended primary sections:
 
-1. **Behavior**
+1. **General**
+   - Trigger and launch behavior
    - Trigger key
    - Launch at login
    - Any existing resident/runtime behavior that is already represented by settings
@@ -96,6 +100,7 @@ Recommended primary sections:
    - Cursor-direction interaction
    - Outer radius
    - Inner radius
+   - Wedge and center action assignments
    - Brief explanation of how the radial surface works
 3. **Preview**
    - Enable/disable target preview
@@ -109,7 +114,7 @@ Recommended primary sections:
    - Accent and radial/preview visual treatment
    - Advanced custom color editor in the same section
 5. **Advanced**
-   - Keybind list: add, rebind, action selection, cycle behavior, delete
+   - Keybind list: add, rebind, action selection, cycle behavior, bypass-trigger behavior, delete
    - Raw theme token editing if it is too dense for the default Appearance view; the entry point must remain clear and remain within the broader appearance/advanced model
    - Per-section reset controls where they are most useful
    - Global reset-all action, visually separated from routine controls
@@ -128,7 +133,7 @@ The exact labels may be adjusted during implementation if the final wording rema
 
 ### Content pane requirements
 
-- Every section begins with a concise title and one-sentence explanation.
+- The sidebar is the primary section label. The active content pane begins with a concise one-sentence explanation and section reset action, without repeating the selected navigation label as a second page title.
 - Group related settings into cards or rows with consistent alignment, spacing, and control placement.
 - Prefer a standard row pattern: label and short description on the left, control on the right where space allows.
 - Use full-width rows for sliders, keybind tables, and custom color editing where the control needs room.
@@ -144,7 +149,7 @@ Quiet, premium, and technical without being cold. The surface should feel compos
 
 ### Color system
 
-Create a small, reusable token system rather than scattering literal colors through XAML. The final values can be tuned during implementation, but the relationships should follow this model:
+Prefer WPF UI’s application resources and semantic brushes rather than introducing a second token system or scattering literal colors through XAML. Persisted custom colors are data for the shared overlay surfaces, not a replacement for WPF UI’s control palette. The relationships should follow this model:
 
 - **App background:** deepest neutral blue-black; should not read as pure black.
 - **Navigation surface:** subtly distinct from the page background.
@@ -201,7 +206,7 @@ Use the mixed-by-risk rule:
 
 ### Trigger rebinding
 
-Use an inline capture state in the Behavior section:
+Use an inline capture state in the General section:
 
 1. User activates Rebind.
 2. The trigger control changes to a clear listening state such as “Press a key…” and receives visible focus.
@@ -219,10 +224,20 @@ Keybinds should be available in Advanced, not removed. The editor should be a re
 - Key combination chip or button.
 - Action name in plain language.
 - Cycle toggle where the selected action supports cycling.
+- Optional Bypass toggle for bindings that should run without holding the trigger.
 - Delete action with a clear accessible name.
 - Add keybind action at the end of the list.
 
 Empty state should explain what keybinds do and provide a clear Add keybind action. Duplicate or conflicting combinations should be detected and explained before replacing or saving. Capture behavior should match trigger capture: inline, cancellable with Esc, and explicit about reserved keys.
+
+### Trigger behavior options
+
+- Modifier side selection applies to the configured trigger only; `Either` preserves the legacy behavior.
+- Activation delay postpones opening the radial surface until the trigger remains held for the selected interval.
+- Activation timeout closes an active trigger without committing an action; `Off` preserves an unlimited hold.
+- Double-click activation requires two trigger presses within the normal Windows double-click interval.
+- Middle-mouse activation uses the middle button as an alternate hold gesture when enabled.
+- Changing any trigger behavior cancels active trigger state so the global hook cannot remain logically stuck.
 
 ### Sliders and numeric controls
 
@@ -316,7 +331,7 @@ The selected quality bar prioritizes visual polish plus keyboard usability and c
 
 ## 11. Window and layout constraints
 
-- Continue using the native WPF `Window`/`UserControl` architecture unless implementation experience shows a small structural change is necessary.
+- Continue using the native WPF `UserControl` architecture inside a WPF UI `FluentWindow`; avoid an independent settings window.
 - Keep the settings surface inside the existing main window and preserve tray activation behavior.
 - Prefer a desktop-first minimum size that preserves the intended left-sidebar/content composition.
 - Do not force the user into a narrow single-column layout. If the window is resized near its minimum, active content should scroll rather than become cramped.
@@ -330,14 +345,35 @@ This is a visual and interaction redesign, not a data-model rewrite.
 
 Likely implementation areas:
 
-- `SettingsWindow.xaml`: replace the current tab-control presentation with the sidebar/content layout and shared styles/templates.
+- `SettingsWindow.xaml`: use WPF UI navigation, cards, Fluent buttons, toggles, icons, number inputs, snackbar feedback, and a content-dialog host while preserving the existing named control/event contract where practical. Place the shared `RadialMenuSurface` and `WindowPreviewSurface` in full-bleed WPF UI cards before their related settings.
 - `SettingsWindow.xaml.cs`: preserve existing event wiring and persistence; add section navigation, reset flows, appearance mode/preset state, and improved capture/status states as needed.
-- `MainWindow.xaml`: retain `SettingsHost` hosting and ensure the window dimensions/minimums support the new composition.
+- `MainWindow.xaml`: retain `SettingsHost` hosting, the blank same-surface WPF UI title bar, and dimensions/minimums that support the new composition.
 - `MainWindow.xaml.cs`: preserve tray/show/hide behavior and settings propagation.
 - `Settings.cs`: extend only if appearance mode/preset metadata needs persistence; preserve backward compatibility and normalization for existing settings files.
-- `App.xaml` or a shared resource location: consider moving stable visual tokens/templates to a reusable resource dictionary if that fits current project conventions.
+- `App.xaml`: load WPF UI's theme and control dictionaries once at application scope. Do not create a second application-wide theme dictionary unless a concrete control gap requires it.
 
-Do not add a new UI library unless the repository first adopts it intentionally. Match the project’s existing .NET 8/WPF conventions and keep changes focused.
+### WPF UI adoption decision
+
+LoopW intentionally adopts `WPF-UI` 4.3.0 and `WPF-UI.Tray` 4.3.0. NuGet lists both packages as compatible with the project’s `net8.0-windows` target. WPF UI is the foundation for the Fluent control templates, theme dictionaries, navigation, cards, buttons, toggles, icons, number inputs, snackbar feedback, content dialogs, and tray icon/menu integration.
+
+Use WPF UI directly for:
+
+- `ThemesDictionary` and `ControlsDictionary` loaded from `App.xaml`.
+- `NavigationView` and `NavigationViewItem` for the persistent left navigation.
+- `TitleBar`, `Card`, `Button`, `ToggleSwitch`, `NumberBox`, `SymbolIcon`, `SnackbarPresenter`, and `ContentDialogHost` in the settings surface.
+- `ContentDialogService` for reset-all confirmation and `SnackbarService` for higher-impact change feedback.
+- `Wpf.Ui.Tray.Controls.NotifyIcon` for the resident tray icon and its WPF context menu.
+
+LoopW-specific behavior remains intentionally small and is implemented in the existing settings code-behind and shared surface controls rather than through a parallel theme system:
+
+- WPF UI owns the palette, Fluent control templates, navigation states, title-bar buttons, focus treatment, semantic feedback colors, and normal spacing/density. No application-wide LoopW style dictionary is required.
+- `MainWindow` is a WPF UI `FluentWindow` with a WPF UI `TitleBar`; its title and icon are intentionally blank and its background uses the same WPF UI application surface as the content. Existing closing/hide-to-tray behavior remains in code-behind.
+- WPF UI 4.3.0 `NavigationView` does not expose an arbitrary XAML `Content` property. The pane therefore occupies a dedicated left grid column and the existing settings content occupies a sibling right column. This keeps the Fluent navigation pane stable instead of allowing its frame surface to cover the settings content.
+- Persisted LoopW appearance presets and custom colors remain data values because they drive the product's radial and preview overlays; the settings surface applies them through WPF UI's accent API and passes the same values to the shared text-free surfaces.
+- `RadialMenuSurface` owns the runtime/settings radial geometry, backdrop blur, sector hover animation, and ring appearance. `WindowPreviewSurface` owns the runtime/settings glass surface, blur, corner radius, border, tint, and appearance treatment. They are reused directly instead of maintaining settings-only mockups.
+- The radial and window-preview surfaces are intentionally placed before their related settings controls and remain text-free. Their settings instances may use different host sizing or pointer input, but not a different rendering implementation.
+
+Keep the radial overlay, preview overlay, global hotkey capture, and window-management services outside WPF UI. WPF UI supplies the window/settings foundation without requiring an MVVM rewrite or a replacement of LoopW’s distinctive overlays.
 
 Important preservation rules:
 
@@ -353,9 +389,9 @@ Important preservation rules:
 ### Visual and structural
 
 - [ ] The settings surface reads as one coherent premium Windows utility UI rather than a set of unrelated tabs.
-- [ ] A persistent left sidebar clearly identifies Behavior, Radial menu, Preview, Appearance, and Advanced.
-- [ ] Behavior is the default active section and trigger/launch settings are immediately prominent.
-- [ ] Surface hierarchy uses subtle depth, restrained borders, consistent radii, and evolved dark/blue tokens.
+- [ ] A persistent left sidebar clearly identifies General, Radial menu, Preview, Appearance, and Advanced.
+- [ ] General is the default active section and trigger/launch settings are immediately prominent.
+- [ ] Surface hierarchy uses WPF UI's semantic brushes and Fluent density with only the small persisted accent/preview color treatment LoopW needs.
 - [ ] User-facing copy is concise, direct, and primarily sentence case.
 - [ ] No oversized hero, decorative dashboard content, excessive glow, or dense technical wall of controls is present.
 
@@ -363,7 +399,9 @@ Important preservation rules:
 
 - [ ] All existing settings remain available and continue to save correctly.
 - [ ] Trigger rebinding works inline, supports Esc cancellation, and reports reserved-key failures without changing the old value.
-- [ ] Keybind add/rebind/delete/action/cycle workflows remain available in Advanced.
+- [ ] Keybind add/rebind/delete/action/cycle/bypass workflows remain available in Advanced.
+- [ ] Trigger side, delay, timeout, double-click, and middle-mouse options persist and update the global hook.
+- [ ] Radial wedge and center assignments persist, resolve safely, and drive the runtime overlay.
 - [ ] Radial and Preview settings retain their existing ranges and dependency behavior.
 - [ ] Appearance presets apply coherently and expose a custom editing path.
 - [ ] Raw color editing has swatches, validation, and safe fallback behavior.
@@ -393,7 +431,7 @@ Important preservation rules:
 
 Before considering the redesign complete, manually verify at minimum:
 
-1. Open settings from a hidden resident/tray state and confirm Behavior is the default active section.
+1. Open settings from a hidden resident/tray state and confirm General is the default active section.
 2. Navigate every sidebar section with mouse and keyboard.
 3. Resize to the minimum supported size; confirm no labels clip and content scrolls correctly.
 4. Test at 100%, 125%, 150%, and 200% Windows scaling.
@@ -409,19 +447,50 @@ Before considering the redesign complete, manually verify at minimum:
 14. Confirm settings changes persist across restart.
 15. Open the radial overlay after all appearance changes and confirm it remains text-free and functional.
 
-## 15. Open implementation decisions
+## 15. Resolved implementation decisions
 
-These should be resolved during implementation, not guessed silently:
+The implementation resolves the former open questions as follows:
 
-- Exact final window minimum size and default size after the sidebar layout is implemented.
-- Whether Appearance or Advanced owns raw color fields when both are present; the user requirement is that custom editing remains in the same broad visual-settings area and is not removed.
-- Whether explicit light mode is implemented as a complete bespoke theme or as a Windows-following/system-light variant.
-- Exact curated preset names, values, and number of presets.
-- Whether numeric text entry is needed alongside each slider after testing precision and layout.
-- Whether reset confirmation uses a native dialog or an inline confirmation region.
-- Exact semantic colors and contrast-safe fallback rules for custom accents.
-- Exact transition durations and reduced-motion detection approach.
+- The existing `MainWindow` remains the settings host at an initial approximately 1166x779 size with a firm approximately 1100x760 minimum. The content pane scrolls at that minimum rather than collapsing the sidebar.
+- Raw theme token fields remain in the Appearance section inside a clearly labeled advanced expander, keeping customization in the same visual-settings area.
+- Dark is the standard LoopW mode. Follow Windows and explicit Light use WPF UI’s theme resources; the effective theme and persisted accent are applied through WPF UI’s appearance APIs whenever settings are applied.
+- The existing LoopWBlue, LoopWCobalt, and LoopWViolet curated presets remain the named, persisted choices.
+- WPF UI `NumberBox` controls sit beside the existing sliders for precise radius and preview-value entry; both paths share the same validation and persistence helpers.
+- Global reset uses a WPF UI `ContentDialog` confirmation. Per-section reset remains an immediate, explicit action with status feedback.
+- Custom colors continue through `Settings.Normalize()` as persisted data for the shared overlay surfaces. Invalid values fall back safely, while the WPF UI accent and settings surfaces remain synchronized.
+- The WPF UI `TitleBar` is intentionally blank and uses the application background, while its standard caption buttons preserve normal utility-window behavior.
+- The Radial menu and Preview pages lead with their large shared surfaces. Radial preview highlighting is pointer-driven: no sector is emphasized at rest and only the hovered sector receives the configured sector fill/stroke. The settings and hotkey activation paths use the same rendering controls, so appearance and geometry changes are visible consistently in both places.
+- The WPF UI `NavigationView` remains in a dedicated left column beside the scrollable settings content so its pane cannot disappear behind or cover the content surface.
+- Motion stays restrained and does not add a load animation or alter the radial/preview overlay transitions. Native WPF UI focus, hover, and selected states provide the interaction feedback needed for this utility surface.
 
 ## 16. Definition of done
 
-The redesign is ready for implementation sign-off when the UI has a clear visual system, the left-sidebar navigation and Behavior-first hierarchy are established, all existing settings remain available and persistent, the advanced workflows are not hidden or degraded, reset/error/capture states are specified and testable, and the layout passes keyboard, contrast, DPI, and tray/runtime regression checks without changing LoopW’s core window-management behavior.
+The redesign is ready for implementation sign-off when the UI has a clear visual system, the left-sidebar navigation and General-first hierarchy are established, all existing settings remain available and persistent, the advanced workflows are not hidden or degraded, reset/error/capture states are specified and testable, and the layout passes keyboard, contrast, DPI, and tray/runtime regression checks without changing LoopW’s core window-management behavior.
+
+## 17. Post-pull integration: advanced trigger and radial configuration
+
+The current `origin/main` native-port work is integrated into the WPF UI direction rather than treated as a separate settings surface. These additions are now part of the supported settings contract:
+
+- General exposes modifier side (`Either`, `Left`, or `Right`), activation delay, activation timeout, double-click activation, and middle-mouse activation.
+- Advanced keybind rows expose the existing cycle behavior plus `Bypass`, which allows a binding to run without holding the trigger.
+- Radial menu exposes per-wedge assignments, optional keybind targets, per-target cycle behavior, and a center action. Missing or invalid targets normalize to `No action` without invalidating the rest of the settings file.
+- Existing JSON files remain compatible. New properties have safe defaults, stable keybind IDs are generated for older entries, and radial targets are normalized against the current action catalog and keybind list.
+
+WPF UI remains the direct foundation for the settings presentation:
+
+- `NavigationView`, `NavigationViewItem`, `Card`, `Button`, `ToggleSwitch`, `NumberBox`, `SymbolIcon`, `SnackbarPresenter`, `ContentDialogHost`, and the application theme/control dictionaries are used directly from WPF UI.
+- `SettingsWindow.xaml.cs` remains code-behind based. It owns the small amount of synchronization needed to preserve the current settings model, auto-save behavior, capture workflows, reset behavior, and WPF UI feedback services.
+- `RadialMenuSurface` is the one shared radial renderer for the settings preview and hotkey overlay. It owns geometry, backdrop treatment, hover state, selected-slot state, and center highlighting; the overlay supplies the resolved target mapping without duplicating the visual implementation.
+- `WindowPreviewSurface` is the one shared window-preview renderer for the settings preview and runtime preview overlay. Both paths consume the same persisted padding, corner radius, border, color, and appearance values.
+- LoopW-specific code is limited to target resolution, persisted appearance data, native trigger/window behavior, and the shared text-free surfaces. No second application-wide theme system or gallery-style control library layer is added.
+
+The new trigger options preserve the existing safety requirements: capture still handles Esc cancellation and reserved keys, trigger delay/timeout state is reset when bindings change, and a timed-out or cancelled trigger dismisses the overlay without committing an action. The radial overlay remains text-free and uses resolved settings targets for both pointer and arrow-key selection.
+
+Additional QA scenarios for this integration:
+
+1. Set each modifier-side option and confirm only the selected side activates the trigger.
+2. Adjust activation delay and timeout, confirm the status/overlay behavior, and verify timeout never commits an action.
+3. Enable double-click and middle-mouse activation, then confirm release and cancellation leave no stuck trigger state.
+4. Mark a keybind as Bypass and verify it works without the trigger while ordinary bindings still require the trigger.
+5. Assign built-in actions, keybinds, and No action to radial wedges and the center; verify assignments persist and invalid/missing targets normalize safely.
+6. Confirm the same radial hover/selection treatment and appearance values are visible in Settings and during actual hotkey use.

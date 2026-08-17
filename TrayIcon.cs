@@ -1,33 +1,63 @@
 using System.Drawing;
-using Forms = System.Windows.Forms;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Interop;
+using System.Windows.Media.Imaging;
+using TrayNotifyIcon = Wpf.Ui.Tray.Controls.NotifyIcon;
 
 namespace LoopW;
 
 internal sealed class TrayIcon : IDisposable
 {
-    private readonly Forms.NotifyIcon _notifyIcon;
+    private readonly Action _showMainWindow;
+    private readonly TrayNotifyIcon _notifyIcon;
+    private readonly ContextMenu _menu;
 
     public TrayIcon(Action showMainWindow, Action openSettings, Action quit)
     {
-        var menu = new Forms.ContextMenuStrip();
-        menu.Items.Add("Open LoopW", null, (_, _) => showMainWindow());
-        menu.Items.Add("Open settings", null, (_, _) => openSettings());
-        menu.Items.Add(new Forms.ToolStripSeparator());
-        menu.Items.Add("Quit", null, (_, _) => quit());
+        _showMainWindow = showMainWindow;
+        _menu = new ContextMenu();
+        _menu.Items.Add(CreateMenuItem("Open LoopW", showMainWindow));
+        _menu.Items.Add(CreateMenuItem("Open settings", openSettings));
+        _menu.Items.Add(new Separator());
+        _menu.Items.Add(CreateMenuItem("Quit", quit));
 
-        _notifyIcon = new Forms.NotifyIcon
+        _notifyIcon = new TrayNotifyIcon
         {
-            Icon = SystemIcons.Application,
-            Text = "LoopW",
-            ContextMenuStrip = menu,
-            Visible = true
+            Icon = CreateTrayImage(),
+            TooltipText = "LoopW",
+            Menu = _menu,
+            MenuOnRightClick = true,
+            FocusOnLeftClick = true
         };
-        _notifyIcon.DoubleClick += (_, _) => showMainWindow();
+#pragma warning disable CS8622 // WPF UI's tray delegate annotations differ between target frameworks.
+        _notifyIcon.LeftDoubleClick += NotifyIcon_LeftDoubleClick;
+#pragma warning restore CS8622
+        _notifyIcon.Register();
     }
 
     public void Dispose()
     {
-        _notifyIcon.Visible = false;
         _notifyIcon.Dispose();
+        _menu.Items.Clear();
+    }
+
+    private static MenuItem CreateMenuItem(string header, Action action)
+    {
+        var item = new MenuItem { Header = header };
+        item.Click += (_, _) => action();
+        return item;
+    }
+
+    private void NotifyIcon_LeftDoubleClick(TrayNotifyIcon? sender, RoutedEventArgs e) => _showMainWindow();
+
+    private static BitmapSource CreateTrayImage()
+    {
+        var source = Imaging.CreateBitmapSourceFromHIcon(
+            SystemIcons.Application.Handle,
+            Int32Rect.Empty,
+            BitmapSizeOptions.FromEmptyOptions());
+        source.Freeze();
+        return source;
     }
 }
