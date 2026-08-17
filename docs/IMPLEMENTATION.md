@@ -63,9 +63,9 @@ The app uses .NET 8, WPF, and native Windows APIs through `user32`, `dwmapi`,
 - [x] Pure tests for frame math, radial geometry, cycles, navigation, drag snap
   geometry, settings, and command
   parsing.
-- [x] Last recorded verification: warning-free build and 31 passing tests. The
-  live pipe request and real Notepad action remain previously recorded checks
-  and should be rerun with the drag-snap QA pass.
+- [x] The automated test harness currently contains 39 pure tests. The live
+  pipe request and real Notepad action remain previously recorded checks and
+  should be rerun with the drag-snap QA pass.
 - [ ] Complete the interactive checks in [`QA.md`](QA.md).
 
 ## Remaining work
@@ -245,8 +245,9 @@ The Windows port is ready for packaging work when:
    mixed DPI, taskbar positions, elevated apps, and RDP limitations.
 5. The build is warning-free and the automated test suite passes.
 
-Packaging, signing, installer choice, update channels, and distribution are a
-separate project after this definition of done is met.
+Installer packaging, signing, update channels, and distribution beyond the
+tag-triggered zip release are a separate project after this definition of done
+is met.
 
 ## Build and run
 
@@ -260,3 +261,16 @@ $dotnet = "$env:USERPROFILE\.dotnet\dotnet.exe"
 
 Run the desktop checks in [`QA.md`](QA.md) on a test machine where global
 keyboard and mouse hooks are acceptable.
+
+## GitHub Actions
+
+The repository has one publishing workflow at
+`.github/workflows/publish.yml`.
+
+- A tag matching `v*` runs the automated tests, publishes a self-contained
+  `win-x64` single-file build, creates a zip and SHA-256 checksum, and creates a
+  GitHub Release with both files attached.
+- A manual workflow dispatch runs the same build and tests, then stores the zip
+  and checksum as a workflow artifact without creating a GitHub Release.
+- The workflow does not run for ordinary pushes or pull requests. Desktop
+  behavior remains covered by the manual checklist in [`QA.md`](QA.md).
