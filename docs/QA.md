@@ -8,9 +8,9 @@ before testing minimize, hide, stash, or focus actions.
 Status: `[ ]` not run, `[x]` passed, `[!]` blocked or not supported on this
 Windows configuration.
 
-The recorded automated baseline is a warning-free build, 28 pure tests, live
-named-pipe responses, and a real Notepad right-half action. Re-run that baseline
-after every action-model change.
+The current automated baseline is a warning-free build and 39 pure tests. Live
+named-pipe responses and desktop actions still require the manual checks below.
+Re-run the automated baseline after every action-model change.
 
 ## 1. Build and resident lifecycle
 

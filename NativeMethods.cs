@@ -7,6 +7,10 @@ namespace LoopW;
 internal static class NativeMethods
 {
     public const int WmHotKey = 0x0312;
+    public const int WmSettingChange = 0x001A;
+    public const int WmDisplayChange = 0x007E;
+    public const int WmDeviceChange = 0x0219;
+    public const int WmDpiChanged = 0x02E0;
     public const uint ModAlt = 0x0001;
     public const uint ModControl = 0x0002;
     public const uint ModShift = 0x0004;
@@ -14,6 +18,7 @@ internal static class NativeMethods
     public const uint ModNoRepeat = 0x4000;
     public const uint VkSpace = 0x20;
     public const uint VkCapital = 0x14;
+    public const int VkLButton = 0x01;
     public const int VkShift = 0x10;
     public const int SwRestore = 9;
     public const int SwShowMinimized = 2;
@@ -22,10 +27,18 @@ internal static class NativeMethods
     public const int SwHide = 0;
     public const int GwlStyle = -16;
     public const int WsChild = 0x40000000;
+    public const long WsThickFrame = 0x00040000L;
+    public const long WsCaption = 0x00C00000L;
     public const long WsExToolWindow = 0x00000080L;
     public const uint GwOwner = 4;
     public const int WmMButtonDown = 0x0207;
     public const int WmMButtonUp = 0x0208;
+    public const int WmLButtonDown = 0x0201;
+    public const int WmLButtonUp = 0x0202;
+    public const int WmMouseMove = 0x0200;
+    public const uint WmNcHitTest = 0x0084;
+    public const int HtCaption = 2;
+    public const uint GaRoot = 2;
     public const uint WpfRestoreToMaximized = 0x0002;
     public const uint WpfAsyncWindowPlacement = 0x0004;
     public const uint WmGetMinMaxInfo = 0x0024;
@@ -47,6 +60,7 @@ internal static class NativeMethods
     public const int DwmwaBorderColor = 34;
     public const int DwmwaCaptionColor = 35;
     public const int DwmwaTextColor = 36;
+    public const int DwmwaExtendedFrameBounds = 9;
     public const uint SrcCopy = 0x00CC0020;
     public const uint AttachParentProcess = 0xFFFFFFFF;
 
@@ -153,6 +167,12 @@ internal static class NativeMethods
     public static extern IntPtr GetWindow(IntPtr hWnd, uint command);
 
     [DllImport("user32.dll")]
+    public static extern IntPtr GetAncestor(IntPtr hWnd, uint flags);
+
+    [DllImport("user32.dll")]
+    public static extern IntPtr WindowFromPoint(Point point);
+
+    [DllImport("user32.dll")]
     public static extern bool IsWindowVisible(IntPtr hWnd);
 
     [DllImport("user32.dll")]
@@ -166,6 +186,9 @@ internal static class NativeMethods
 
     [DllImport("dwmapi.dll")]
     public static extern int DwmSetWindowAttribute(IntPtr hwnd, int attribute, ref int value, int size);
+
+    [DllImport("dwmapi.dll")]
+    public static extern int DwmGetWindowAttribute(IntPtr hwnd, int attribute, out Rect value, int size);
 
     [DllImport("user32.dll", SetLastError = true)]
     public static extern bool GetWindowRect(IntPtr hWnd, out Rect rect);
@@ -184,6 +207,9 @@ internal static class NativeMethods
 
     [DllImport("user32.dll", SetLastError = true)]
     public static extern IntPtr SendMessageTimeout(IntPtr hWnd, uint msg, IntPtr wParam, ref MinMaxInfo lParam, uint flags, uint timeout, out UIntPtr result);
+
+    [DllImport("user32.dll", EntryPoint = "SendMessageTimeoutW", SetLastError = true)]
+    public static extern IntPtr SendMessageTimeout(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam, uint flags, uint timeout, out UIntPtr result);
 
     [DllImport("user32.dll")]
     public static extern IntPtr MonitorFromWindow(IntPtr hWnd, uint flags);
@@ -217,11 +243,17 @@ internal static class NativeMethods
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     public static extern int GetWindowText(IntPtr hWnd, StringBuilder text, int maxCount);
 
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    public static extern int GetClassName(IntPtr hWnd, StringBuilder className, int maxCount);
+
     [DllImport("user32.dll")]
     public static extern bool IsWindow(IntPtr hWnd);
 
     [DllImport("user32.dll")]
     public static extern bool IsZoomed(IntPtr hWnd);
+
+    [DllImport("user32.dll")]
+    public static extern uint GetDpiForWindow(IntPtr hWnd);
 
     [DllImport("user32.dll")]
     public static extern short GetAsyncKeyState(int virtualKey);
@@ -300,5 +332,36 @@ internal static class NativeMethods
 
         work = info.Work;
         return true;
+    }
+
+    public static uint GetDpiForWindowSafe(IntPtr window)
+    {
+        try
+        {
+            var dpi = GetDpiForWindow(window);
+            if (dpi > 0)
+            {
+                return dpi;
+            }
+        }
+        catch (EntryPointNotFoundException)
+        {
+            // Windows 7 and older do not export GetDpiForWindow.
+        }
+
+        var monitor = MonitorFromWindow(window, MonitorDefaultToNearest);
+        return TryGetMonitorDpi(monitor, out var dpiX, out _)
+            ? (uint)Math.Clamp(Math.Round(dpiX), 1, uint.MaxValue)
+            : 96;
+    }
+
+    public static bool TryGetVisibleWindowRect(IntPtr window, out Rect rect)
+    {
+        rect = default;
+        return DwmGetWindowAttribute(
+                   window,
+                   DwmwaExtendedFrameBounds,
+                   out rect,
+                   System.Runtime.InteropServices.Marshal.SizeOf<Rect>()) == 0;
     }
 }

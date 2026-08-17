@@ -10,6 +10,8 @@ internal static class Program
         ("radial catalog maps each octant", RadialCatalogMapsEachOctant),
         ("radial catalog exposes eight unique actions", RadialCatalogHasEightUniqueActions),
         ("zone frames cover expected halves and quarters", ZoneFramesCoverExpectedAreas),
+        ("drag snap resolves monitor edges and corners", DragSnapResolvesEdgesAndCorners),
+        ("drag snap ignores the monitor interior", DragSnapIgnoresMonitorInterior),
         ("zone frames split thirds without gaps", ZoneFramesSplitThirdsWithoutGaps),
         ("zone frames include center halves and fourths", ZoneFramesIncludeCenterHalvesAndFourths),
         ("axis maximize preserves the other dimension", AxisMaximizePreservesOtherDimension),
@@ -21,6 +23,14 @@ internal static class Program
         ("directional navigation chooses the nearest window", DirectionalNavigationChoosesNearestWindow),
         ("stack navigation wraps to the next window", StackNavigationWraps),
         ("stash frames keep a visible edge peek", StashFramesKeepVisiblePeek),
+        ("stash identity matching rejects ambiguity", StashIdentityMatchingRejectsAmbiguity),
+        ("stash settings normalize safely", StashSettingsNormalizeSafely),
+        ("stash settings keep newest records", StashSettingsKeepNewestRecords),
+        ("same-monitor DPI changes preserve stash frames", SameMonitorDpiChangesPreserveStashFrames),
+        ("same-monitor work-area changes rebase stash frames", SameMonitorWorkAreaChangesRebaseStashFrames),
+        ("screen padding combines global and edge values", ScreenPaddingCombinesGlobalAndEdges),
+        ("logical monitor moves scale frame size", LogicalMonitorMovesScaleFrameSize),
+        ("screen and exclusion settings normalize", ScreenAndExclusionSettingsNormalize),
         ("radial geometry creates annulus and wedge paths", RadialGeometryCreatesPaths),
         ("command parser maps direction aliases", CommandParserMapsDirectionAliases),
         ("command parser maps action names", CommandParserMapsActionNames),
@@ -30,6 +40,7 @@ internal static class Program
         ("command parser rejects malformed commands", CommandParserRejectsMalformedCommands),
         ("command formatter includes configured keybinds", CommandFormatterIncludesKeybinds),
         ("trigger settings persist and normalize", TriggerSettingsPersistAndNormalize),
+        ("drag snap settings normalize", DragSnapSettingsNormalize),
         ("hotkey names show modifier side", HotkeyNamesShowModifierSide),
         ("command formatter marks trigger bypass", CommandFormatterMarksTriggerBypass),
         ("radial configuration preserves stable keybind targets", RadialConfigurationPreservesStableKeybindTargets),
@@ -87,6 +98,33 @@ internal static class Program
         Equal(Rect(600, 0, 1200, 800), WindowFrameMath.ZoneFrame(work, WindowAction.RightHalf));
         Equal(Rect(0, 0, 600, 400), WindowFrameMath.ZoneFrame(work, WindowAction.TopLeftQuarter));
         Equal(Rect(600, 400, 1200, 800), WindowFrameMath.ZoneFrame(work, WindowAction.BottomRightQuarter));
+    }
+
+    private static void DragSnapResolvesEdgesAndCorners()
+    {
+        var monitor = Rect(0, 0, 1920, 1080);
+        var work = Rect(0, 0, 1920, 1040);
+
+        True(DragSnapGeometry.TryResolve(monitor, work, Point(8, 8), 24, out var topLeft));
+        Equal(DragSnapZone.TopLeftQuarter, topLeft);
+        Equal(WindowAction.TopLeftQuarter, DragSnapGeometry.ActionOf(topLeft));
+
+        True(DragSnapGeometry.TryResolve(monitor, work, Point(1912, 500), 24, out var right));
+        Equal(DragSnapZone.RightHalf, right);
+        Equal(WindowAction.RightHalf, DragSnapGeometry.ActionOf(right));
+
+        True(DragSnapGeometry.TryResolve(monitor, work, Point(900, 1072), 24, out var bottom));
+        Equal(DragSnapZone.BottomHalf, bottom);
+    }
+
+    private static void DragSnapIgnoresMonitorInterior()
+    {
+        True(!DragSnapGeometry.TryResolve(
+            Rect(0, 0, 1920, 1080),
+            Rect(0, 0, 1920, 1040),
+            Point(960, 500),
+            24,
+            out _));
     }
 
     private static void ZoneFramesSplitThirdsWithoutGaps()
@@ -218,6 +256,179 @@ internal static class Program
         Equal(StashEdge.Left, WindowStashService.NearestEdge(work, Rect(-2, 120, 398, 520)));
         Equal(Rect(-392, 120, 8, 520), WindowStashService.CalculateStashedFrame(work, window, StashEdge.Left, 8));
         Equal(Rect(992, 120, 1392, 520), WindowStashService.CalculateStashedFrame(work, window, StashEdge.Right, 8));
+    }
+
+    private static void StashIdentityMatchingRejectsAmbiguity()
+    {
+        var record = new StashRecord
+        {
+            ExecutablePath = @"C:\Apps\Editor.exe",
+            ProcessId = 42,
+            WindowClass = "EditorWindow",
+            Title = "Document"
+        };
+        var candidates = new[]
+        {
+            new WindowIdentityCandidate<IntPtr>(
+                new IntPtr(1),
+                new WindowIdentity(record.ExecutablePath, 42, record.WindowClass, record.Title)),
+            new WindowIdentityCandidate<IntPtr>(
+                new IntPtr(2),
+                new WindowIdentity(record.ExecutablePath, 42, record.WindowClass, "Other document"))
+        };
+
+        True(!WindowIdentityMatcher.TryFindUnambiguousMatch(record, candidates, out _));
+
+        var reusedHandle = new[]
+        {
+            new WindowIdentityCandidate<IntPtr>(
+                new IntPtr(1),
+                new WindowIdentity(@"C:\Apps\Other.exe", 99, "OtherWindow", record.Title))
+        };
+        True(!WindowIdentityMatcher.TryFindUnambiguousMatch(record, reusedHandle, out _));
+
+        True(WindowIdentityMatcher.TryFindUnambiguousMatch(
+            record,
+            new[] { candidates[0] },
+            out var match));
+        Equal(new IntPtr(1), match);
+    }
+
+    private static void StashSettingsNormalizeSafely()
+    {
+        var settings = new AppSettings
+        {
+            StashEdgePeek = 1000,
+            StashHitZone = -1,
+            StashRevealDelayMilliseconds = 99999,
+            StashRecords = new List<StashRecord>
+            {
+                new() { Id = "duplicate" },
+                new() { Id = "duplicate", Edge = (StashEdge)999 },
+                null!
+            }
+        };
+
+        settings.Normalize();
+
+        Equal(48, settings.StashEdgePeek);
+        Equal(1, settings.StashHitZone);
+        Equal(2000, settings.StashRevealDelayMilliseconds);
+        Equal(2, settings.StashRecords.Count);
+        True(settings.StashRecords.All(record => !string.IsNullOrWhiteSpace(record.Id)));
+        True(settings.StashRecords.All(record => Enum.IsDefined(record.Edge)));
+    }
+
+    private static void StashSettingsKeepNewestRecords()
+    {
+        var settings = new AppSettings
+        {
+            StashRecords = Enumerable.Range(0, 66)
+                .Select(index => new StashRecord { Id = $"record-{index}" })
+                .ToList()
+        };
+
+        settings.Normalize();
+
+        Equal(64, settings.StashRecords.Count);
+        Equal("record-2", settings.StashRecords[0].Id);
+        Equal("record-65", settings.StashRecords[^1].Id);
+    }
+
+    private static void SameMonitorDpiChangesPreserveStashFrames()
+    {
+        var monitor = StashRect.FromNative(Rect(0, 0, 1920, 1080));
+        var work = StashRect.FromNative(Rect(0, 0, 1920, 1040));
+        var original = new StashMonitor
+        {
+            Monitor = monitor,
+            Work = work,
+            DpiX = 96,
+            DpiY = 96
+        };
+        var changedDpi = new StashMonitor
+        {
+            Monitor = StashRect.FromNative(Rect(0, 0, 1920, 1080)),
+            Work = StashRect.FromNative(Rect(0, 0, 1920, 1040)),
+            DpiX = 144,
+            DpiY = 144
+        };
+        var frame = Rect(100, 120, 700, 620);
+
+        Equal(frame, WindowStashService.RebaseRect(frame, original, changedDpi));
+    }
+
+    private static void ScreenPaddingCombinesGlobalAndEdges()
+    {
+        var settings = new AppSettings
+        {
+            GlobalScreenPadding = 8,
+            ScreenPaddingLeft = 4,
+            ScreenPaddingTop = 2,
+            ScreenPaddingRight = 6,
+            ScreenPaddingBottom = 10
+        };
+
+        Equal(
+            Rect(12, 10, 986, 782),
+            MonitorService.ApplyPadding(Rect(0, 0, 1000, 800), settings));
+    }
+
+    private static void LogicalMonitorMovesScaleFrameSize()
+    {
+        var source = new MonitorSnapshot(Rect(0, 0, 1920, 1080), Rect(0, 0, 1920, 1040), 96, 96);
+        var target = new MonitorSnapshot(Rect(1920, 0, 3840, 1080), Rect(1920, 0, 3840, 1040), 144, 144);
+
+        Equal(
+            Rect(2070, 150, 2970, 900),
+            MonitorService.TranslateFrame(
+                Rect(100, 100, 700, 600),
+                source,
+                target,
+                MonitorMoveSizePolicy.PreserveLogicalSize));
+    }
+
+    private static void SameMonitorWorkAreaChangesRebaseStashFrames()
+    {
+        var original = new StashMonitor
+        {
+            Monitor = StashRect.FromNative(Rect(0, 0, 1920, 1080)),
+            Work = StashRect.FromNative(Rect(0, 0, 1920, 1040)),
+            DpiX = 96,
+            DpiY = 96
+        };
+        var changedWork = new StashMonitor
+        {
+            Monitor = StashRect.FromNative(Rect(0, 0, 1920, 1080)),
+            Work = StashRect.FromNative(Rect(0, 40, 1920, 1040)),
+            DpiX = 96,
+            DpiY = 96
+        };
+
+        Equal(
+            Rect(100, 160, 700, 660),
+            WindowStashService.RebaseRect(Rect(100, 120, 700, 620), original, changedWork));
+    }
+
+    private static void ScreenAndExclusionSettingsNormalize()
+    {
+        var settings = new AppSettings
+        {
+            MonitorMoveSizePolicy = (MonitorMoveSizePolicy)999,
+            GlobalScreenPadding = -1,
+            ScreenPaddingLeft = 999,
+            ExcludedExecutablePaths = new List<string> { " C:\\Apps\\Editor.exe ", "c:\\apps\\editor.exe", "" },
+            ExcludedProcessNames = new List<string> { "Editor.exe", "editor", "  " }
+        };
+
+        settings.Normalize();
+
+        Equal(MonitorMoveSizePolicy.PreservePixels, settings.MonitorMoveSizePolicy);
+        Equal(0, settings.GlobalScreenPadding);
+        Equal(128, settings.ScreenPaddingLeft);
+        Equal(1, settings.ExcludedExecutablePaths.Count);
+        Equal(1, settings.ExcludedProcessNames.Count);
+        Equal("Editor", settings.ExcludedProcessNames[0]);
     }
 
     private static void RadialGeometryCreatesPaths()
@@ -362,6 +573,19 @@ internal static class Program
         Equal(TriggerModifierSide.Any, restored.TriggerModifierSide);
         Equal(0, restored.TriggerDelayMilliseconds);
         Equal(10000, restored.TriggerTimeoutMilliseconds);
+    }
+
+    private static void DragSnapSettingsNormalize()
+    {
+        var settings = new AppSettings { DragSnapThreshold = 1000 };
+        settings.Normalize();
+        Equal(96, settings.DragSnapThreshold);
+
+        settings.DragSnapThreshold = -1;
+        settings.Normalize();
+        Equal(4, settings.DragSnapThreshold);
+        True(settings.DragSnapEnabled);
+        True(settings.RestorePreDragFrameOnSnapCancel);
     }
 
     private static void HotkeyNamesShowModifierSide()

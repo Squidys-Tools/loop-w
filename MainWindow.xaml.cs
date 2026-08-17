@@ -14,10 +14,13 @@ public partial class MainWindow : FluentWindow
 {
     private readonly GlobalHotkey _hotkey = new();
     private readonly AppSettings _settings;
+    private readonly DragSnapService _dragSnap;
     private IReadOnlyList<RadialTarget> _radialTargets = Array.Empty<RadialTarget>();
     private IntPtr _targetWindow;
     private RadialOverlayWindow? _activeOverlay;
     private readonly DispatcherTimer _stashTimer;
+    private PreviewOverlayWindow? _dragPreview;
+    private System.Windows.Interop.HwndSource? _windowSource;
     private bool _capturing;
     private bool _allowClose;
 
@@ -25,6 +28,9 @@ public partial class MainWindow : FluentWindow
     {
         InitializeComponent();
         _settings = AppSettings.Load();
+        MonitorService.Configure(_settings);
+        WindowPolicy.Configure(_settings);
+        WindowStashService.Configure(_settings);
         _radialTargets = RadialActionCatalog.LoadTargets(_settings);
 
         var settingsPanel = new SettingsWindow(_hotkey, _settings);
@@ -39,6 +45,7 @@ public partial class MainWindow : FluentWindow
             _settings.DoubleClickToTrigger,
             _settings.MiddleClickToTrigger);
         _hotkey.SetKeybinds(_settings.Keybinds);
+        _dragSnap = new DragSnapService(Dispatcher, _settings);
         _stashTimer = new DispatcherTimer(DispatcherPriority.Input)
         {
             Interval = TimeSpan.FromMilliseconds(80)
@@ -56,7 +63,11 @@ public partial class MainWindow : FluentWindow
         _hotkey.CaptureCancelled += Hotkey_CaptureCancelled;
         _hotkey.CaptureRejected += Hotkey_CaptureRejected;
         _hotkey.KeybindPressed += Hotkey_KeybindPressed;
+        _dragSnap.TargetChanged += DragSnap_TargetChanged;
+        _dragSnap.TargetCleared += DragSnap_TargetCleared;
+        _dragSnap.GestureEnded += DragSnap_GestureEnded;
         _hotkey.Start();
+        _dragSnap.Start();
         _stashTimer.Start();
 
         UpdateTriggerLabel();
@@ -73,16 +84,56 @@ public partial class MainWindow : FluentWindow
     private void Window_Closed(object? sender, EventArgs e)
     {
         _stashTimer.Stop();
+        _dragSnap.TargetChanged -= DragSnap_TargetChanged;
+        _dragSnap.TargetCleared -= DragSnap_TargetCleared;
+        _dragSnap.GestureEnded -= DragSnap_GestureEnded;
+        _windowSource?.RemoveHook(WindowMessageHook);
+        _dragSnap.Dispose();
+        _dragPreview?.Close();
         _hotkey.Dispose();
     }
 
     private void StashTimer_Tick(object? sender, EventArgs e)
     {
+        WindowStashService.Poll();
         if (NativeMethods.GetCursorPos(out var cursor) &&
             WindowStashService.TryRevealAtCursor(cursor, out var message))
         {
             TargetStatus.Text = $"  ·  {message}";
         }
+    }
+
+    private void Window_SourceInitialized(object? sender, EventArgs e)
+    {
+        var hwnd = new System.Windows.Interop.WindowInteropHelper(this).Handle;
+        if (hwnd == IntPtr.Zero)
+        {
+            return;
+        }
+
+        _windowSource = System.Windows.Interop.HwndSource.FromHwnd(hwnd);
+        _windowSource?.AddHook(WindowMessageHook);
+    }
+
+    private IntPtr WindowMessageHook(
+        IntPtr hwnd,
+        int message,
+        IntPtr wParam,
+        IntPtr lParam,
+        ref bool handled)
+    {
+        if (message is NativeMethods.WmDisplayChange or
+            NativeMethods.WmDpiChanged or
+            NativeMethods.WmSettingChange or
+            NativeMethods.WmDeviceChange)
+        {
+            MonitorService.Invalidate();
+            _dragSnap.RefreshTarget();
+            _activeOverlay?.RefreshTargetFrame();
+            _dragPreview?.HideImmediately();
+        }
+
+        return IntPtr.Zero;
     }
 
     private void Window_Closing(object? sender, System.ComponentModel.CancelEventArgs e)
@@ -366,6 +417,9 @@ public partial class MainWindow : FluentWindow
 
     private void ApplySettings(AppSettings settings)
     {
+        WindowStashService.UpdateSettings(settings);
+        MonitorService.UpdateSettings(settings);
+        WindowPolicy.UpdateSettings(settings);
         _radialTargets = RadialActionCatalog.LoadTargets(settings);
         _hotkey.SetBinding(settings.TriggerModifiers, settings.TriggerVk);
         _hotkey.SetTriggerBehavior(
@@ -375,6 +429,49 @@ public partial class MainWindow : FluentWindow
             settings.DoubleClickToTrigger,
             settings.MiddleClickToTrigger);
         _hotkey.SetKeybinds(settings.Keybinds);
+        _dragPreview?.HideImmediately();
+        _dragSnap.UpdateSettings();
         UpdateTriggerLabel();
+    }
+
+    private void DragSnap_TargetChanged(DragSnapTarget target)
+    {
+        if (!_settings.PreviewEnabled)
+        {
+            return;
+        }
+
+        _dragPreview ??= new PreviewOverlayWindow(_settings);
+        _dragPreview.ShowFrame(target.Frame, target.Action);
+        _dragPreview.Topmost = true;
+    }
+
+    private void DragSnap_TargetCleared()
+    {
+        _dragPreview?.HideImmediately();
+    }
+
+    private void DragSnap_GestureEnded(DragSnapGesture gesture)
+    {
+        Dispatcher.BeginInvoke(DispatcherPriority.Input, () =>
+        {
+            if (gesture.Reason == DragSnapEndReason.Released && gesture.Target is { } target)
+            {
+                var applied = WindowActionService.TryApplySnap(gesture.Window, target, out var message);
+                if (applied)
+                {
+                    SelectedAction.Text = WindowActionService.ActionName(target.Action);
+                }
+
+                TargetStatus.Text = $"  ·  {message}";
+                return;
+            }
+
+            if (_settings.RestorePreDragFrameOnSnapCancel)
+            {
+                WindowActionService.TryRestoreFrame(gesture.Window, gesture.OriginalFrame, out var message);
+                TargetStatus.Text = $"  ·  {message}";
+            }
+        });
     }
 }

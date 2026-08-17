@@ -15,6 +15,7 @@
                  ExtendsContentIntoTitleBar="True"
                  WindowStartupLocation="CenterScreen"
                  Loaded="Window_Loaded"
+                 SourceInitialized="Window_SourceInitialized"
                  Closing="Window_Closing"
                  Closed="Window_Closed"
                  KeyDown="Window_KeyDown">

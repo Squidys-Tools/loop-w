@@ -1,0 +1,83 @@
+name: Publish Windows build
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: windows-2022
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Set up .NET 8
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Restore dependencies
+        run: dotnet restore LoopW.Tests/LoopW.Tests.csproj
+
+      - name: Run automated tests
+        run: dotnet run --project LoopW.Tests/LoopW.Tests.csproj --configuration Release --no-restore
+
+      - name: Publish self-contained executable
+        run: >-
+          dotnet publish LoopW.csproj
+          --configuration Release
+          --runtime win-x64
+          --self-contained true
+          --property:PublishSingleFile=true
+          --no-restore
+          --output publish\LoopW
+
+      - name: Create archive and checksum
+        id: package
+        shell: pwsh
+        env:
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+          RUN_NUMBER: ${{ github.run_number }}
+        run: |
+          $label = if ($env:REF_TYPE -eq 'tag') {
+            $env:REF_NAME
+          } else {
+            "manual-$env:RUN_NUMBER"
+          }
+
+          $archive = "publish\LoopW-$label.zip"
+          Compress-Archive -Path 'publish\LoopW\*' -DestinationPath $archive
+          $hash = (Get-FileHash $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  $(Split-Path $archive -Leaf)" | Set-Content "${archive}.sha256"
+          "label=$label" >> $env:GITHUB_OUTPUT
+          "archive=$archive" >> $env:GITHUB_OUTPUT
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: LoopW-${{ steps.package.outputs.label }}
+          path: |
+            ${{ steps.package.outputs.archive }}
+            ${{ steps.package.outputs.archive }}.sha256
+          if-no-files-found: error
+
+      - name: Create GitHub Release
+        if: github.ref_type == 'tag'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          ARCHIVE: ${{ steps.package.outputs.archive }}
+        run: |
+          gh release create "$env:RELEASE_TAG" `
+            "$env:ARCHIVE" `
+            "${env:ARCHIVE}.sha256" `
+            --title "$env:RELEASE_TAG" `
+            --generate-notes

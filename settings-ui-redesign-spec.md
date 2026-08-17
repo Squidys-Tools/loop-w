@@ -494,3 +494,24 @@ Additional QA scenarios for this integration:
 4. Mark a keybind as Bypass and verify it works without the trigger while ordinary bindings still require the trigger.
 5. Assign built-in actions, keybinds, and No action to radial wedges and the center; verify assignments persist and invalid/missing targets normalize safely.
 6. Confirm the same radial hover/selection treatment and appearance values are visible in Settings and during actual hotkey use.
+
+## 18. Post-merge integration: snapping, monitor policy, and stash settings
+
+The current `main` runtime additions are integrated into the existing five-section WPF UI rather than introducing a second navigation model:
+
+- Preview now exposes drag snapping, snap threshold, restore-on-cancel, stash persistence, edge peek, reveal hit zone, and reveal delay.
+- Advanced now exposes monitor move sizing policy, global/per-edge screen padding, and executable/process exclusions. Keybind editing and reset-all remain in the same section.
+- Existing WPF UI cards, Fluent controls, semantic brushes, auto-save flow, and scroll behavior are reused. No custom theme dictionary or alternate settings window is introduced for these controls.
+- `MainWindow` configures and updates `MonitorService`, `WindowPolicy`, `WindowStashService`, and `DragSnapService` from the same `AppSettings` instance used by Settings. Display/DPI messages refresh monitor-dependent previews and snapping state.
+- The existing WPF UI `TrayIcon`, hide-to-tray behavior, shared radial surface, and shared window-preview surface remain the product-facing runtime path.
+
+The new settings retain JSON compatibility through `AppSettings.Normalize()`. Missing values receive safe defaults; exclusion lists are trimmed and deduplicated; stash records are normalized; and reset operations restore the new settings without changing unrelated appearance or radial assignments.
+
+Additional QA scenarios:
+
+1. Toggle drag snapping, change its threshold, drag a disposable window to an edge/corner, and verify the shared preview follows the candidate zone.
+2. Cancel a snap and verify the original frame is restored when that option is enabled.
+3. Change monitor sizing policy and screen padding on a mixed-DPI layout, then verify actions respect the updated work area.
+4. Add executable and process exclusions and verify actions, snapping, stash, and IPC refuse the excluded target.
+5. Stash a disposable window, restart LoopW, and verify persistence, edge peek, reveal hit zone, and reveal delay behavior.
+6. Confirm display/DPI changes do not leave stale overlays, snap previews, or stash records.

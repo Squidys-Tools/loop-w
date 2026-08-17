@@ -243,3 +243,15 @@ $dotnet = "$env:USERPROFILE\.dotnet\dotnet.exe"
 Run the desktop checks in [`QA.md`](QA.md) on a test machine where global
 keyboard and mouse hooks are acceptable.
 
+## GitHub Actions
+
+The repository has one publishing workflow at `.github/workflows/publish.yml`.
+
+- A tag matching `v*` runs the automated tests, publishes a self-contained
+  `win-x64` single-file build, creates a zip and SHA-256 checksum, and creates
+  a GitHub Release with both files attached.
+- A manual workflow dispatch runs the same build and tests, then stores the zip
+  and checksum as a workflow artifact without creating a GitHub Release.
+- The workflow does not run for ordinary pushes or pull requests. Desktop
+  behavior remains covered by the manual checklist in [`QA.md`](QA.md).
+

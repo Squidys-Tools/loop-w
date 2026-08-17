@@ -159,6 +159,14 @@ public partial class RadialOverlayWindow : Window
 
     internal void Dismiss() => CloseOverlay();
 
+    internal void RefreshTargetFrame()
+    {
+        if (_selected is { } selection)
+        {
+            ShowPreviewFor(selection);
+        }
+    }
+
     private void Overlay_MouseMove(object sender, MouseEventArgs e) =>
         UpdateSelection(e.GetPosition(this));
 
@@ -244,6 +252,11 @@ public partial class RadialOverlayWindow : Window
         MenuSurface.SetSelectedSlot(selection is RadialSelection.Wedge wedge ? wedge.Index : null);
         MenuSurface.SetSelectedCenter(selection is RadialSelection.Center);
 
+        ShowPreviewFor(selection);
+    }
+
+    private void ShowPreviewFor(RadialSelection? selection)
+    {
         var action = selection is { } resolvedSelection
             ? RadialTargetResolver.ActionOf(resolvedSelection.Target)
             : null;

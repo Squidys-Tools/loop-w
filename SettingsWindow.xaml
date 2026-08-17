@@ -632,6 +632,123 @@
                                     </StackPanel>
                                 </ui:Card>
                         </Grid>
+
+                        <ui:Card Padding="20" Margin="0,0,0,12">
+                            <StackPanel>
+                                <TextBlock Text="Drag snapping" FontSize="15" FontWeight="SemiBold" />
+                                <TextBlock Text="Preview and commit a half or quarter zone when a title-bar drag reaches a monitor edge."
+                                           MaxWidth="460"
+                                           Margin="0,4,0,14"
+                                           FontSize="13"
+                                           TextWrapping="Wrap"
+                                           Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                <ui:ToggleSwitch x:Name="DragSnapEnabledCheck"
+                                                 Content="Snap dragged windows to edges and corners"
+                                                 Checked="DragSnap_Changed"
+                                                 Unchecked="DragSnap_Changed"
+                                                 AutomationProperties.Name="Enable drag snapping" />
+                                <ui:ToggleSwitch x:Name="RestorePreDragFrameCheck"
+                                                 Content="Restore the original frame when a snap is canceled"
+                                                 Margin="0,12,0,0"
+                                                 Checked="DragSnap_Changed"
+                                                 Unchecked="DragSnap_Changed"
+                                                 AutomationProperties.Name="Restore the frame when snap is canceled" />
+                                <Grid Margin="0,18,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="Snap threshold" FontSize="13" />
+                                    <TextBlock x:Name="DragSnapThresholdValue"
+                                               Grid.Column="1"
+                                               FontSize="12"
+                                               Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                </Grid>
+                                <Slider x:Name="DragSnapThresholdSlider"
+                                        Minimum="4"
+                                        Maximum="96"
+                                        TickFrequency="4"
+                                        IsSnapToTickEnabled="True"
+                                        ValueChanged="DragSnap_ValueChanged"
+                                        AutomationProperties.Name="Drag snap threshold" />
+                                <TextBlock Text="The threshold is measured from the physical monitor edge, so taskbars do not make a zone harder to reach."
+                                           Margin="0,8,0,0"
+                                           FontSize="12"
+                                           TextWrapping="Wrap"
+                                           Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                            </StackPanel>
+                        </ui:Card>
+
+                        <ui:Card Padding="20" Margin="0,0,0,12">
+                            <StackPanel>
+                                <TextBlock Text="Stash and reveal" FontSize="15" FontWeight="SemiBold" />
+                                <TextBlock Text="Keep windows safely identifiable across a LoopW restart and tune how much of a stashed window remains reachable."
+                                           MaxWidth="460"
+                                           Margin="0,4,0,14"
+                                           FontSize="13"
+                                           TextWrapping="Wrap"
+                                           Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                <ui:ToggleSwitch x:Name="StashPersistenceCheck"
+                                                 Content="Persist stashed windows across restart"
+                                                 Checked="Stash_Changed"
+                                                 Unchecked="Stash_Changed"
+                                                 AutomationProperties.Name="Persist stashed windows" />
+                                <Grid Margin="0,18,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="Edge peek" FontSize="13" />
+                                    <TextBlock x:Name="StashEdgePeekValue"
+                                               Grid.Column="1"
+                                               FontSize="12"
+                                               Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                </Grid>
+                                <Slider x:Name="StashEdgePeekSlider"
+                                        Minimum="1"
+                                        Maximum="48"
+                                        TickFrequency="1"
+                                        IsSnapToTickEnabled="True"
+                                        ValueChanged="Stash_ValueChanged"
+                                        AutomationProperties.Name="Stash edge peek" />
+                                <Grid Margin="0,14,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="Reveal hit zone" FontSize="13" />
+                                    <TextBlock x:Name="StashHitZoneValue"
+                                               Grid.Column="1"
+                                               FontSize="12"
+                                               Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                </Grid>
+                                <Slider x:Name="StashHitZoneSlider"
+                                        Minimum="1"
+                                        Maximum="96"
+                                        TickFrequency="2"
+                                        IsSnapToTickEnabled="True"
+                                        ValueChanged="Stash_ValueChanged"
+                                        AutomationProperties.Name="Stash reveal hit zone" />
+                                <Grid Margin="0,14,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="Reveal delay" FontSize="13" />
+                                    <TextBlock x:Name="StashRevealDelayValue"
+                                               Grid.Column="1"
+                                               FontSize="12"
+                                               Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                </Grid>
+                                <Slider x:Name="StashRevealDelaySlider"
+                                        Minimum="0"
+                                        Maximum="500"
+                                        TickFrequency="20"
+                                        IsSnapToTickEnabled="True"
+                                        ValueChanged="Stash_ValueChanged"
+                                        AutomationProperties.Name="Stash reveal delay" />
+                            </StackPanel>
+                        </ui:Card>
                     </StackPanel>
 
                     <StackPanel x:Name="AppearanceSection" Visibility="Collapsed">
@@ -866,6 +983,112 @@
                                            Margin="0,14,0,0"
                                            Click="Add_Click"
                                            AutomationProperties.Name="Add keybind" />
+                            </StackPanel>
+                        </ui:Card>
+
+                        <ui:Card Padding="20" Margin="0,0,0,12">
+                            <StackPanel>
+                                <TextBlock Text="Window policy" FontSize="15" FontWeight="SemiBold" />
+                                <TextBlock Text="Control monitor sizing, screen margins, and which applications LoopW should leave alone."
+                                           MaxWidth="460"
+                                           Margin="0,4,0,14"
+                                           FontSize="13"
+                                           TextWrapping="Wrap"
+                                           Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="180" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel>
+                                        <TextBlock Text="Moving between monitors" FontSize="13" />
+                                        <TextBlock Text="Preserve physical pixels or logical size when moving a window between displays."
+                                                   Margin="0,3,14,0"
+                                                   FontSize="12"
+                                                   TextWrapping="Wrap"
+                                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                    </StackPanel>
+                                    <ComboBox x:Name="MonitorMovePolicyCombo"
+                                              Grid.Column="1"
+                                              SelectedValuePath="Tag"
+                                              SelectionChanged="MonitorMovePolicy_SelectionChanged"
+                                              VerticalAlignment="Center"
+                                              AutomationProperties.Name="Monitor move sizing policy">
+                                        <ComboBoxItem Content="Preserve pixel size" Tag="PreservePixels" />
+                                        <ComboBoxItem Content="Preserve logical size" Tag="PreserveLogicalSize" />
+                                    </ComboBox>
+                                </Grid>
+                                <TextBlock Text="Screen padding" FontSize="13" FontWeight="SemiBold" Margin="0,22,0,4" />
+                                <TextBlock Text="Global padding is added to each edge, then the per-edge values are added."
+                                           FontSize="12"
+                                           TextWrapping="Wrap"
+                                           Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                <Grid Margin="0,12,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="Global" FontSize="13" />
+                                    <TextBlock x:Name="GlobalScreenPaddingValue" Grid.Column="1" FontSize="12" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                </Grid>
+                                <Slider x:Name="GlobalScreenPaddingSlider" Minimum="0" Maximum="64" TickFrequency="4" IsSnapToTickEnabled="True" ValueChanged="ScreenPadding_ValueChanged" AutomationProperties.Name="Global screen padding" />
+                                <Grid Margin="0,12,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="Left" FontSize="13" />
+                                    <TextBlock x:Name="ScreenPaddingLeftValue" Grid.Column="1" FontSize="12" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                </Grid>
+                                <Slider x:Name="ScreenPaddingLeftSlider" Minimum="0" Maximum="64" TickFrequency="4" IsSnapToTickEnabled="True" ValueChanged="ScreenPadding_ValueChanged" AutomationProperties.Name="Left screen padding" />
+                                <Grid Margin="0,12,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="Top" FontSize="13" />
+                                    <TextBlock x:Name="ScreenPaddingTopValue" Grid.Column="1" FontSize="12" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                </Grid>
+                                <Slider x:Name="ScreenPaddingTopSlider" Minimum="0" Maximum="64" TickFrequency="4" IsSnapToTickEnabled="True" ValueChanged="ScreenPadding_ValueChanged" AutomationProperties.Name="Top screen padding" />
+                                <Grid Margin="0,12,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="Right" FontSize="13" />
+                                    <TextBlock x:Name="ScreenPaddingRightValue" Grid.Column="1" FontSize="12" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                </Grid>
+                                <Slider x:Name="ScreenPaddingRightSlider" Minimum="0" Maximum="64" TickFrequency="4" IsSnapToTickEnabled="True" ValueChanged="ScreenPadding_ValueChanged" AutomationProperties.Name="Right screen padding" />
+                                <Grid Margin="0,12,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="Bottom" FontSize="13" />
+                                    <TextBlock x:Name="ScreenPaddingBottomValue" Grid.Column="1" FontSize="12" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                </Grid>
+                                <Slider x:Name="ScreenPaddingBottomSlider" Minimum="0" Maximum="64" TickFrequency="4" IsSnapToTickEnabled="True" ValueChanged="ScreenPadding_ValueChanged" AutomationProperties.Name="Bottom screen padding" />
+                                <TextBlock Text="Excluded applications" FontSize="13" FontWeight="SemiBold" Margin="0,22,0,4" />
+                                <TextBlock Text="One executable path or process name per line. Matching applications are ignored by window actions, snapping, stash, and IPC."
+                                           FontSize="12"
+                                           TextWrapping="Wrap"
+                                           Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                <ui:TextBox x:Name="ExcludedExecutablePathsText"
+                                            MinHeight="72"
+                                            Margin="0,10,0,0"
+                                            AcceptsReturn="True"
+                                            TextWrapping="Wrap"
+                                            VerticalScrollBarVisibility="Auto"
+                                            LostFocus="Exclusions_LostFocus"
+                                            AutomationProperties.Name="Excluded executable paths" />
+                                <TextBlock Text="Process names" FontSize="13" Margin="0,14,0,4" />
+                                <ui:TextBox x:Name="ExcludedProcessNamesText"
+                                            MinHeight="56"
+                                            AcceptsReturn="True"
+                                            TextWrapping="Wrap"
+                                            VerticalScrollBarVisibility="Auto"
+                                            LostFocus="Exclusions_LostFocus"
+                                            AutomationProperties.Name="Excluded process names" />
                             </StackPanel>
                         </ui:Card>
 

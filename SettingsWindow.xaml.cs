@@ -384,6 +384,95 @@ public partial class SettingsWindow : UserControl
         SaveSettings("Preview size saved");
     }
 
+    private void DragSnap_Changed(object sender, RoutedEventArgs e)
+    {
+        if (_loading)
+        {
+            return;
+        }
+
+        _settings.DragSnapEnabled = DragSnapEnabledCheck.IsChecked == true;
+        _settings.RestorePreDragFrameOnSnapCancel = RestorePreDragFrameCheck.IsChecked == true;
+        SaveSettings("Drag snapping settings saved");
+    }
+
+    private void DragSnap_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (_loading)
+        {
+            return;
+        }
+
+        _settings.DragSnapThreshold = (int)Math.Round(DragSnapThresholdSlider.Value);
+        UpdateValueLabels();
+        SaveSettings("Snap threshold saved");
+    }
+
+    private void Stash_Changed(object sender, RoutedEventArgs e)
+    {
+        if (_loading)
+        {
+            return;
+        }
+
+        _settings.StashPersistenceEnabled = StashPersistenceCheck.IsChecked == true;
+        SaveSettings("Stash settings saved");
+    }
+
+    private void Stash_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (_loading)
+        {
+            return;
+        }
+
+        _settings.StashEdgePeek = (int)Math.Round(StashEdgePeekSlider.Value);
+        _settings.StashHitZone = (int)Math.Round(StashHitZoneSlider.Value);
+        _settings.StashRevealDelayMilliseconds = (int)Math.Round(StashRevealDelaySlider.Value);
+        UpdateValueLabels();
+        SaveSettings("Stash timing saved");
+    }
+
+    private void MonitorMovePolicy_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_loading || MonitorMovePolicyCombo.SelectedValue is not string value ||
+            !Enum.TryParse<MonitorMoveSizePolicy>(value, out var policy))
+        {
+            return;
+        }
+
+        _settings.MonitorMoveSizePolicy = policy;
+        SaveSettings("Monitor move policy saved");
+    }
+
+    private void ScreenPadding_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (_loading)
+        {
+            return;
+        }
+
+        _settings.GlobalScreenPadding = (int)Math.Round(GlobalScreenPaddingSlider.Value);
+        _settings.ScreenPaddingLeft = (int)Math.Round(ScreenPaddingLeftSlider.Value);
+        _settings.ScreenPaddingTop = (int)Math.Round(ScreenPaddingTopSlider.Value);
+        _settings.ScreenPaddingRight = (int)Math.Round(ScreenPaddingRightSlider.Value);
+        _settings.ScreenPaddingBottom = (int)Math.Round(ScreenPaddingBottomSlider.Value);
+        UpdateValueLabels();
+        SaveSettings("Screen padding saved");
+    }
+
+    private void Exclusions_LostFocus(object sender, RoutedEventArgs e)
+    {
+        if (_loading)
+        {
+            return;
+        }
+
+        _settings.ExcludedExecutablePaths = SplitLines(ExcludedExecutablePathsText.Text);
+        _settings.ExcludedProcessNames = SplitLines(ExcludedProcessNamesText.Text);
+        SaveSettings("Application exclusions saved");
+    }
+
     private void AppearanceMode_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (_loading || AppearanceModeCombo.SelectedValue is not string mode)
@@ -617,6 +706,25 @@ public partial class SettingsWindow : UserControl
                 _settings.PreviewPadding = defaults.PreviewPadding;
                 _settings.PreviewCornerRadius = defaults.PreviewCornerRadius;
                 _settings.PreviewBorderWidth = defaults.PreviewBorderWidth;
+                _settings.DragSnapEnabled = defaults.DragSnapEnabled;
+                _settings.DragSnapThreshold = defaults.DragSnapThreshold;
+                _settings.RestorePreDragFrameOnSnapCancel = defaults.RestorePreDragFrameOnSnapCancel;
+                _settings.StashPersistenceEnabled = defaults.StashPersistenceEnabled;
+                _settings.StashEdgePeek = defaults.StashEdgePeek;
+                _settings.StashHitZone = defaults.StashHitZone;
+                _settings.StashRevealDelayMilliseconds = defaults.StashRevealDelayMilliseconds;
+                break;
+            case "Advanced":
+                _settings.MonitorMoveSizePolicy = defaults.MonitorMoveSizePolicy;
+                _settings.GlobalScreenPadding = defaults.GlobalScreenPadding;
+                _settings.ScreenPaddingLeft = defaults.ScreenPaddingLeft;
+                _settings.ScreenPaddingTop = defaults.ScreenPaddingTop;
+                _settings.ScreenPaddingRight = defaults.ScreenPaddingRight;
+                _settings.ScreenPaddingBottom = defaults.ScreenPaddingBottom;
+                _settings.ExcludedExecutablePaths = new List<string>();
+                _settings.ExcludedProcessNames = new List<string>();
+                _settings.Keybinds = new List<Keybind>();
+                _rows.Clear();
                 break;
             case "Appearance":
                 _settings.AppearanceMode = defaults.AppearanceMode;
@@ -625,10 +733,6 @@ public partial class SettingsWindow : UserControl
                 _settings.RadialSectorStroke = defaults.RadialSectorStroke;
                 _settings.RadialRingFill = defaults.RadialRingFill;
                 _settings.PreviewBorderColor = defaults.PreviewBorderColor;
-                break;
-            case "Advanced":
-                _settings.Keybinds = new List<Keybind>();
-                _rows.Clear();
                 break;
             default:
                 return;
@@ -734,6 +838,21 @@ public partial class SettingsWindow : UserControl
         PreviewPaddingInput.Value = _settings.PreviewPadding;
         PreviewCornerInput.Value = _settings.PreviewCornerRadius;
         PreviewBorderWidthInput.Value = _settings.PreviewBorderWidth;
+        DragSnapEnabledCheck.IsChecked = _settings.DragSnapEnabled;
+        RestorePreDragFrameCheck.IsChecked = _settings.RestorePreDragFrameOnSnapCancel;
+        DragSnapThresholdSlider.Value = _settings.DragSnapThreshold;
+        StashPersistenceCheck.IsChecked = _settings.StashPersistenceEnabled;
+        StashEdgePeekSlider.Value = _settings.StashEdgePeek;
+        StashHitZoneSlider.Value = _settings.StashHitZone;
+        StashRevealDelaySlider.Value = _settings.StashRevealDelayMilliseconds;
+        MonitorMovePolicyCombo.SelectedValue = _settings.MonitorMoveSizePolicy.ToString();
+        GlobalScreenPaddingSlider.Value = _settings.GlobalScreenPadding;
+        ScreenPaddingLeftSlider.Value = _settings.ScreenPaddingLeft;
+        ScreenPaddingTopSlider.Value = _settings.ScreenPaddingTop;
+        ScreenPaddingRightSlider.Value = _settings.ScreenPaddingRight;
+        ScreenPaddingBottomSlider.Value = _settings.ScreenPaddingBottom;
+        ExcludedExecutablePathsText.Text = string.Join(Environment.NewLine, _settings.ExcludedExecutablePaths);
+        ExcludedProcessNamesText.Text = string.Join(Environment.NewLine, _settings.ExcludedProcessNames);
         AppearanceModeCombo.SelectedValue = _settings.AppearanceMode;
         RefreshRadialControls();
         RefreshThemeFields();
@@ -778,6 +897,17 @@ public partial class SettingsWindow : UserControl
         }
 
         SyncNumberInputs();
+        DragSnapThresholdValue.Text = $"{DragSnapThresholdSlider.Value:0} px";
+        StashEdgePeekValue.Text = $"{StashEdgePeekSlider.Value:0} px";
+        StashHitZoneValue.Text = $"{StashHitZoneSlider.Value:0} px";
+        StashRevealDelayValue.Text = StashRevealDelaySlider.Value <= 0
+            ? "Immediate"
+            : $"{StashRevealDelaySlider.Value:0} ms";
+        GlobalScreenPaddingValue.Text = $"{GlobalScreenPaddingSlider.Value:0} px";
+        ScreenPaddingLeftValue.Text = $"{ScreenPaddingLeftSlider.Value:0} px";
+        ScreenPaddingTopValue.Text = $"{ScreenPaddingTopSlider.Value:0} px";
+        ScreenPaddingRightValue.Text = $"{ScreenPaddingRightSlider.Value:0} px";
+        ScreenPaddingBottomValue.Text = $"{ScreenPaddingBottomSlider.Value:0} px";
     }
 
     private void UpdateTriggerBehaviorLabels()
@@ -957,6 +1087,12 @@ public partial class SettingsWindow : UserControl
         }
         SettingsPreviewSurface?.ApplySettings(_settings);
     }
+
+    private static List<string> SplitLines(string? value) =>
+        (value ?? string.Empty)
+            .Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
 
     private static Brush? TryCreateBrush(string? value)
     {

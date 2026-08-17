@@ -55,6 +55,38 @@ public sealed class AppSettings
 
     public bool PreviewEnabled { get; set; } = true;
 
+    public bool DragSnapEnabled { get; set; } = true;
+
+    public int DragSnapThreshold { get; set; } = 24;
+
+    public bool RestorePreDragFrameOnSnapCancel { get; set; } = true;
+
+    public bool StashPersistenceEnabled { get; set; } = true;
+
+    public MonitorMoveSizePolicy MonitorMoveSizePolicy { get; set; } = MonitorMoveSizePolicy.PreservePixels;
+
+    public int GlobalScreenPadding { get; set; }
+
+    public int ScreenPaddingLeft { get; set; }
+
+    public int ScreenPaddingTop { get; set; }
+
+    public int ScreenPaddingRight { get; set; }
+
+    public int ScreenPaddingBottom { get; set; }
+
+    public List<string> ExcludedExecutablePaths { get; set; } = new();
+
+    public List<string> ExcludedProcessNames { get; set; } = new();
+
+    public int StashEdgePeek { get; set; } = 8;
+
+    public int StashHitZone { get; set; } = 14;
+
+    public int StashRevealDelayMilliseconds { get; set; } = 80;
+
+    public List<StashRecord> StashRecords { get; set; } = new();
+
     public double PreviewPadding { get; set; } = 21;
 
     public double PreviewCornerRadius { get; set; } = 14;
@@ -132,6 +164,22 @@ public sealed class AppSettings
         PreviewPadding = Clamp(PreviewPadding, 4, 48);
         PreviewCornerRadius = Clamp(PreviewCornerRadius, 4, 32);
         PreviewBorderWidth = Clamp(PreviewBorderWidth, 0, 6);
+        DragSnapThreshold = Math.Clamp(DragSnapThreshold, 4, 96);
+        if (!Enum.IsDefined(MonitorMoveSizePolicy))
+        {
+            MonitorMoveSizePolicy = MonitorMoveSizePolicy.PreservePixels;
+        }
+
+        GlobalScreenPadding = Math.Clamp(GlobalScreenPadding, 0, 128);
+        ScreenPaddingLeft = Math.Clamp(ScreenPaddingLeft, 0, 128);
+        ScreenPaddingTop = Math.Clamp(ScreenPaddingTop, 0, 128);
+        ScreenPaddingRight = Math.Clamp(ScreenPaddingRight, 0, 128);
+        ScreenPaddingBottom = Math.Clamp(ScreenPaddingBottom, 0, 128);
+        NormalizeExclusions();
+        StashEdgePeek = Math.Clamp(StashEdgePeek, 1, 48);
+        StashHitZone = Math.Clamp(StashHitZone, 1, 96);
+        StashRevealDelayMilliseconds = Math.Clamp(StashRevealDelayMilliseconds, 0, 2000);
+        NormalizeStashRecords();
 
         AccentColor = NormalizeColor(AccentColor, "#007AFF");
         RadialSectorFill = NormalizeColor(RadialSectorFill, "#7A007AFF");
@@ -160,6 +208,22 @@ public sealed class AppSettings
         RadialOuterRadius = defaults.RadialOuterRadius;
         RadialInnerRadius = defaults.RadialInnerRadius;
         PreviewEnabled = defaults.PreviewEnabled;
+        DragSnapEnabled = defaults.DragSnapEnabled;
+        DragSnapThreshold = defaults.DragSnapThreshold;
+        RestorePreDragFrameOnSnapCancel = defaults.RestorePreDragFrameOnSnapCancel;
+        StashPersistenceEnabled = defaults.StashPersistenceEnabled;
+        MonitorMoveSizePolicy = defaults.MonitorMoveSizePolicy;
+        GlobalScreenPadding = defaults.GlobalScreenPadding;
+        ScreenPaddingLeft = defaults.ScreenPaddingLeft;
+        ScreenPaddingTop = defaults.ScreenPaddingTop;
+        ScreenPaddingRight = defaults.ScreenPaddingRight;
+        ScreenPaddingBottom = defaults.ScreenPaddingBottom;
+        ExcludedExecutablePaths = new List<string>();
+        ExcludedProcessNames = new List<string>();
+        StashEdgePeek = defaults.StashEdgePeek;
+        StashHitZone = defaults.StashHitZone;
+        StashRevealDelayMilliseconds = defaults.StashRevealDelayMilliseconds;
+        StashRecords = new List<StashRecord>();
         PreviewPadding = defaults.PreviewPadding;
         PreviewCornerRadius = defaults.PreviewCornerRadius;
         PreviewBorderWidth = defaults.PreviewBorderWidth;
@@ -214,6 +278,83 @@ public sealed class AppSettings
                 keybind.Action = WindowAction.RightHalf;
             }
         }
+    }
+
+    private void NormalizeStashRecords()
+    {
+        StashRecords ??= new List<StashRecord>();
+        const int maxStashRecords = 64;
+        if (StashRecords.Count > maxStashRecords)
+        {
+            // New records are appended. Keep the newest records so a buildup
+            // of old unmatched entries cannot evict a newly stashed window.
+            StashRecords.RemoveRange(0, StashRecords.Count - maxStashRecords);
+        }
+
+        var ids = new HashSet<string>(StringComparer.Ordinal);
+        for (var i = StashRecords.Count - 1; i >= 0; i--)
+        {
+            var record = StashRecords[i];
+            if (record is null)
+            {
+                StashRecords.RemoveAt(i);
+                continue;
+            }
+
+            if (string.IsNullOrWhiteSpace(record.Id) || !ids.Add(record.Id))
+            {
+                do
+                {
+                    record.Id = Guid.NewGuid().ToString("N");
+                }
+                while (!ids.Add(record.Id));
+            }
+
+            if (!Enum.IsDefined(record.Edge))
+            {
+                record.Edge = StashEdge.Left;
+            }
+
+            record.OriginalPlacement ??= new StashPlacement();
+            record.OriginalPlacement.MinPosition ??= new StashPoint();
+            record.OriginalPlacement.MaxPosition ??= new StashPoint();
+            record.OriginalPlacement.NormalPosition ??= new StashRect();
+            record.OriginalMonitor ??= new StashMonitor();
+            record.OriginalMonitor.Monitor ??= new StashRect();
+            record.OriginalMonitor.Work ??= new StashRect();
+            record.StashedFrame ??= new StashRect();
+        }
+    }
+
+    private void NormalizeExclusions()
+    {
+        ExcludedExecutablePaths = NormalizeExclusionList(ExcludedExecutablePaths, path => path.Trim());
+        ExcludedProcessNames = NormalizeExclusionList(
+            ExcludedProcessNames,
+            name => Path.GetFileNameWithoutExtension(name.Trim()));
+    }
+
+    private static List<string> NormalizeExclusionList(
+        List<string>? values,
+        Func<string, string> normalize)
+    {
+        var normalized = new List<string>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var value in values ?? new List<string>())
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                continue;
+            }
+
+            var item = normalize(value);
+            if (!string.IsNullOrWhiteSpace(item) && seen.Add(item))
+            {
+                normalized.Add(item);
+            }
+        }
+
+        return normalized;
     }
 
     private void NormalizeRadialTargets()
