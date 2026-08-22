@@ -28,7 +28,7 @@ These decisions were gathered during the design interview and are requirements f
 - Change behavior: use a **mixed-by-risk** model: harmless visual changes save immediately; higher-impact behavior changes may require confirmation or explicit apply treatment when needed.
 - Narrow-window behavior: preserve a spacious composition with a firm practical minimum size; do not optimize for very narrow layouts.
 - Motion: use polished, restrained transitions with reduced-motion support.
-- Content tone: crisp utility—short labels, direct explanations, and highly scannable copy.
+- Content tone: crisp utility, with short labels, direct explanations, and copy that is easy to scan.
 - Landing state: pure settings; do not add a dashboard, status hero, recent-changes feed, or prominent quick-action panel.
 - Recovery: provide both per-section reset and a clearly separated global reset-all action.
 - Trigger/keybind capture: use inline capture mode with visible listening, Esc cancellation, and inline reserved-key errors.
@@ -75,7 +75,7 @@ The redesign must not accidentally change window action behavior, global hotkey 
 
 ## 5. Non-goals
 
-- Do not change the radial overlay’s interaction model or add settings-only visual behavior as part of this work; its renderer may be shared with the settings surface.
+- Do not change the radial overlay's interaction model or add settings-only visual behavior as part of this work. Its renderer may be shared with the settings surface.
 - Do not add text labels to the radial overlay.
 - Do not regress the action catalog, placement algorithms, global hook, tray lifecycle, IPC, or keybind execution semantics. New trigger and radial configuration options documented in section 17 are explicitly supported integration scope.
 - Do not turn settings into a dashboard or marketing page.
@@ -125,7 +125,7 @@ The exact labels may be adjusted during implementation if the final wording rema
 
 - Use a compact LoopW identity/header treatment, not a large hero.
 - Show section name and optionally a restrained one-line descriptor.
-- Use one clear active indicator: a filled tonal pill, slim accent rail, or similarly quiet treatment—not multiple competing indicators.
+- Use one clear active indicator: a filled tonal pill, slim accent rail, or similarly quiet treatment, with no competing indicators.
 - Keep active, hover, keyboard-focus, and disabled states distinct.
 - Sidebar labels should remain readable at normal Windows text scaling.
 - The sidebar should not behave like the current tab strip with nested all-caps labels that make scanning harder.
@@ -149,7 +149,7 @@ Quiet, premium, and technical without being cold. The surface should feel compos
 
 ### Color system
 
-Prefer WPF UI’s application resources and semantic brushes rather than introducing a second token system or scattering literal colors through XAML. Persisted custom colors are data for the shared overlay surfaces, not a replacement for WPF UI’s control palette. The relationships should follow this model:
+Prefer WPF UI's application resources and semantic brushes rather than introducing a second token system or scattering literal colors through XAML. Persisted custom colors are data for the shared overlay surfaces, not a replacement for WPF UI's control palette. The relationships should follow this model:
 
 - **App background:** deepest neutral blue-black; should not read as pure black.
 - **Navigation surface:** subtly distinct from the page background.
@@ -181,7 +181,7 @@ Color tokens need to work in dark mode, Windows-following mode, and explicit lig
 - Establish a clear hierarchy: page/section title, supporting description, group label, setting label, and helper/status copy.
 - Favor sentence case over all-caps for user-facing labels. Small uppercase eyebrow labels may be used sparingly for metadata, but should not carry essential meaning.
 - Keep copy direct: explain what the setting does and what will happen, not implementation details.
-- Avoid jargon such as “token” in the default user-facing UI; use “color” or “visual style.” If raw token terminology is needed for advanced users, explain it once.
+- Avoid jargon such as "token" in the default user-facing UI. Use "color" or "visual style" instead. If raw token terminology is needed for advanced users, explain it once.
 
 ## 8. Core interaction specifications
 
@@ -209,8 +209,8 @@ Use the mixed-by-risk rule:
 Use an inline capture state in the General section:
 
 1. User activates Rebind.
-2. The trigger control changes to a clear listening state such as “Press a key…” and receives visible focus.
-3. Supporting text explains: “Press a key or key combination. Esc cancels.”
+2. The trigger control changes to a clear listening state such as "Press a key..." and receives visible focus.
+3. Supporting text explains: "Press a key or key combination. Esc cancels."
 4. Other conflicting edit actions are disabled or safely ignored while capture is active.
 5. Successful capture updates the key chip, saves the setting, and shows a concise success state.
 6. Esc cancels without changing the current trigger.
@@ -277,7 +277,7 @@ If the design supports both explicit dark and explicit light, make the distincti
 
 Provide:
 
-- **Reset section:** restores only the active section’s defaults.
+- **Reset section:** restores only the active section's defaults.
 - **Reset all:** restores all settings to defaults and is placed in a clearly separated recovery area in Advanced or the page footer.
 - Reset-all requires a confirmation step that names the consequence.
 - After reset, controls and dependent visual previews update immediately, persistence completes, and the status is explicit.
@@ -354,7 +354,7 @@ Likely implementation areas:
 
 ### WPF UI adoption decision
 
-LoopW intentionally adopts `WPF-UI` 4.3.0 and `WPF-UI.Tray` 4.3.0. NuGet lists both packages as compatible with the project’s `net8.0-windows` target. WPF UI is the foundation for the Fluent control templates, theme dictionaries, navigation, cards, buttons, toggles, icons, number inputs, snackbar feedback, content dialogs, and tray icon/menu integration.
+LoopW intentionally adopts `WPF-UI` 4.3.0 and `WPF-UI.Tray` 4.3.0. NuGet lists both packages as compatible with the project's `net8.0-windows` target. WPF UI is the foundation for the Fluent control templates, theme dictionaries, navigation, cards, buttons, toggles, icons, number inputs, snackbar feedback, content dialogs, and tray icon/menu integration.
 
 Use WPF UI directly for:
 
@@ -373,7 +373,7 @@ LoopW-specific behavior remains intentionally small and is implemented in the ex
 - `RadialMenuSurface` owns the runtime/settings radial geometry, backdrop blur, sector hover animation, and ring appearance. `WindowPreviewSurface` owns the runtime/settings glass surface, blur, corner radius, border, tint, and appearance treatment. They are reused directly instead of maintaining settings-only mockups.
 - The radial and window-preview surfaces are intentionally placed before their related settings controls and remain text-free. Their settings instances may use different host sizing or pointer input, but not a different rendering implementation.
 
-Keep the radial overlay, preview overlay, global hotkey capture, and window-management services outside WPF UI. WPF UI supplies the window/settings foundation without requiring an MVVM rewrite or a replacement of LoopW’s distinctive overlays.
+Keep the radial overlay, preview overlay, global hotkey capture, and window-management services outside WPF UI. WPF UI supplies the window/settings foundation without requiring an MVVM rewrite or a replacement of LoopW's distinctive overlays.
 
 Important preservation rules:
 
@@ -382,7 +382,7 @@ Important preservation rules:
 - Existing keybinds must remain active even if the Advanced section is not visited.
 - Existing trigger capture and global hook safety behavior must remain intact.
 - Existing settings-change propagation to the main/radial/preview surfaces must remain intact.
-- The radial overlay’s no-text invariant must remain untouched.
+- The radial overlay's no-text invariant must remain untouched.
 
 ## 13. Acceptance criteria
 
@@ -453,7 +453,7 @@ The implementation resolves the former open questions as follows:
 
 - The existing `MainWindow` remains the settings host at an initial approximately 1166x779 size with a firm approximately 1100x760 minimum. The content pane scrolls at that minimum rather than collapsing the sidebar.
 - Raw theme token fields remain in the Appearance section inside a clearly labeled advanced expander, keeping customization in the same visual-settings area.
-- Dark is the standard LoopW mode. Follow Windows and explicit Light use WPF UI’s theme resources; the effective theme and persisted accent are applied through WPF UI’s appearance APIs whenever settings are applied.
+- Dark is the standard LoopW mode. Follow Windows and explicit Light use WPF UI's theme resources. The effective theme and persisted accent are applied through WPF UI's appearance APIs whenever settings are applied.
 - The existing LoopWBlue, LoopWCobalt, and LoopWViolet curated presets remain the named, persisted choices.
 - WPF UI `NumberBox` controls sit beside the existing sliders for precise radius and preview-value entry; both paths share the same validation and persistence helpers.
 - Global reset uses a WPF UI `ContentDialog` confirmation. Per-section reset remains an immediate, explicit action with status feedback.
@@ -465,7 +465,7 @@ The implementation resolves the former open questions as follows:
 
 ## 16. Definition of done
 
-The redesign is ready for implementation sign-off when the UI has a clear visual system, the left-sidebar navigation and General-first hierarchy are established, all existing settings remain available and persistent, the advanced workflows are not hidden or degraded, reset/error/capture states are specified and testable, and the layout passes keyboard, contrast, DPI, and tray/runtime regression checks without changing LoopW’s core window-management behavior.
+The redesign is ready for implementation sign-off when the UI has a clear visual system, the left-sidebar navigation and General-first hierarchy are established, all existing settings remain available and persistent, the advanced workflows are not hidden or degraded, reset/error/capture states are specified and testable, and the layout passes keyboard, contrast, DPI, and tray/runtime regression checks without changing LoopW's core window-management behavior.
 
 ## 17. Post-pull integration: advanced trigger and radial configuration
 
