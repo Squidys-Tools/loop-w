@@ -1,21 +1,17 @@
 using System;
 using System.Text;
 using System.Windows;
-using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
-using System.Windows.Media.Animation;
-using System.Windows.Shapes;
 using System.Windows.Threading;
 using Cursors = System.Windows.Input.Cursors;
 using KeyEventArgs = System.Windows.Input.KeyEventArgs;
+using Wpf.Ui.Controls;
 
 namespace LoopW;
 
-public partial class MainWindow : Window
+public partial class MainWindow : FluentWindow
 {
-    private const double RadialCanvasPadding = 76;
-
     private readonly GlobalHotkey _hotkey = new();
     private readonly AppSettings _settings;
     private readonly DragSnapService _dragSnap;
@@ -40,7 +36,6 @@ public partial class MainWindow : Window
         var settingsPanel = new SettingsWindow(_hotkey, _settings);
         settingsPanel.SettingsChanged += ApplySettings;
         SettingsHost.Content = settingsPanel;
-        _dragSnap = new DragSnapService(Dispatcher, _settings);
 
         _hotkey.SetBinding(_settings.TriggerModifiers, _settings.TriggerVk);
         _hotkey.SetTriggerBehavior(
@@ -50,18 +45,16 @@ public partial class MainWindow : Window
             _settings.DoubleClickToTrigger,
             _settings.MiddleClickToTrigger);
         _hotkey.SetKeybinds(_settings.Keybinds);
+        _dragSnap = new DragSnapService(Dispatcher, _settings);
         _stashTimer = new DispatcherTimer(DispatcherPriority.Input)
         {
             Interval = TimeSpan.FromMilliseconds(80)
         };
         _stashTimer.Tick += StashTimer_Tick;
-        ApplyVisualSettings();
     }
 
     private void Window_Loaded(object sender, RoutedEventArgs e)
     {
-        BuildRadialGeometry();
-        AnimateRadialMenuIn();
         _hotkey.TriggerPressed += Hotkey_TriggerPressed;
         _hotkey.TriggerReleased += Hotkey_TriggerReleased;
         _hotkey.TriggerCancelled += Hotkey_TriggerCancelled;
@@ -100,35 +93,6 @@ public partial class MainWindow : Window
         _hotkey.Dispose();
     }
 
-    private void TitleBar_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
-    {
-        if (e.ChangedButton != MouseButton.Left)
-        {
-            return;
-        }
-
-        if (e.ClickCount == 2)
-        {
-            ToggleWindowState();
-            return;
-        }
-
-        DragMove();
-    }
-
-    private void MinimizeButton_Click(object sender, RoutedEventArgs e) => WindowState = WindowState.Minimized;
-
-    private void MaximizeButton_Click(object sender, RoutedEventArgs e) => ToggleWindowState();
-
-    private void CloseButton_Click(object sender, RoutedEventArgs e) => Close();
-
-    private void ToggleWindowState()
-    {
-        WindowState = WindowState == WindowState.Maximized
-            ? WindowState.Normal
-            : WindowState.Maximized;
-    }
-
     private void StashTimer_Tick(object? sender, EventArgs e)
     {
         WindowStashService.Poll();
@@ -137,6 +101,39 @@ public partial class MainWindow : Window
         {
             TargetStatus.Text = $"  ·  {message}";
         }
+    }
+
+    private void Window_SourceInitialized(object? sender, EventArgs e)
+    {
+        var hwnd = new System.Windows.Interop.WindowInteropHelper(this).Handle;
+        if (hwnd == IntPtr.Zero)
+        {
+            return;
+        }
+
+        _windowSource = System.Windows.Interop.HwndSource.FromHwnd(hwnd);
+        _windowSource?.AddHook(WindowMessageHook);
+    }
+
+    private IntPtr WindowMessageHook(
+        IntPtr hwnd,
+        int message,
+        IntPtr wParam,
+        IntPtr lParam,
+        ref bool handled)
+    {
+        if (message is NativeMethods.WmDisplayChange or
+            NativeMethods.WmDpiChanged or
+            NativeMethods.WmSettingChange or
+            NativeMethods.WmDeviceChange)
+        {
+            MonitorService.Invalidate();
+            _dragSnap.RefreshTarget();
+            _activeOverlay?.RefreshTargetFrame();
+            _dragPreview?.HideImmediately();
+        }
+
+        return IntPtr.Zero;
     }
 
     private void Window_Closing(object? sender, System.ComponentModel.CancelEventArgs e)
@@ -204,123 +201,6 @@ public partial class MainWindow : Window
             _settings.TriggerModifiers,
             _settings.TriggerVk,
             _settings.TriggerModifierSide);
-
-    private void BuildRadialGeometry()
-    {
-        var outerRadius = _settings.RadialOuterRadius;
-        var innerRadius = _settings.RadialInnerRadius;
-        var diameter = outerRadius * 2;
-        var panelSize = diameter + RadialCanvasPadding * 2;
-
-        RadialPanel.Width = panelSize;
-        RadialPanel.Height = panelSize;
-        RadialPanelCanvas.Width = panelSize;
-        RadialPanelCanvas.Height = panelSize;
-
-        var paths = new[]
-        {
-            RightWedge, BottomRightWedge, BottomWedge, BottomLeftWedge,
-            LeftWedge, TopLeftWedge, TopWedge, TopRightWedge
-        };
-
-        foreach (var path in paths)
-        {
-            path.Width = diameter;
-            path.Height = diameter;
-            Canvas.SetLeft(path, RadialCanvasPadding);
-            Canvas.SetTop(path, RadialCanvasPadding);
-        }
-
-        RadialRing.Data = RadialGeometry.BuildAnnulus(outerRadius, outerRadius, innerRadius);
-        for (var i = 0; i < RadialActionCatalog.Geometry.Count; i++)
-        {
-            var slot = RadialActionCatalog.Geometry[i];
-            paths[i].Data = RadialGeometry.BuildWedge(
-                outerRadius,
-                outerRadius,
-                innerRadius,
-                slot.FromDegrees,
-                slot.ToDegrees);
-        }
-
-        UpdateRadialPreviewLabels();
-    }
-
-    private void UpdateRadialPreviewLabels()
-    {
-        if (_radialTargets.Count < RadialConfiguration.SlotCount)
-        {
-            return;
-        }
-
-        RightActionLabel.Text = RadialTargetResolver.DisplayName(_radialTargets[0]);
-        BottomRightActionLabel.Text = RadialTargetResolver.DisplayName(_radialTargets[1]);
-        BottomActionLabel.Text = RadialTargetResolver.DisplayName(_radialTargets[2]);
-        BottomLeftActionLabel.Text = RadialTargetResolver.DisplayName(_radialTargets[3]);
-        LeftActionLabel.Text = RadialTargetResolver.DisplayName(_radialTargets[4]);
-        TopLeftActionLabel.Text = RadialTargetResolver.DisplayName(_radialTargets[5]);
-        TopActionLabel.Text = RadialTargetResolver.DisplayName(_radialTargets[6]);
-        TopRightActionLabel.Text = RadialTargetResolver.DisplayName(_radialTargets[7]);
-    }
-
-    private void AnimateRadialMenuIn()
-    {
-        RadialPanel.Opacity = 0;
-        var ease = new CubicEase { EasingMode = EasingMode.EaseOut };
-        var duration = new Duration(TimeSpan.FromMilliseconds(260));
-        RadialPanel.BeginAnimation(UIElement.OpacityProperty, new DoubleAnimation(0, 1, duration) { EasingFunction = ease });
-        RadialPanelScale.BeginAnimation(ScaleTransform.ScaleXProperty, new DoubleAnimation(0.96, 1, duration) { EasingFunction = ease });
-        RadialPanelScale.BeginAnimation(ScaleTransform.ScaleYProperty, new DoubleAnimation(0.96, 1, duration) { EasingFunction = ease });
-    }
-
-    private void Window_SourceInitialized(object? sender, EventArgs e)
-    {
-        var hwnd = new System.Windows.Interop.WindowInteropHelper(this).Handle;
-        if (hwnd == IntPtr.Zero)
-        {
-            return;
-        }
-
-        _windowSource = System.Windows.Interop.HwndSource.FromHwnd(hwnd);
-        _windowSource?.AddHook(WindowMessageHook);
-
-        var ncrp = NativeMethods.DwmNcrpDisabled;
-        NativeMethods.DwmSetWindowAttribute(hwnd, NativeMethods.DwmwaNcrenderingPolicy, ref ncrp, sizeof(int));
-
-        // 20 is the immersive dark-mode attribute on Windows 11 / 10 2004+;
-        // 19 covers Windows 10 1903–1909.
-        foreach (var attribute in new[] { NativeMethods.DwmwaUseImmersiveDarkMode, NativeMethods.DwmwaUseImmersiveDarkModeBefore20h1 })
-        {
-            var enabled = 1;
-            if (NativeMethods.DwmSetWindowAttribute(hwnd, attribute, ref enabled, sizeof(int)) == 0)
-            {
-                break;
-            }
-        }
-
-        ApplyWindowChromeTheme();
-    }
-
-    private IntPtr WindowMessageHook(
-        IntPtr hwnd,
-        int message,
-        IntPtr wParam,
-        IntPtr lParam,
-        ref bool handled)
-    {
-        if (message is NativeMethods.WmDisplayChange or
-            NativeMethods.WmDpiChanged or
-            NativeMethods.WmSettingChange or
-            NativeMethods.WmDeviceChange)
-        {
-            MonitorService.Invalidate();
-            _dragSnap.RefreshTarget();
-            _activeOverlay?.RefreshTargetFrame();
-            _dragPreview?.HideImmediately();
-        }
-
-        return IntPtr.Zero;
-    }
 
     private void Hotkey_TriggerPressed()
     {
@@ -404,13 +284,16 @@ public partial class MainWindow : Window
             : HotkeyNames.For(_hotkey.TriggerModifiers, _hotkey.TriggerVk, _settings.TriggerModifierSide);
         RebindHint.Text = capturing ? "Esc to cancel" : "rebind";
         TriggerCap.BorderBrush = capturing
-            ? (System.Windows.Media.Brush)FindResource("AccentBrush")
-            : (System.Windows.Media.Brush)FindResource("CapBrush");
+            ? (Brush)FindResource("SystemAccentColorPrimaryBrush")
+            : (Brush)FindResource("ControlStrokeColorDefaultBrush");
     }
 
     private void UpdateTriggerLabel()
     {
-        TriggerLabel.Text = HotkeyNames.For(_hotkey.TriggerModifiers, _hotkey.TriggerVk, _settings.TriggerModifierSide);
+        TriggerLabel.Text = HotkeyNames.For(
+            _hotkey.TriggerModifiers,
+            _hotkey.TriggerVk,
+            _settings.TriggerModifierSide);
     }
 
     private void CaptureTargetWindow()
@@ -473,33 +356,6 @@ public partial class MainWindow : Window
         ApplyRadialTarget(target);
     }
 
-    private void Wedge_MouseUp(object sender, MouseButtonEventArgs e)
-    {
-        if (sender is Path { Tag: string rawIndex } && int.TryParse(rawIndex, out var index) &&
-            index >= 0 && index < _radialTargets.Count)
-        {
-            ApplyRadialTarget(_radialTargets[index]);
-        }
-    }
-
-    private void Window_KeyDown(object sender, KeyEventArgs e)
-    {
-        var index = e.Key switch
-        {
-            Key.Right => 0,
-            Key.Down => 2,
-            Key.Left => 4,
-            Key.Up => 6,
-            _ => -1
-        };
-
-        if (index >= 0 && index < _radialTargets.Count)
-        {
-            ApplyRadialTarget(_radialTargets[index]);
-            e.Handled = true;
-        }
-    }
-
     private void ApplyRadialTarget(RadialTarget target)
     {
         var action = RadialTargetResolver.ActionOf(target);
@@ -511,6 +367,24 @@ public partial class MainWindow : Window
         }
 
         ApplyWindowAction(action.Value, RadialTargetResolver.CycleEnabledOf(target));
+    }
+
+    private void Window_KeyDown(object sender, KeyEventArgs e)
+    {
+        var action = e.Key switch
+        {
+            Key.Left => WindowAction.LeftHalf,
+            Key.Right => WindowAction.RightHalf,
+            Key.Up => WindowAction.TopHalf,
+            Key.Down => WindowAction.BottomHalf,
+            _ => (WindowAction?)null
+        };
+
+        if (action.HasValue)
+        {
+            ApplyWindowAction(action.Value, WindowCycleService.CanCycle(action.Value));
+            e.Handled = true;
+        }
     }
 
     private void ApplyWindowAction(WindowAction requestedAction, bool cycleEnabled)
@@ -558,8 +432,6 @@ public partial class MainWindow : Window
         _dragPreview?.HideImmediately();
         _dragSnap.UpdateSettings();
         UpdateTriggerLabel();
-        BuildRadialGeometry();
-        ApplyVisualSettings();
     }
 
     private void DragSnap_TargetChanged(DragSnapTarget target)
@@ -581,8 +453,6 @@ public partial class MainWindow : Window
 
     private void DragSnap_GestureEnded(DragSnapGesture gesture)
     {
-        // Placement can wait for a rejecting or restoring application. Keep the
-        // low-level hook responsive and let the next dispatcher turn do the work.
         Dispatcher.BeginInvoke(DispatcherPriority.Input, () =>
         {
             if (gesture.Reason == DragSnapEndReason.Released && gesture.Target is { } target)
@@ -603,62 +473,5 @@ public partial class MainWindow : Window
                 TargetStatus.Text = $"  ·  {message}";
             }
         });
-    }
-
-    private void ApplyVisualSettings()
-    {
-        Resources["AccentBrush"] = CreateBrush(_settings.AccentColor, "#3D9BFF");
-        Resources["SectorFillBrush"] = CreateBrush(_settings.RadialSectorFill, "#7A3D9BFF");
-        Resources["SectorStrokeBrush"] = CreateBrush(_settings.RadialSectorStroke, "#F03D9BFF");
-        RadialRing.Fill = CreateBrush(_settings.RadialRingFill, "#B61B212B");
-
-        var light = _settings.IsLightAppearance;
-        var surface = CreateBrush(light ? "#F4F7FB" : "#101216", "#101216");
-        Resources["WindowSurfaceBrush"] = surface;
-        Resources["TitleBarBrush"] = CreateBrush(light ? "#E9EFF6" : "#151A23", "#151A23");
-        Resources["WindowBorderBrush"] = CreateBrush(light ? "#D2DCE8" : "#2A3444", "#2A3444");
-        Resources["ChromeTextBrush"] = CreateBrush(light ? "#3D4B5E" : "#AAB6C8", "#AAB6C8");
-        Resources["ChromeMutedBrush"] = CreateBrush(light ? "#68778A" : "#6F7B8A", "#6F7B8A");
-        Resources["WindowControlHoverBrush"] = CreateBrush(light ? "#DCE5EF" : "#222C3A", "#222C3A");
-        Background = surface;
-        Foreground = CreateBrush(light ? "#16202D" : "#F0F4FA", "#F0F4FA");
-        SettingsHost.Background = surface;
-        ApplyWindowChromeTheme();
-    }
-
-    private void ApplyWindowChromeTheme()
-    {
-        var hwnd = new System.Windows.Interop.WindowInteropHelper(this).Handle;
-        if (hwnd == IntPtr.Zero)
-        {
-            return;
-        }
-
-        var light = _settings.IsLightAppearance;
-        var surfaceColor = light ? 0x00FBF7F4 : 0x00161210;
-        var titleTextColor = light ? 0x002D2016 : 0x00FAF4F0;
-        NativeMethods.DwmSetWindowAttribute(hwnd, NativeMethods.DwmwaBorderColor, ref surfaceColor, sizeof(int));
-        NativeMethods.DwmSetWindowAttribute(hwnd, NativeMethods.DwmwaCaptionColor, ref surfaceColor, sizeof(int));
-        NativeMethods.DwmSetWindowAttribute(hwnd, NativeMethods.DwmwaTextColor, ref titleTextColor, sizeof(int));
-    }
-
-    private static System.Windows.Media.Brush CreateBrush(string value, string fallback)
-    {
-        try
-        {
-            if (new System.Windows.Media.BrushConverter().ConvertFromString(value) is System.Windows.Media.Brush brush)
-            {
-                brush.Freeze();
-                return brush;
-            }
-        }
-        catch
-        {
-            // Settings.cs normalizes persisted colors. Keep the UI safe if a
-            // value is edited in memory before it is saved.
-        }
-
-        return new System.Windows.Media.BrushConverter().ConvertFromString(fallback) as System.Windows.Media.Brush
-            ?? System.Windows.Media.Brushes.Transparent;
     }
 }

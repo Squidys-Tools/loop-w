@@ -1,0 +1,34 @@
+<UserControl x:Class="LoopW.WindowPreviewSurface"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Width="100"
+             Height="100"
+             Background="Transparent"
+             HorizontalContentAlignment="Stretch"
+             VerticalContentAlignment="Stretch"
+             Opacity="0"
+             RenderTransformOrigin="0.5,0.5"
+             UseLayoutRounding="True"
+             SnapsToDevicePixels="True">
+    <UserControl.RenderTransform>
+        <ScaleTransform ScaleX="0.98" ScaleY="0.98" />
+    </UserControl.RenderTransform>
+    <Border x:Name="SurfaceElement"
+            Background="Transparent"
+            BorderThickness="0"
+            CornerRadius="14">
+        <Grid>
+            <Image x:Name="BackdropImage"
+                   Stretch="Fill"
+                   HorizontalAlignment="Left"
+                   VerticalAlignment="Top">
+                <Image.Effect>
+                    <BlurEffect Radius="20" />
+                </Image.Effect>
+            </Image>
+            <Border x:Name="SurfaceTint"
+                    Background="#30101827"
+                    CornerRadius="11" />
+        </Grid>
+    </Border>
+</UserControl>

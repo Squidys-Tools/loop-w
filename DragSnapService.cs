@@ -307,7 +307,7 @@ internal sealed class DragSnapService : IDisposable
         }
 
         var action = DragSnapGeometry.ActionOf(zone);
-        target = new DragSnapTarget(action, WindowFrameMath.ZoneFrame(info.Work, action));
+        target = new DragSnapTarget(action, WindowFrameMath.ZoneFrame(monitor.Work, action));
         return true;
     }
 

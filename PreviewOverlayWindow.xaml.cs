@@ -23,56 +23,10 @@ public partial class PreviewOverlayWindow : Window
     {
         InitializeComponent();
         _settings = settings;
-        _blurMargin = settings.PreviewPadding;
-        PreviewSurface.CornerRadius = new CornerRadius(settings.PreviewCornerRadius);
-        SurfaceTint.CornerRadius = new CornerRadius(Math.Max(1, settings.PreviewCornerRadius - 3));
-        PreviewSurface.BorderBrush = CreateBrush(settings.PreviewBorderColor, "#B8007AFF");
-        // Keep a visible edge even for settings files written before the dark-glass
-        // preview became the default.
-        PreviewSurface.BorderThickness = new Thickness(Math.Max(2, settings.PreviewBorderWidth));
-
-        if (_settings.IsLightAppearance)
-        {
-            ApplyLightAppearance();
-        }
-        else
-        {
-            ApplyDarkAppearance();
-        }
+        PreviewSurface.ApplySettings(settings);
+        _blurMargin = PreviewSurface.BlurMargin;
 
         SourceInitialized += PreviewOverlayWindow_SourceInitialized;
-    }
-
-    private void ApplyLightAppearance()
-    {
-        PreviewSurface.BorderBrush = CreateBrush("#8CC6D4DF", "#8CC6D4DF");
-        PreviewSurface.BorderThickness = new Thickness(1);
-        PreviewSurface.Effect = new System.Windows.Media.Effects.DropShadowEffect
-        {
-            BlurRadius = 18,
-            Direction = 270,
-            ShadowDepth = 4,
-            Opacity = 0.2,
-            Color = System.Windows.Media.Color.FromRgb(0x40, 0x51, 0x5A)
-        };
-        BackdropImage.Effect = new System.Windows.Media.Effects.BlurEffect { Radius = 20 };
-        SurfaceTint.Background = CreateBrush("#30FFFFFF", "#30FFFFFF");
-    }
-
-    private void ApplyDarkAppearance()
-    {
-        PreviewSurface.BorderBrush = CreateBrush("#B840515A", "#B840515A");
-        PreviewSurface.BorderThickness = new Thickness(1);
-        PreviewSurface.Effect = new System.Windows.Media.Effects.DropShadowEffect
-        {
-            BlurRadius = 18,
-            Direction = 270,
-            ShadowDepth = 4,
-            Opacity = 0.32,
-            Color = System.Windows.Media.Color.FromRgb(0x00, 0x00, 0x00)
-        };
-        BackdropImage.Effect = new System.Windows.Media.Effects.BlurEffect { Radius = 20 };
-        SurfaceTint.Background = CreateBrush("#30101827", "#30101827");
     }
 
     private void PreviewOverlayWindow_SourceInitialized(object? sender, EventArgs e)
@@ -120,7 +74,7 @@ public partial class PreviewOverlayWindow : Window
             CaptureFullBackdrop(workArea, dpiX, dpiY);
         }
 
-        BackdropImage.Clip = null;
+        PreviewSurface.BackdropImageElement.Clip = null;
         UpdateBackdrop(frame, workArea, dpiX, dpiY, localX, localY, targetWidth, targetHeight);
 
         if (!IsVisible)
@@ -199,7 +153,7 @@ public partial class PreviewOverlayWindow : Window
     {
         if (_backdrop == null)
         {
-            BackdropImage.Source = null;
+            PreviewSurface.BackdropImageElement.Source = null;
             return;
         }
 
@@ -215,19 +169,21 @@ public partial class PreviewOverlayWindow : Window
 
         try
         {
-            BackdropImage.Source = new CroppedBitmap(_backdrop, new Int32Rect(x, y, width, height));
+            PreviewSurface.BackdropImageElement.Source = new CroppedBitmap(_backdrop, new Int32Rect(x, y, width, height));
 
             // Size and position the image to the crop (physical px mapped to DIU) so
             // Stretch="Fill" is 1:1 and edge crops that lose their blur margin can't
             // shift or stretch the backdrop relative to the screen region.
             var imageLeft = (workArea.Left + x) * scaleX - _workLeft - localX;
             var imageTop = (workArea.Top + y) * scaleY - _workTop - localY;
-            BackdropImage.Width = width * scaleX;
-            BackdropImage.Height = height * scaleY;
-            BackdropImage.Margin = new Thickness(imageLeft, imageTop, 0, 0);
+            PreviewSurface.BackdropImageElement.Width = width * scaleX;
+            PreviewSurface.BackdropImageElement.Height = height * scaleY;
+            PreviewSurface.BackdropImageElement.Margin = new Thickness(imageLeft, imageTop, 0, 0);
 
-            BackdropImage.Clip = new RectangleGeometry(
-                new Rect(-imageLeft, -imageTop, Math.Max(targetWidth, 1), Math.Max(targetHeight, 1)), 11, 11);
+            PreviewSurface.BackdropImageElement.Clip = new RectangleGeometry(
+                new Rect(-imageLeft, -imageTop, Math.Max(targetWidth, 1), Math.Max(targetHeight, 1)),
+                PreviewSurface.BackdropClipRadius,
+                PreviewSurface.BackdropClipRadius);
         }
         catch
         {
@@ -276,22 +232,4 @@ public partial class PreviewOverlayWindow : Window
         scale.BeginAnimation(ScaleTransform.ScaleYProperty, new DoubleAnimation(0.98, 1, duration) { EasingFunction = ease });
     }
 
-    private static System.Windows.Media.Brush CreateBrush(string value, string fallback)
-    {
-        try
-        {
-            if (new System.Windows.Media.BrushConverter().ConvertFromString(value) is System.Windows.Media.Brush brush)
-            {
-                brush.Freeze();
-                return brush;
-            }
-        }
-        catch
-        {
-            // Invalid in-memory values use a safe fallback.
-        }
-
-        return new System.Windows.Media.BrushConverter().ConvertFromString(fallback) as System.Windows.Media.Brush
-            ?? System.Windows.Media.Brushes.Transparent;
-    }
 }
