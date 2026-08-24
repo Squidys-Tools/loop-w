@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.Win32;
@@ -12,6 +13,7 @@ namespace LoopW;
 
 public sealed class AppSettings
 {
+    private static readonly JsonSerializerOptions SaveOptions = new() { WriteIndented = true };
     private static readonly string SettingsPath = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "LoopW",
@@ -127,17 +129,54 @@ public sealed class AppSettings
         return defaults;
     }
 
-    public void Save()
+    public bool Save()
     {
+        string? temporaryPath = null;
         try
         {
             Normalize();
-            Directory.CreateDirectory(Path.GetDirectoryName(SettingsPath)!);
-            File.WriteAllText(SettingsPath, JsonSerializer.Serialize(this, new JsonSerializerOptions { WriteIndented = true }));
+            var directory = Path.GetDirectoryName(SettingsPath)!;
+            Directory.CreateDirectory(directory);
+
+            var serialized = JsonSerializer.Serialize(this, SaveOptions);
+            temporaryPath = Path.Combine(
+                directory,
+                $"{Path.GetFileName(SettingsPath)}.{Guid.NewGuid():N}.tmp");
+
+            using (var stream = new FileStream(
+                       temporaryPath,
+                       FileMode.CreateNew,
+                       FileAccess.Write,
+                       FileShare.None,
+                       bufferSize: 4096,
+                       options: FileOptions.WriteThrough))
+            using (var writer = new StreamWriter(stream, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false)))
+            {
+                writer.Write(serialized);
+            }
+
+            File.Move(temporaryPath, SettingsPath, overwrite: true);
+            return true;
         }
         catch
         {
-            // persistence is best-effort; the binding still works for this session
+            // The previous complete settings file remains in place when the
+            // temporary write or replacement fails.
+            return false;
+        }
+        finally
+        {
+            if (temporaryPath is not null)
+            {
+                try
+                {
+                    File.Delete(temporaryPath);
+                }
+                catch
+                {
+                    // A failed cleanup does not change the save result.
+                }
+            }
         }
     }
 

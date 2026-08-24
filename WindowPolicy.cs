@@ -1,6 +1,7 @@
 using System;
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Collections.Generic;
 
 namespace LoopW;
 
@@ -27,10 +28,20 @@ internal readonly record struct WindowPolicyDecision(
 internal static class WindowPolicy
 {
     private static AppSettings _settings = new();
+    private static HashSet<string> _excludedExecutablePaths = new(StringComparer.OrdinalIgnoreCase);
+    private static HashSet<string> _excludedProcessNames = new(StringComparer.OrdinalIgnoreCase);
 
-    public static void Configure(AppSettings settings) => _settings = settings;
+    public static void Configure(AppSettings settings)
+    {
+        _settings = settings;
+        RebuildExclusionLookups(settings);
+    }
 
-    public static void UpdateSettings(AppSettings settings) => _settings = settings;
+    public static void UpdateSettings(AppSettings settings)
+    {
+        _settings = settings;
+        RebuildExclusionLookups(settings);
+    }
 
     public static bool TryAuthorizeAction(
         IntPtr window,
@@ -108,7 +119,7 @@ internal static class WindowPolicy
             return Denied(WindowRestriction.Owned, "Owned utility windows are not action targets.");
         }
 
-        if (IsExcludedBySettings(window, processId))
+        if (IsExcludedBySettings(processId))
         {
             return Denied(WindowRestriction.Excluded, "The target application is excluded in LoopW settings.");
         }
@@ -123,9 +134,9 @@ internal static class WindowPolicy
             isBorderlessFullscreen);
     }
 
-    private static bool IsExcludedBySettings(IntPtr window, uint processId)
+    private static bool IsExcludedBySettings(uint processId)
     {
-        if (_settings.ExcludedExecutablePaths.Count == 0 && _settings.ExcludedProcessNames.Count == 0)
+        if (_excludedExecutablePaths.Count == 0 && _excludedProcessNames.Count == 0)
         {
             return false;
         }
@@ -153,10 +164,8 @@ internal static class WindowPolicy
                 // The path check above remains useful when the name is denied.
             }
 
-            return (!string.IsNullOrWhiteSpace(path) && _settings.ExcludedExecutablePaths.Exists(
-                       candidate => string.Equals(candidate, path, StringComparison.OrdinalIgnoreCase))) ||
-                (!string.IsNullOrWhiteSpace(processName) && _settings.ExcludedProcessNames.Exists(
-                    candidate => string.Equals(candidate, processName, StringComparison.OrdinalIgnoreCase)));
+            return (!string.IsNullOrWhiteSpace(path) && _excludedExecutablePaths.Contains(path)) ||
+                (!string.IsNullOrWhiteSpace(processName) && _excludedProcessNames.Contains(processName));
         }
         catch (Win32Exception)
         {
@@ -170,6 +179,16 @@ internal static class WindowPolicy
         {
             return false;
         }
+    }
+
+    private static void RebuildExclusionLookups(AppSettings settings)
+    {
+        _excludedExecutablePaths = new HashSet<string>(
+            settings.ExcludedExecutablePaths ?? new List<string>(),
+            StringComparer.OrdinalIgnoreCase);
+        _excludedProcessNames = new HashSet<string>(
+            settings.ExcludedProcessNames ?? new List<string>(),
+            StringComparer.OrdinalIgnoreCase);
     }
 
     private static bool IsBorderlessFullscreen(IntPtr window, long style)

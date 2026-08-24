@@ -61,9 +61,9 @@ window action behaves correctly on every Windows setup.
 
 ### Make persistence failures visible
 
-- [ ] Write `settings.json` through a temporary file and replace the old file
+- [x] Write `settings.json` through a temporary file and replace the old file
   only after the write succeeds.
-- [ ] Return save results to the settings UI instead of treating persistence as
+- [x] Return save results to the settings UI instead of treating persistence as
   best-effort and silent.
 - [ ] Keep the edited control value and the saved value in sync when Windows or
   the filesystem rejects a change.
