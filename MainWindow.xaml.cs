@@ -238,10 +238,12 @@ public partial class MainWindow : FluentWindow
         // rebind never wipes out persisted keybinds.
         _settings.TriggerModifiers = modifiers;
         _settings.TriggerVk = vk;
-        _settings.Save();
+        var saved = _settings.Save();
 
         SetCapturingUi(false);
-        TargetStatus.Text = $"  ·  Trigger set to {HotkeyNames.For(modifiers, vk, _settings.TriggerModifierSide)}";
+        TargetStatus.Text = saved
+            ? $"  ·  Trigger set to {HotkeyNames.For(modifiers, vk, _settings.TriggerModifierSide)}"
+            : "  ·  Trigger updated for this session, but could not be saved";
         Keyboard.ClearFocus();
     }
 

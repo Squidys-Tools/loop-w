@@ -18,6 +18,13 @@ public partial class PreviewOverlayWindow : Window
     private double _workWidth;
     private double _workHeight;
     private BitmapSource? _backdrop;
+    private NativeMethods.Rect _lastFrame;
+    private NativeMethods.Rect _lastWorkArea;
+    private WindowAction? _lastAction;
+    private double _lastDpiX;
+    private double _lastDpiY;
+    private bool _hasRenderedFrame;
+    private long _transitionVersion;
 
     public PreviewOverlayWindow(AppSettings settings)
     {
@@ -52,6 +59,16 @@ public partial class PreviewOverlayWindow : Window
             scaleY = 96.0 / dpiY;
         }
 
+        if (IsVisible && _hasRenderedFrame &&
+            action == _lastAction &&
+            SameRect(frame, _lastFrame) &&
+            SameRect(workArea, _lastWorkArea) &&
+            Math.Abs(dpiX - _lastDpiX) < 0.01 &&
+            Math.Abs(dpiY - _lastDpiY) < 0.01)
+        {
+            return;
+        }
+
         EnsureWindowCovering(workArea, scaleX, scaleY);
 
         var localX = frame.Left * scaleX - _workLeft + PreviewScreenGap;
@@ -77,6 +94,13 @@ public partial class PreviewOverlayWindow : Window
         PreviewSurface.BackdropImageElement.Clip = null;
         UpdateBackdrop(frame, workArea, dpiX, dpiY, localX, localY, targetWidth, targetHeight);
 
+        _lastFrame = frame;
+        _lastWorkArea = workArea;
+        _lastAction = action;
+        _lastDpiX = dpiX;
+        _lastDpiY = dpiY;
+        _hasRenderedFrame = true;
+
         if (!IsVisible)
         {
             PreviewSurface.BeginAnimation(Canvas.LeftProperty, null);
@@ -89,28 +113,116 @@ public partial class PreviewOverlayWindow : Window
             Canvas.SetTop(PreviewSurface, localY);
             PreviewSurface.Width = targetWidth;
             PreviewSurface.Height = targetHeight;
+            PreviewSurface.SurfaceScaleTransform.ScaleX = 1;
+            PreviewSurface.SurfaceScaleTransform.ScaleY = 1;
+            PreviewSurface.SurfaceTranslateTransform.X = 0;
+            PreviewSurface.SurfaceTranslateTransform.Y = 0;
             Show();
             AnimateSurfaceIn();
             return;
         }
 
-        var oldLeft = (double)PreviewSurface.GetValue(Canvas.LeftProperty);
-        var oldTop = (double)PreviewSurface.GetValue(Canvas.TopProperty);
+        var oldLeft = Canvas.GetLeft(PreviewSurface);
+        var oldTop = Canvas.GetTop(PreviewSurface);
         var oldWidth = PreviewSurface.Width;
         var oldHeight = PreviewSurface.Height;
+        var oldScaleX = PreviewSurface.SurfaceScaleTransform.ScaleX;
+        var oldScaleY = PreviewSurface.SurfaceScaleTransform.ScaleY;
+        var oldTranslateX = PreviewSurface.SurfaceTranslateTransform.X;
+        var oldTranslateY = PreviewSurface.SurfaceTranslateTransform.Y;
+        var oldVisualWidth = oldWidth * oldScaleX;
+        var oldVisualHeight = oldHeight * oldScaleY;
+        var oldVisualLeft = oldLeft + (oldWidth - oldVisualWidth) / 2 + oldTranslateX;
+        var oldVisualTop = oldTop + (oldHeight - oldVisualHeight) / 2 + oldTranslateY;
+
+        var oldCenterX = oldVisualLeft + oldVisualWidth / 2;
+        var oldCenterY = oldVisualTop + oldVisualHeight / 2;
+        var targetCenterX = localX + targetWidth / 2;
+        var targetCenterY = localY + targetHeight / 2;
+
+        PreviewSurface.BeginAnimation(Canvas.LeftProperty, null);
+        PreviewSurface.BeginAnimation(Canvas.TopProperty, null);
+        PreviewSurface.BeginAnimation(FrameworkElement.WidthProperty, null);
+        PreviewSurface.BeginAnimation(FrameworkElement.HeightProperty, null);
+        Canvas.SetLeft(PreviewSurface, localX);
+        Canvas.SetTop(PreviewSurface, localY);
+        PreviewSurface.Width = targetWidth;
+        PreviewSurface.Height = targetHeight;
+
+        PreviewSurface.SurfaceScaleTransform.ScaleX = oldVisualWidth / targetWidth;
+        PreviewSurface.SurfaceScaleTransform.ScaleY = oldVisualHeight / targetHeight;
+        PreviewSurface.SurfaceTranslateTransform.X = oldCenterX - targetCenterX;
+        PreviewSurface.SurfaceTranslateTransform.Y = oldCenterY - targetCenterY;
 
         var ease = new CubicEase { EasingMode = EasingMode.EaseOut };
         var duration = new Duration(TimeSpan.FromMilliseconds(140));
-        PreviewSurface.BeginAnimation(Canvas.LeftProperty, new DoubleAnimation(oldLeft, localX, duration) { EasingFunction = ease });
-        PreviewSurface.BeginAnimation(Canvas.TopProperty, new DoubleAnimation(oldTop, localY, duration) { EasingFunction = ease });
-        PreviewSurface.BeginAnimation(FrameworkElement.WidthProperty, new DoubleAnimation(oldWidth, targetWidth, duration) { EasingFunction = ease });
-        PreviewSurface.BeginAnimation(FrameworkElement.HeightProperty, new DoubleAnimation(oldHeight, targetHeight, duration) { EasingFunction = ease });
+        var transitionVersion = ++_transitionVersion;
+        PreviewSurface.SetTransitionRendering(true);
+
+        var scaleXAnimation = new DoubleAnimation(
+            PreviewSurface.SurfaceScaleTransform.ScaleX,
+            1,
+            duration)
+        {
+            EasingFunction = ease,
+            FillBehavior = FillBehavior.Stop
+        };
+        scaleXAnimation.Completed += (_, _) => CompleteTransition(transitionVersion);
+        PreviewSurface.SurfaceScaleTransform.BeginAnimation(
+            ScaleTransform.ScaleXProperty,
+            scaleXAnimation,
+            HandoffBehavior.SnapshotAndReplace);
+        PreviewSurface.SurfaceScaleTransform.BeginAnimation(
+            ScaleTransform.ScaleYProperty,
+            new DoubleAnimation(
+                PreviewSurface.SurfaceScaleTransform.ScaleY,
+                1,
+                duration)
+            {
+                EasingFunction = ease,
+                FillBehavior = FillBehavior.Stop
+            },
+            HandoffBehavior.SnapshotAndReplace);
+        PreviewSurface.SurfaceTranslateTransform.BeginAnimation(
+            TranslateTransform.XProperty,
+            new DoubleAnimation(
+                PreviewSurface.SurfaceTranslateTransform.X,
+                0,
+                duration)
+            {
+                EasingFunction = ease,
+                FillBehavior = FillBehavior.Stop
+            },
+            HandoffBehavior.SnapshotAndReplace);
+        PreviewSurface.SurfaceTranslateTransform.BeginAnimation(
+            TranslateTransform.YProperty,
+            new DoubleAnimation(
+                PreviewSurface.SurfaceTranslateTransform.Y,
+                0,
+                duration)
+            {
+                EasingFunction = ease,
+                FillBehavior = FillBehavior.Stop
+            },
+            HandoffBehavior.SnapshotAndReplace);
     }
 
     internal void HideImmediately(bool destroy = false)
     {
+        _transitionVersion++;
         _backdrop = null;
+        _hasRenderedFrame = false;
+        _lastAction = null;
+        PreviewSurface.SetTransitionRendering(false);
         PreviewSurface.BeginAnimation(UIElement.OpacityProperty, null);
+        PreviewSurface.SurfaceScaleTransform.BeginAnimation(ScaleTransform.ScaleXProperty, null);
+        PreviewSurface.SurfaceScaleTransform.BeginAnimation(ScaleTransform.ScaleYProperty, null);
+        PreviewSurface.SurfaceTranslateTransform.BeginAnimation(TranslateTransform.XProperty, null);
+        PreviewSurface.SurfaceTranslateTransform.BeginAnimation(TranslateTransform.YProperty, null);
+        PreviewSurface.SurfaceScaleTransform.ScaleX = 1;
+        PreviewSurface.SurfaceScaleTransform.ScaleY = 1;
+        PreviewSurface.SurfaceTranslateTransform.X = 0;
+        PreviewSurface.SurfaceTranslateTransform.Y = 0;
         PreviewSurface.Opacity = 1;
 
         if (destroy)
@@ -221,15 +333,63 @@ public partial class PreviewOverlayWindow : Window
 
     private void AnimateSurfaceIn()
     {
-        PreviewSurface.Opacity = 0;
-        var scale = (ScaleTransform)PreviewSurface.RenderTransform;
-        scale.ScaleX = 0.98;
-        scale.ScaleY = 0.98;
+        var transitionVersion = ++_transitionVersion;
+        PreviewSurface.SetTransitionRendering(true);
+        PreviewSurface.Opacity = 1;
+        var scale = PreviewSurface.SurfaceScaleTransform;
+        scale.ScaleX = 1;
+        scale.ScaleY = 1;
+        PreviewSurface.SurfaceTranslateTransform.X = 0;
+        PreviewSurface.SurfaceTranslateTransform.Y = 0;
         var ease = new CubicEase { EasingMode = EasingMode.EaseOut };
         var duration = new Duration(TimeSpan.FromMilliseconds(180));
-        PreviewSurface.BeginAnimation(UIElement.OpacityProperty, new DoubleAnimation(0, 1, duration) { EasingFunction = ease });
-        scale.BeginAnimation(ScaleTransform.ScaleXProperty, new DoubleAnimation(0.98, 1, duration) { EasingFunction = ease });
-        scale.BeginAnimation(ScaleTransform.ScaleYProperty, new DoubleAnimation(0.98, 1, duration) { EasingFunction = ease });
+        var opacityAnimation = new DoubleAnimation(0, 1, duration)
+        {
+            EasingFunction = ease,
+            FillBehavior = FillBehavior.Stop
+        };
+        opacityAnimation.Completed += (_, _) => CompleteTransition(transitionVersion);
+        PreviewSurface.BeginAnimation(UIElement.OpacityProperty, opacityAnimation);
+        scale.BeginAnimation(
+            ScaleTransform.ScaleXProperty,
+            new DoubleAnimation(0.98, 1, duration)
+            {
+                EasingFunction = ease,
+                FillBehavior = FillBehavior.Stop
+            },
+            HandoffBehavior.SnapshotAndReplace);
+        scale.BeginAnimation(
+            ScaleTransform.ScaleYProperty,
+            new DoubleAnimation(0.98, 1, duration)
+            {
+                EasingFunction = ease,
+                FillBehavior = FillBehavior.Stop
+            },
+            HandoffBehavior.SnapshotAndReplace);
     }
+
+    private void CompleteTransition(long transitionVersion)
+    {
+        if (transitionVersion != _transitionVersion || !IsVisible)
+        {
+            return;
+        }
+
+        PreviewSurface.BeginAnimation(UIElement.OpacityProperty, null);
+        PreviewSurface.SurfaceScaleTransform.BeginAnimation(ScaleTransform.ScaleXProperty, null);
+        PreviewSurface.SurfaceScaleTransform.BeginAnimation(ScaleTransform.ScaleYProperty, null);
+        PreviewSurface.SurfaceTranslateTransform.BeginAnimation(TranslateTransform.XProperty, null);
+        PreviewSurface.SurfaceTranslateTransform.BeginAnimation(TranslateTransform.YProperty, null);
+        PreviewSurface.Opacity = 1;
+        PreviewSurface.SurfaceScaleTransform.ScaleX = 1;
+        PreviewSurface.SurfaceScaleTransform.ScaleY = 1;
+        PreviewSurface.SurfaceTranslateTransform.X = 0;
+        PreviewSurface.SurfaceTranslateTransform.Y = 0;
+        PreviewSurface.SetTransitionRendering(false);
+    }
+
+    private static bool SameRect(NativeMethods.Rect left, NativeMethods.Rect right) =>
+        left.Left == right.Left && left.Top == right.Top &&
+        left.Right == right.Right && left.Bottom == right.Bottom;
 
 }

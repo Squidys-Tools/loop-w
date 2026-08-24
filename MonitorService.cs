@@ -19,26 +19,59 @@ internal readonly record struct MonitorSnapshot(
 
 internal static class MonitorService
 {
+    private static readonly object CacheGate = new();
+    private static readonly Dictionary<IntPtr, MonitorSnapshot> SnapshotCache = new();
     private static AppSettings _settings = new();
     private static long _generation;
+    private static MonitorSnapshot[]? _allMonitors;
 
-    public static long Generation => _generation;
+    public static long Generation
+    {
+        get
+        {
+            lock (CacheGate)
+            {
+                return _generation;
+            }
+        }
+    }
 
-    public static MonitorMoveSizePolicy MoveSizePolicy => _settings.MonitorMoveSizePolicy;
+    public static MonitorMoveSizePolicy MoveSizePolicy
+    {
+        get
+        {
+            lock (CacheGate)
+            {
+                return _settings.MonitorMoveSizePolicy;
+            }
+        }
+    }
 
     public static void Configure(AppSettings settings)
     {
-        _settings = settings;
-        Invalidate();
+        lock (CacheGate)
+        {
+            _settings = settings;
+            InvalidateLocked();
+        }
     }
 
     public static void UpdateSettings(AppSettings settings)
     {
-        _settings = settings;
-        Invalidate();
+        lock (CacheGate)
+        {
+            _settings = settings;
+            InvalidateLocked();
+        }
     }
 
-    public static void Invalidate() => _generation++;
+    public static void Invalidate()
+    {
+        lock (CacheGate)
+        {
+            InvalidateLocked();
+        }
+    }
 
     public static bool TryGetForWindow(IntPtr window, out MonitorSnapshot snapshot)
     {
@@ -60,21 +93,30 @@ internal static class MonitorService
 
     public static IReadOnlyList<MonitorSnapshot> GetAll()
     {
-        var monitors = new List<MonitorSnapshot>();
-        NativeMethods.EnumDisplayMonitors(IntPtr.Zero, IntPtr.Zero, (monitor, _, _, _) =>
+        lock (CacheGate)
         {
-            if (TryRead(monitor, out var snapshot))
+            if (_allMonitors is not null)
             {
-                monitors.Add(snapshot);
+                return _allMonitors;
             }
 
-            return true;
-        }, IntPtr.Zero);
+            var monitors = new List<MonitorSnapshot>();
+            NativeMethods.EnumDisplayMonitors(IntPtr.Zero, IntPtr.Zero, (monitor, _, _, _) =>
+            {
+                if (TryRead(monitor, out var snapshot))
+                {
+                    monitors.Add(snapshot);
+                }
 
-        return monitors
-            .OrderBy(snapshot => snapshot.Work.Left)
-            .ThenBy(snapshot => snapshot.Work.Top)
-            .ToArray();
+                return true;
+            }, IntPtr.Zero);
+
+            _allMonitors = monitors
+                .OrderBy(snapshot => snapshot.Work.Left)
+                .ThenBy(snapshot => snapshot.Work.Top)
+                .ToArray();
+            return _allMonitors;
+        }
     }
 
     internal static NativeMethods.Rect ApplyPadding(
@@ -136,22 +178,38 @@ internal static class MonitorService
             return false;
         }
 
-        var info = new NativeMethods.MonitorInfo
+        lock (CacheGate)
         {
-            Size = Marshal.SizeOf<NativeMethods.MonitorInfo>()
-        };
-        if (!NativeMethods.GetMonitorInfo(monitor, ref info))
-        {
-            return false;
-        }
+            if (SnapshotCache.TryGetValue(monitor, out snapshot))
+            {
+                return true;
+            }
 
-        NativeMethods.TryGetMonitorDpi(monitor, out var dpiX, out var dpiY);
-        snapshot = new MonitorSnapshot(
-            info.Monitor,
-            ApplyPadding(info.Work, _settings),
-            NormalizeDpi(dpiX),
-            NormalizeDpi(dpiY));
-        return true;
+            var info = new NativeMethods.MonitorInfo
+            {
+                Size = Marshal.SizeOf<NativeMethods.MonitorInfo>()
+            };
+            if (!NativeMethods.GetMonitorInfo(monitor, ref info))
+            {
+                return false;
+            }
+
+            NativeMethods.TryGetMonitorDpi(monitor, out var dpiX, out var dpiY);
+            snapshot = new MonitorSnapshot(
+                info.Monitor,
+                ApplyPadding(info.Work, _settings),
+                NormalizeDpi(dpiX),
+                NormalizeDpi(dpiY));
+            SnapshotCache[monitor] = snapshot;
+            return true;
+        }
+    }
+
+    private static void InvalidateLocked()
+    {
+        _generation++;
+        SnapshotCache.Clear();
+        _allMonitors = null;
     }
 
     private static int Scale(int value, double scale)

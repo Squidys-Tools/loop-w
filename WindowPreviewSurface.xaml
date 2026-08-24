@@ -11,7 +11,10 @@
              UseLayoutRounding="True"
              SnapsToDevicePixels="True">
     <UserControl.RenderTransform>
-        <ScaleTransform ScaleX="0.98" ScaleY="0.98" />
+        <TransformGroup>
+            <ScaleTransform ScaleX="0.98" ScaleY="0.98" />
+            <TranslateTransform />
+        </TransformGroup>
     </UserControl.RenderTransform>
     <Border x:Name="SurfaceElement"
             Background="Transparent"

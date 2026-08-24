@@ -528,11 +528,9 @@ public partial class SettingsWindow : UserControl
         _settings.RadialSectorStroke = SectorStrokeText.Text;
         _settings.RadialRingFill = RingFillText.Text;
         _settings.PreviewBorderColor = PreviewBorderText.Text;
-        _settings.Save();
         RefreshThemeFields();
         ApplyThemeResources();
-        NotifySettingsChanged();
-        SetStatus("Custom colors saved");
+        SaveSettings("Custom colors saved");
     }
 
     private void Add_Click(object sender, RoutedEventArgs e)
@@ -788,7 +786,7 @@ public partial class SettingsWindow : UserControl
     private void SaveSettings(string status)
     {
         _settings.Keybinds = _rows.Select(row => row.Keybind).ToList();
-        _settings.Save();
+        var saved = _settings.Save();
         _hotkey.SetBinding(_settings.TriggerModifiers, _settings.TriggerVk);
         _hotkey.SetTriggerBehavior(
             _settings.TriggerModifierSide,
@@ -803,10 +801,10 @@ public partial class SettingsWindow : UserControl
         RefreshTriggerLabel();
         RefreshThemeFields();
         UpdateKeybindEmptyState();
-        SetStatus(status);
-        if (status is "Trigger updated" or "Keybind added" or "Keybind rebound" or "Keybind deleted" ||
+        SetStatus(saved ? status : "Could not save settings", isError: !saved);
+        if (saved && (status is "Trigger updated" or "Keybind added" or "Keybind rebound" or "Keybind deleted" ||
             status.Contains("reset", StringComparison.OrdinalIgnoreCase) ||
-            status.Contains("style applied", StringComparison.OrdinalIgnoreCase))
+            status.Contains("style applied", StringComparison.OrdinalIgnoreCase)))
         {
             ShowFeedback("LoopW", status);
         }
