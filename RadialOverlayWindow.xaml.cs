@@ -120,12 +120,6 @@ public partial class RadialOverlayWindow : Window
             return;
         }
 
-        if (!_settings.CursorInteractionEnabled)
-        {
-            SetSelection(null);
-            return;
-        }
-
         UpdateSelection(CursorToLocal(cursor));
     }
 
@@ -195,6 +189,12 @@ public partial class RadialOverlayWindow : Window
 
     private void UpdateSelection(Point point)
     {
+        if (!_settings.CursorInteractionEnabled)
+        {
+            UpdateHoverSelection(point);
+            return;
+        }
+
         var pointerMoved = !_lastPointerPoint.HasValue || _lastPointerPoint.Value != point;
         _lastPointerPoint = point;
         if (pointerMoved && _selected is not null && _settings.PreviewEnabled)
@@ -224,13 +224,29 @@ public partial class RadialOverlayWindow : Window
         SetSelection(null);
     }
 
-    private void Overlay_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+    private void UpdateHoverSelection(Point point)
     {
-        if (!_settings.CursorInteractionEnabled)
+        var slot = MenuSurface.SlotAt(point);
+        if (slot is int index && index < _slotTargets.Count && _slotTargets[index] is not RadialTarget.None)
         {
+            SetSelection(new RadialSelection.Wedge(index, _slotTargets[index]));
             return;
         }
 
+        var dx = point.X - MenuSurface.Center;
+        var dy = point.Y - MenuSurface.Center;
+        if (dx * dx + dy * dy < MenuSurface.InnerRadius * MenuSurface.InnerRadius &&
+            _centerTarget is not RadialTarget.None)
+        {
+            SetSelection(new RadialSelection.Center(_centerTarget));
+            return;
+        }
+
+        SetSelection(null);
+    }
+
+    private void Overlay_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+    {
         UpdateSelection(e.GetPosition(this));
 
         if (_selected is { } selected)
@@ -314,8 +330,7 @@ public partial class RadialOverlayWindow : Window
 
     private void RefreshSelectionAtCursor()
     {
-        if (!_settings.CursorInteractionEnabled ||
-            !NativeMethods.GetCursorPos(out var cursor))
+        if (!NativeMethods.GetCursorPos(out var cursor))
         {
             return;
         }
