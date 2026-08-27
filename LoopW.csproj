@@ -19,6 +19,7 @@
   <ItemGroup>
     <PackageDownload Include="Microsoft.Windows.SDK.NET.Ref" Version="[10.0.19041.56]" />
     <PackageDownload Include="Win2D.uwp" Version="[1.28.3]" />
+    <PackageDownload Include="Microsoft.VCRTForwarders.140" Version="[1.1.0]" />
     <Reference Include="Microsoft.Windows.SDK.NET">
       <HintPath>$(NuGetPackageRoot)microsoft.windows.sdk.net.ref\10.0.19041.56\lib\net8.0\Microsoft.Windows.SDK.NET.dll</HintPath>
       <Private>true</Private>
@@ -33,6 +34,18 @@
     </Reference>
     <Content Include="$(NuGetPackageRoot)win2d.uwp\1.28.3\runtimes\win-x64\native\Microsoft.Graphics.Canvas.dll">
       <Link>Microsoft.Graphics.Canvas.dll</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="$(NuGetPackageRoot)microsoft.vcrtforwarders.140\1.1.0\runtimes\win-x64\native\release\msvcp140_app.dll">
+      <Link>msvcp140_app.dll</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="$(NuGetPackageRoot)microsoft.vcrtforwarders.140\1.1.0\runtimes\win-x64\native\release\vcruntime140_app.dll">
+      <Link>vcruntime140_app.dll</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="$(NuGetPackageRoot)microsoft.vcrtforwarders.140\1.1.0\runtimes\win-x64\native\release\vcruntime140_1_app.dll">
+      <Link>vcruntime140_1_app.dll</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
   </ItemGroup>
