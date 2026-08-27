@@ -48,6 +48,9 @@ Re-run the automated baseline after every action-model change.
 
 - [ ] All eight default sectors select the expected cardinal half or diagonal
   quarter on a normal resizable window.
+- [ ] Move beyond the visible radial ring in a wedge direction and release. The
+  directional action commits without requiring the pointer to hover the painted
+  wedge.
 - [ ] Move into the center hole. Selection clears and the preview disappears.
 - [ ] Commit by trigger release, left click, and arrow key. Each path applies the
   same target frame exactly once.

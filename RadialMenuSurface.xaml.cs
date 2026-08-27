@@ -126,6 +126,9 @@ public partial class RadialMenuSurface : UserControl
         return RadialActionCatalog.IndexAt(Math.Atan2(dy, dx) * 180 / Math.PI);
     }
 
+    public int? SlotAtDirection(Point point) =>
+        RadialGeometry.IndexAtDirection(point, Center, InnerRadius);
+
     public void SetSelectedAction(WindowAction? selection)
     {
         SetSelectedAction(selection, animate: true);

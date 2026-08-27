@@ -32,6 +32,7 @@ internal static class Program
         ("logical monitor moves scale frame size", LogicalMonitorMovesScaleFrameSize),
         ("screen and exclusion settings normalize", ScreenAndExclusionSettingsNormalize),
         ("radial geometry creates annulus and wedge paths", RadialGeometryCreatesPaths),
+        ("radial direction selection ignores outer radius", RadialDirectionSelectionIgnoresOuterRadius),
         ("command parser maps direction aliases", CommandParserMapsDirectionAliases),
         ("command parser maps action names", CommandParserMapsActionNames),
         ("action names cover every action", ActionNamesCoverEveryAction),
@@ -439,6 +440,14 @@ internal static class Program
         Equal(2, annulus.Figures.Count);
         Equal(1, wedge.Figures.Count);
         Equal(4, wedge.Figures[0].Segments.Count);
+    }
+
+    private static void RadialDirectionSelectionIgnoresOuterRadius()
+    {
+        Equal(0, RadialGeometry.IndexAtDirection(new System.Windows.Point(100, 50), 50, 20));
+        Equal(0, RadialGeometry.IndexAtDirection(new System.Windows.Point(500, 50), 50, 20));
+        Equal(2, RadialGeometry.IndexAtDirection(new System.Windows.Point(50, 100), 50, 20));
+        True(!RadialGeometry.IndexAtDirection(new System.Windows.Point(50, 50), 50, 20).HasValue);
     }
 
     private static void CommandParserMapsDirectionAliases()

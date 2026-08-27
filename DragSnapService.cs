@@ -124,7 +124,6 @@ internal sealed class DragSnapService : IDisposable
 
     private IntPtr HookProc(int nCode, IntPtr wParam, IntPtr lParam)
     {
-        using var performance = PerformanceDiagnostics.Measure(PerformanceMetric.MouseHook);
         if (nCode >= 0)
         {
             var message = wParam.ToInt32();
@@ -136,6 +135,7 @@ internal sealed class DragSnapService : IDisposable
 
             if (shouldDispatch)
             {
+                using var performance = PerformanceDiagnostics.Measure(PerformanceMetric.MouseHook);
                 var data = Marshal.PtrToStructure<NativeMethods.MouseLlHookStruct>(lParam);
                 Dispatch(message, data.Point);
             }
