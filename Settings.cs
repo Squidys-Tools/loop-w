@@ -57,6 +57,10 @@ public sealed class AppSettings
 
     public bool PreviewEnabled { get; set; } = true;
 
+    // Temporary proof-of-concept switch. The live compositor path falls back
+    // to the existing bitmap renderer if initialization is unavailable.
+    public bool LiveBackdropPreviewEnabled { get; set; } = true;
+
     public bool DragSnapEnabled { get; set; } = true;
 
     public int DragSnapThreshold { get; set; } = 24;
@@ -248,6 +252,7 @@ public sealed class AppSettings
         RadialOuterRadius = defaults.RadialOuterRadius;
         RadialInnerRadius = defaults.RadialInnerRadius;
         PreviewEnabled = defaults.PreviewEnabled;
+        LiveBackdropPreviewEnabled = defaults.LiveBackdropPreviewEnabled;
         DragSnapEnabled = defaults.DragSnapEnabled;
         DragSnapThreshold = defaults.DragSnapThreshold;
         RestorePreDragFrameOnSnapCancel = defaults.RestorePreDragFrameOnSnapCancel;

@@ -314,10 +314,7 @@ public partial class RadialOverlayWindow : Window
 
         if (selection is null)
         {
-            if (_preview.IsVisible)
-            {
-                _preview.Hide();
-            }
+            _preview.HidePreview();
 
             return;
         }
@@ -359,9 +356,9 @@ public partial class RadialOverlayWindow : Window
             _preview.Topmost = true;
             RaiseAbovePreview();
         }
-        else if (_preview.IsVisible)
+        else if (_preview.IsPreviewVisible)
         {
-            _preview.Hide();
+            _preview.HidePreview();
         }
     }
 
