@@ -1,5 +1,6 @@
 using System;
 using System.Runtime.InteropServices;
+using System.Threading;
 using System.Windows.Threading;
 
 namespace LoopW;
@@ -65,10 +66,7 @@ internal sealed class DragSnapService : IDisposable
 
     public void Start()
     {
-        if (_hookHandle == IntPtr.Zero)
-        {
-            _hookHandle = NativeMethods.SetWindowsHookEx(WhMouseLl, _hookProc, IntPtr.Zero, 0);
-        }
+        UpdateHookState();
     }
 
     public void UpdateSettings()
@@ -81,6 +79,8 @@ internal sealed class DragSnapService : IDisposable
         {
             TargetChanged?.Invoke(target);
         }
+
+        UpdateHookState();
     }
 
     public void RefreshTarget()
@@ -124,10 +124,17 @@ internal sealed class DragSnapService : IDisposable
 
     private IntPtr HookProc(int nCode, IntPtr wParam, IntPtr lParam)
     {
+        using var performance = PerformanceDiagnostics.Measure(PerformanceMetric.MouseHook);
         if (nCode >= 0)
         {
             var message = wParam.ToInt32();
-            if (message is NativeMethods.WmLButtonDown or NativeMethods.WmLButtonUp or NativeMethods.WmMouseMove)
+            var shouldDispatch = message is NativeMethods.WmLButtonDown or NativeMethods.WmLButtonUp;
+            if (message == NativeMethods.WmMouseMove)
+            {
+                shouldDispatch = Volatile.Read(ref _leftButtonDown);
+            }
+
+            if (shouldDispatch)
             {
                 var data = Marshal.PtrToStructure<NativeMethods.MouseLlHookStruct>(lParam);
                 Dispatch(message, data.Point);
@@ -295,6 +302,25 @@ internal sealed class DragSnapService : IDisposable
         _startPoint = default;
         _target = null;
         _hadCandidate = false;
+    }
+
+    private void UpdateHookState()
+    {
+        if (_settings.DragSnapEnabled)
+        {
+            if (_hookHandle == IntPtr.Zero)
+            {
+                _hookHandle = NativeMethods.SetWindowsHookEx(WhMouseLl, _hookProc, IntPtr.Zero, 0);
+            }
+
+            return;
+        }
+
+        if (_hookHandle != IntPtr.Zero)
+        {
+            NativeMethods.UnhookWindowsHookEx(_hookHandle);
+            _hookHandle = IntPtr.Zero;
+        }
     }
 
     private bool TryGetTarget(NativeMethods.Point point, out DragSnapTarget target)

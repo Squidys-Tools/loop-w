@@ -19,6 +19,7 @@ public partial class App : Application
 
     protected override void OnStartup(StartupEventArgs e)
     {
+        using var performance = PerformanceDiagnostics.Measure(PerformanceMetric.Startup);
         base.OnStartup(e);
         ShutdownMode = ShutdownMode.OnExplicitShutdown;
 
@@ -94,6 +95,7 @@ public partial class App : Application
         }
 
         _instanceMutex?.Dispose();
+        PerformanceDiagnostics.WriteSummary();
         base.OnExit(e);
     }
 

@@ -828,6 +828,7 @@ internal static class WindowActionService
     /// </summary>
     private static bool PlaceWindow(IntPtr window, NativeMethods.Rect frame)
     {
+        using var performance = PerformanceDiagnostics.Measure(PerformanceMetric.ActionPlacement);
         var placement = new NativeMethods.WindowPlacement { Length = Marshal.SizeOf<NativeMethods.WindowPlacement>() };
         if (!NativeMethods.GetWindowPlacement(window, ref placement))
         {

@@ -8,6 +8,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Threading;
 using Wpf.Ui;
 using Wpf.Ui.Appearance;
 using Wpf.Ui.Controls;
@@ -39,9 +40,12 @@ public partial class SettingsWindow : UserControl
     private readonly ObservableCollection<RadialSlotRow> _radialRows = new();
     private readonly ContentDialogService _dialogService = new();
     private readonly SnackbarService _snackbarService = new();
+    private readonly DispatcherTimer _saveTimer;
     private bool _capturingUi;
     private bool _loading = true;
     private bool _initialized;
+    private bool _pendingSave;
+    private string _pendingSaveStatus = "Settings saved";
     private ApplicationTheme? _appliedTheme;
     private string? _appliedAccent;
 
@@ -54,9 +58,14 @@ public partial class SettingsWindow : UserControl
         RadialSlotList.ItemsSource = _radialRows;
         _dialogService.SetDialogHost(ContentDialogHost);
         _snackbarService.SetSnackbarPresenter(SnackbarPresenter);
+        _saveTimer = new DispatcherTimer(DispatcherPriority.Background)
+        {
+            Interval = TimeSpan.FromMilliseconds(200)
+        };
+        _saveTimer.Tick += SaveTimer_Tick;
     }
 
-    public event Action<AppSettings>? SettingsChanged;
+    public event Action<AppSettings, SettingsChangeDomain>? SettingsChanged;
 
     private void Window_Loaded(object sender, RoutedEventArgs e)
     {
@@ -72,11 +81,8 @@ public partial class SettingsWindow : UserControl
             _rows.Add(new KeybindRow(keybind));
         }
 
-        RefreshRadialControls();
-
         RefreshControlsFromSettings();
         _loading = false;
-        ApplyThemeResources();
         BehaviorNavigationItem.Activate(NavigationMenu);
         ShowSection("Behavior");
     }
@@ -113,6 +119,7 @@ public partial class SettingsWindow : UserControl
             return;
         }
 
+        FlushPendingSave();
         _activeSection = section;
         BehaviorSection.Visibility = section == "Behavior" ? Visibility.Visible : Visibility.Collapsed;
         RadialSection.Visibility = section == "Radial" ? Visibility.Visible : Visibility.Collapsed;
@@ -141,7 +148,7 @@ public partial class SettingsWindow : UserControl
                 _settings.TriggerModifiers = mods;
                 _settings.TriggerVk = vk;
                 RefreshTriggerLabel();
-                SaveSettings("Trigger updated");
+                SaveSettings("Trigger updated", SettingsChangeDomain.Trigger);
             },
             () =>
             {
@@ -172,7 +179,7 @@ public partial class SettingsWindow : UserControl
         }
 
         _settings.LaunchAtLogin = enabled;
-        SaveSettings(enabled ? "Launch at login enabled" : "Launch at login disabled");
+        SaveSettings(enabled ? "Launch at login enabled" : "Launch at login disabled", SettingsChangeDomain.None);
     }
 
     private void TriggerBehavior_Changed(object sender, RoutedEventArgs e)
@@ -184,7 +191,7 @@ public partial class SettingsWindow : UserControl
 
         _settings.DoubleClickToTrigger = DoubleClickTriggerCheck.IsChecked == true;
         _settings.MiddleClickToTrigger = MiddleClickTriggerCheck.IsChecked == true;
-        SaveSettings("Trigger behavior saved");
+        SaveSettings("Trigger behavior saved", SettingsChangeDomain.Trigger);
     }
 
     private void TriggerBehavior_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
@@ -197,7 +204,7 @@ public partial class SettingsWindow : UserControl
         _settings.TriggerDelayMilliseconds = (int)Math.Round(TriggerDelaySlider.Value);
         _settings.TriggerTimeoutMilliseconds = (int)Math.Round(TriggerTimeoutSlider.Value);
         UpdateTriggerBehaviorLabels();
-        SaveSettings("Trigger timing saved");
+        SaveSettings("Trigger timing saved", SettingsChangeDomain.Trigger, deferPersistence: true);
     }
 
     private void TriggerSide_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -209,7 +216,7 @@ public partial class SettingsWindow : UserControl
         }
 
         _settings.TriggerModifierSide = side;
-        SaveSettings("Trigger side saved");
+        SaveSettings("Trigger side saved", SettingsChangeDomain.Trigger);
     }
 
     private void Radial_Changed(object sender, RoutedEventArgs e)
@@ -221,7 +228,7 @@ public partial class SettingsWindow : UserControl
 
         _settings.RadialEnabled = RadialEnabledCheck.IsChecked == true;
         _settings.CursorInteractionEnabled = CursorInteractionCheck.IsChecked == true;
-        SaveSettings("Radial settings saved");
+        SaveSettings("Radial settings saved", SettingsChangeDomain.Radial);
     }
 
     private void Radial_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
@@ -247,7 +254,8 @@ public partial class SettingsWindow : UserControl
         }
 
         row.Select(choice);
-        SaveSettings("Wedge assignment saved");
+        ApplyRadialSurfaceState();
+        SaveSettings("Wedge assignment saved", SettingsChangeDomain.Radial);
     }
 
     private void RadialSlotCycle_Changed(object sender, RoutedEventArgs e)
@@ -258,7 +266,8 @@ public partial class SettingsWindow : UserControl
         }
 
         row.CycleEnabled = enabled;
-        SaveSettings("Wedge cycle setting saved");
+        ApplyRadialSurfaceState();
+        SaveSettings("Wedge cycle setting saved", SettingsChangeDomain.Radial);
     }
 
     private void CenterAction_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -278,7 +287,8 @@ public partial class SettingsWindow : UserControl
         ApplyChoice(_settings.CenterTarget, choice);
         CenterCycleCheck.IsChecked = _settings.CenterTarget.CycleEnabled;
         CenterCycleCheck.IsEnabled = CanCycle(choice);
-        SaveSettings("Center action saved");
+        ApplyRadialSurfaceState();
+        SaveSettings("Center action saved", SettingsChangeDomain.Radial);
     }
 
     private void CenterCycle_Changed(object sender, RoutedEventArgs e)
@@ -291,7 +301,8 @@ public partial class SettingsWindow : UserControl
 
         _settings.CenterTarget.CycleEnabled = CenterCycleCheck.IsChecked == true;
         CenterCycleCheck.IsEnabled = CanCycle(choice);
-        SaveSettings("Center cycle setting saved");
+        ApplyRadialSurfaceState();
+        SaveSettings("Center cycle setting saved", SettingsChangeDomain.Radial);
     }
 
     private void RadialNumber_ValueChanged(object sender, NumberBoxValueChangedEventArgs e)
@@ -326,7 +337,8 @@ public partial class SettingsWindow : UserControl
 
         _settings.RadialInnerRadius = innerRadius;
         UpdateValueLabels();
-        SaveSettings("Radial size saved");
+        ApplyRadialSurfaceSettings();
+        SaveSettings("Radial size saved", SettingsChangeDomain.Radial, deferPersistence: true);
     }
 
     private void Preview_Changed(object sender, RoutedEventArgs e)
@@ -337,7 +349,7 @@ public partial class SettingsWindow : UserControl
         }
 
         _settings.PreviewEnabled = PreviewEnabledCheck.IsChecked == true;
-        SaveSettings("Preview settings saved");
+        SaveSettings("Preview settings saved", SettingsChangeDomain.Preview);
     }
 
     private void Preview_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
@@ -381,7 +393,8 @@ public partial class SettingsWindow : UserControl
         _settings.PreviewCornerRadius = PreviewCornerSlider.Value;
         _settings.PreviewBorderWidth = PreviewBorderWidthSlider.Value;
         UpdateValueLabels();
-        SaveSettings("Preview size saved");
+        ApplyPreviewSurfaceSettings();
+        SaveSettings("Preview size saved", SettingsChangeDomain.Preview, deferPersistence: true);
     }
 
     private void DragSnap_Changed(object sender, RoutedEventArgs e)
@@ -393,7 +406,7 @@ public partial class SettingsWindow : UserControl
 
         _settings.DragSnapEnabled = DragSnapEnabledCheck.IsChecked == true;
         _settings.RestorePreDragFrameOnSnapCancel = RestorePreDragFrameCheck.IsChecked == true;
-        SaveSettings("Drag snapping settings saved");
+        SaveSettings("Drag snapping settings saved", SettingsChangeDomain.DragSnap);
     }
 
     private void DragSnap_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
@@ -405,7 +418,7 @@ public partial class SettingsWindow : UserControl
 
         _settings.DragSnapThreshold = (int)Math.Round(DragSnapThresholdSlider.Value);
         UpdateValueLabels();
-        SaveSettings("Snap threshold saved");
+        SaveSettings("Snap threshold saved", SettingsChangeDomain.DragSnap, deferPersistence: true);
     }
 
     private void Stash_Changed(object sender, RoutedEventArgs e)
@@ -416,7 +429,7 @@ public partial class SettingsWindow : UserControl
         }
 
         _settings.StashPersistenceEnabled = StashPersistenceCheck.IsChecked == true;
-        SaveSettings("Stash settings saved");
+        SaveSettings("Stash settings saved", SettingsChangeDomain.Stash);
     }
 
     private void Stash_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
@@ -430,7 +443,7 @@ public partial class SettingsWindow : UserControl
         _settings.StashHitZone = (int)Math.Round(StashHitZoneSlider.Value);
         _settings.StashRevealDelayMilliseconds = (int)Math.Round(StashRevealDelaySlider.Value);
         UpdateValueLabels();
-        SaveSettings("Stash timing saved");
+        SaveSettings("Stash timing saved", SettingsChangeDomain.Stash, deferPersistence: true);
     }
 
     private void MonitorMovePolicy_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -442,7 +455,7 @@ public partial class SettingsWindow : UserControl
         }
 
         _settings.MonitorMoveSizePolicy = policy;
-        SaveSettings("Monitor move policy saved");
+        SaveSettings("Monitor move policy saved", SettingsChangeDomain.Monitor);
     }
 
     private void ScreenPadding_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
@@ -458,7 +471,7 @@ public partial class SettingsWindow : UserControl
         _settings.ScreenPaddingRight = (int)Math.Round(ScreenPaddingRightSlider.Value);
         _settings.ScreenPaddingBottom = (int)Math.Round(ScreenPaddingBottomSlider.Value);
         UpdateValueLabels();
-        SaveSettings("Screen padding saved");
+        SaveSettings("Screen padding saved", SettingsChangeDomain.Monitor, deferPersistence: true);
     }
 
     private void Exclusions_LostFocus(object sender, RoutedEventArgs e)
@@ -470,7 +483,7 @@ public partial class SettingsWindow : UserControl
 
         _settings.ExcludedExecutablePaths = SplitLines(ExcludedExecutablePathsText.Text);
         _settings.ExcludedProcessNames = SplitLines(ExcludedProcessNamesText.Text);
-        SaveSettings("Application exclusions saved");
+        SaveSettings("Application exclusions saved", SettingsChangeDomain.Exclusions);
     }
 
     private void AppearanceMode_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -482,7 +495,7 @@ public partial class SettingsWindow : UserControl
 
         _settings.AppearanceMode = mode;
         ApplyThemeResources();
-        SaveSettings("Appearance saved");
+        SaveSettings("Appearance saved", SettingsChangeDomain.Appearance);
     }
 
     private void Preset_Click(object sender, RoutedEventArgs e)
@@ -505,7 +518,7 @@ public partial class SettingsWindow : UserControl
         _settings.PreviewBorderColor = preset.PreviewBorder;
         RefreshThemeFields();
         ApplyThemeResources();
-        SaveSettings($"{presetName} style applied");
+        SaveSettings($"{presetName} style applied", SettingsChangeDomain.Appearance);
     }
 
     private void Theme_TextChanged(object sender, TextChangedEventArgs e)
@@ -530,7 +543,7 @@ public partial class SettingsWindow : UserControl
         _settings.PreviewBorderColor = PreviewBorderText.Text;
         RefreshThemeFields();
         ApplyThemeResources();
-        SaveSettings("Custom colors saved");
+        SaveSettings("Custom colors saved", SettingsChangeDomain.Appearance);
     }
 
     private void Add_Click(object sender, RoutedEventArgs e)
@@ -552,7 +565,8 @@ public partial class SettingsWindow : UserControl
                 }
 
                 _rows.Add(new KeybindRow(new Keybind(mods, vk, WindowAction.RightHalf)));
-                SaveSettings("Keybind added");
+                RefreshRadialControls();
+                SaveSettings("Keybind added", SettingsChangeDomain.Keybinds | SettingsChangeDomain.Radial);
             },
             () =>
             {
@@ -587,7 +601,8 @@ public partial class SettingsWindow : UserControl
                 row.Keybind.Modifiers = mods;
                 row.Keybind.Vk = vk;
                 row.Refresh();
-                SaveSettings("Keybind rebound");
+                RefreshRadialControls();
+                SaveSettings("Keybind rebound", SettingsChangeDomain.Keybinds | SettingsChangeDomain.Radial);
             },
             () =>
             {
@@ -624,7 +639,8 @@ public partial class SettingsWindow : UserControl
         {
             row.Keybind.Action = action;
             row.Refresh();
-            SaveSettings("Keybind action saved");
+            RefreshRadialControls();
+            SaveSettings("Keybind action saved", SettingsChangeDomain.Keybinds | SettingsChangeDomain.Radial);
         }
     }
 
@@ -638,7 +654,8 @@ public partial class SettingsWindow : UserControl
         if (sender is ToggleButton { DataContext: KeybindRow row, IsChecked: bool enabled })
         {
             row.Keybind.CycleEnabled = enabled;
-            SaveSettings("Cycle setting saved");
+            RefreshRadialControls();
+            SaveSettings("Cycle setting saved", SettingsChangeDomain.Keybinds | SettingsChangeDomain.Radial);
         }
     }
 
@@ -652,7 +669,7 @@ public partial class SettingsWindow : UserControl
         if (sender is ToggleButton { DataContext: KeybindRow row, IsChecked: bool enabled })
         {
             row.Keybind.BypassTrigger = enabled;
-            SaveSettings("Trigger bypass saved");
+            SaveSettings("Trigger bypass saved", SettingsChangeDomain.Keybinds);
         }
     }
 
@@ -661,7 +678,8 @@ public partial class SettingsWindow : UserControl
         if (sender is Button { DataContext: KeybindRow row })
         {
             _rows.Remove(row);
-            SaveSettings("Keybind deleted");
+            RefreshRadialControls();
+            SaveSettings("Keybind deleted", SettingsChangeDomain.Keybinds | SettingsChangeDomain.Radial);
         }
     }
 
@@ -783,24 +801,58 @@ public partial class SettingsWindow : UserControl
         SetStatus(capturing ? "Listening for a key…" : "Saved");
     }
 
-    private void SaveSettings(string status)
+    private void SaveSettings(
+        string status,
+        SettingsChangeDomain domains = SettingsChangeDomain.All,
+        bool deferPersistence = false)
     {
         _settings.Keybinds = _rows.Select(row => row.Keybind).ToList();
-        var saved = _settings.Save();
-        _hotkey.SetBinding(_settings.TriggerModifiers, _settings.TriggerVk);
-        _hotkey.SetTriggerBehavior(
-            _settings.TriggerModifierSide,
-            _settings.TriggerDelayMilliseconds,
-            _settings.TriggerTimeoutMilliseconds,
-            _settings.DoubleClickToTrigger,
-            _settings.MiddleClickToTrigger);
-        _hotkey.SetKeybinds(_settings.Keybinds);
-        ApplyThemeResources();
-        RefreshRadialControls();
-        NotifySettingsChanged();
+
+        NotifySettingsChanged(domains);
         RefreshTriggerLabel();
-        RefreshThemeFields();
         UpdateKeybindEmptyState();
+
+        if (deferPersistence)
+        {
+            _pendingSave = true;
+            _pendingSaveStatus = status;
+            _saveTimer.Stop();
+            _saveTimer.Start();
+            SetStatus(status);
+            return;
+        }
+
+        FlushPendingSaveTimer();
+        _pendingSave = false;
+        PersistSettings(status);
+        if (domains.HasFlag(SettingsChangeDomain.Appearance))
+        {
+            RefreshThemeFields();
+        }
+    }
+
+    private void SaveTimer_Tick(object? sender, EventArgs e) => FlushPendingSave();
+
+    internal void FlushPendingSave()
+    {
+        FlushPendingSaveTimer();
+        if (!_pendingSave)
+        {
+            return;
+        }
+
+        _pendingSave = false;
+        PersistSettings(_pendingSaveStatus);
+    }
+
+    private void FlushPendingSaveTimer()
+    {
+        _saveTimer.Stop();
+    }
+
+    private void PersistSettings(string status)
+    {
+        var saved = _settings.Save();
         SetStatus(saved ? status : "Could not save settings", isError: !saved);
         if (saved && (status is "Trigger updated" or "Keybind added" or "Keybind rebound" or "Keybind deleted" ||
             status.Contains("reset", StringComparison.OrdinalIgnoreCase) ||
@@ -810,7 +862,7 @@ public partial class SettingsWindow : UserControl
         }
     }
 
-    private void NotifySettingsChanged() => SettingsChanged?.Invoke(_settings);
+    private void NotifySettingsChanged(SettingsChangeDomain domains) => SettingsChanged?.Invoke(_settings, domains);
 
     private void RefreshControlsFromSettings()
     {
@@ -1071,18 +1123,35 @@ public partial class SettingsWindow : UserControl
 
         UpdatePresetSelection();
         UpdateColorSwatches();
-        SettingsRadialSurface?.ApplySettings(_settings);
-        if (SettingsRadialSurface != null)
-        {
-            var enabled = new bool[RadialConfiguration.SlotCount];
-            for (var i = 0; i < enabled.Length; i++)
-            {
-                enabled[i] = _settings.RadialSlots[i].Kind != RadialTargetKind.None;
-            }
+        ApplyRadialSurfaceSettings();
+        ApplyPreviewSurfaceSettings();
+    }
 
-            SettingsRadialSurface.SetSelectableSlots(enabled);
-            SettingsRadialSurface.SetCenterEnabled(_settings.CenterTarget.Kind != RadialTargetKind.None);
+    private void ApplyRadialSurfaceSettings()
+    {
+        SettingsRadialSurface?.ApplySettings(_settings);
+        ApplyRadialSurfaceState();
+    }
+
+    private void ApplyRadialSurfaceState()
+    {
+        if (SettingsRadialSurface == null)
+        {
+            return;
         }
+
+        var enabled = new bool[RadialConfiguration.SlotCount];
+        for (var i = 0; i < enabled.Length; i++)
+        {
+            enabled[i] = _settings.RadialSlots[i].Kind != RadialTargetKind.None;
+        }
+
+        SettingsRadialSurface.SetSelectableSlots(enabled);
+        SettingsRadialSurface.SetCenterEnabled(_settings.CenterTarget.Kind != RadialTargetKind.None);
+    }
+
+    private void ApplyPreviewSurfaceSettings()
+    {
         SettingsPreviewSurface?.ApplySettings(_settings);
     }
 

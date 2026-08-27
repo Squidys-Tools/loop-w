@@ -120,6 +120,7 @@ public partial class RadialOverlayWindow : Window
 
     private void CaptureBlurredBackdrop(double dpiX, double dpiY)
     {
+        using var performance = PerformanceDiagnostics.Measure(PerformanceMetric.OverlayCapture);
         try
         {
             var margin = (int)Math.Round(MenuSurface.BlurMargin * dpiX / 96);

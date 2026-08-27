@@ -237,6 +237,7 @@ public partial class PreviewOverlayWindow : Window
 
     private void CaptureFullBackdrop(NativeMethods.Rect workArea, double dpiX, double dpiY)
     {
+        using var performance = PerformanceDiagnostics.Measure(PerformanceMetric.OverlayCapture);
         _backdrop = null;
         try
         {

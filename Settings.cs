@@ -131,6 +131,7 @@ public sealed class AppSettings
 
     public bool Save()
     {
+        using var performance = PerformanceDiagnostics.Measure(PerformanceMetric.SettingsSave);
         string? temporaryPath = null;
         try
         {

@@ -25,6 +25,8 @@ internal static class WindowStashService
     private static IntPtr _pendingRevealWindow;
     private static long _pendingRevealStartedAt;
 
+    public static bool HasStashedWindows => Order.Count > 0;
+
     public static void Configure(AppSettings settings)
     {
         _settings = settings;
@@ -47,12 +49,19 @@ internal static class WindowStashService
         if (!_settings.StashPersistenceEnabled && _settings.StashRecords.Count > 0)
         {
             _settings.StashRecords.Clear();
-            _settings.Save();
+            // SettingsWindow persists the updated model after this notification.
+            // Avoid starting a nested full settings write here.
         }
     }
 
     public static void Poll()
     {
+        using var performance = PerformanceDiagnostics.Measure(PerformanceMetric.StashPoll);
+        if (Order.Count == 0)
+        {
+            return;
+        }
+
         PruneStaleEntries();
     }
 
@@ -198,12 +207,13 @@ internal static class WindowStashService
 
     public static bool TryRevealAtCursor(NativeMethods.Point cursor, out string message)
     {
-        PruneStaleEntries();
+        // MainWindow polls immediately before calling this method. Keep reveal
+        // focused on hit testing so liveness and process identity are not read
+        // twice during the same 80 ms tick.
         for (var i = 0; i < Order.Count; i++)
         {
             var window = Order[i];
-            if (!Stashed.TryGetValue(window, out var stashed) ||
-                !IsStashedWindowAlive(window, stashed))
+            if (!Stashed.TryGetValue(window, out var stashed))
             {
                 RemoveRuntime(window, removePersisted: true);
                 i--;
@@ -511,7 +521,10 @@ internal static class WindowStashService
         }
     }
 
-    private static bool TryReadWindowIdentity(IntPtr window, out WindowIdentity identity)
+    private static bool TryReadWindowIdentity(
+        IntPtr window,
+        out WindowIdentity identity,
+        WindowPolicyEnumerationCache? cache = null)
     {
         identity = default;
         if (window == IntPtr.Zero || !NativeMethods.IsWindow(window) ||
@@ -530,24 +543,37 @@ internal static class WindowStashService
         var title = new StringBuilder(512);
         NativeMethods.GetWindowText(window, title, title.Capacity);
         var executablePath = string.Empty;
-        try
+        if (cache != null)
         {
-            using var process = Process.GetProcessById((int)processId);
-            executablePath = process.MainModule?.FileName ?? string.Empty;
+            var metadata = WindowPolicy.GetProcessMetadata(processId, cache);
+            if (!metadata.IsAvailable)
+            {
+                return false;
+            }
+
+            executablePath = metadata.ExecutablePath ?? string.Empty;
         }
-        catch (System.ComponentModel.Win32Exception)
+        else
         {
-            // Some elevated or protected processes deny module inspection. They
-            // remain usable for the current session, but cannot be restored from
-            // persistence without an executable-path anchor.
-        }
-        catch (InvalidOperationException)
-        {
-            return false;
-        }
-        catch (ArgumentException)
-        {
-            return false;
+            try
+            {
+                using var process = Process.GetProcessById((int)processId);
+                executablePath = process.MainModule?.FileName ?? string.Empty;
+            }
+            catch (System.ComponentModel.Win32Exception)
+            {
+                // Some elevated or protected processes deny module inspection. They
+                // remain usable for the current session, but cannot be restored from
+                // persistence without an executable-path anchor.
+            }
+            catch (InvalidOperationException)
+            {
+                return false;
+            }
+            catch (ArgumentException)
+            {
+                return false;
+            }
         }
 
         identity = new WindowIdentity(
@@ -561,12 +587,13 @@ internal static class WindowStashService
     private static List<WindowIdentityCandidate<IntPtr>> EnumerateWindowIdentities()
     {
         var candidates = new List<WindowIdentityCandidate<IntPtr>>();
+        var cache = WindowPolicy.CreateEnumerationCache();
         NativeMethods.EnumWindows((window, _) =>
         {
             if (NativeMethods.GetWindowThreadProcessId(window, out var processId) == 0 ||
                 processId == Environment.ProcessId ||
-                !WindowPolicy.IsEligibleForEnumeration(window, IntPtr.Zero) ||
-                !TryReadWindowIdentity(window, out var identity))
+                !WindowPolicy.IsEligibleForEnumeration(window, IntPtr.Zero, cache) ||
+                !TryReadWindowIdentity(window, out var identity, cache))
             {
                 return true;
             }
