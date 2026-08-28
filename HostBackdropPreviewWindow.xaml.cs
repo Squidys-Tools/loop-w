@@ -95,6 +95,14 @@ public partial class HostBackdropPreviewWindow : Window
         var hwnd = new WindowInteropHelper(this).Handle;
         NativeMethods.MakeMouseClickThrough(hwnd);
 
+        // WPF otherwise clears the client surface to opaque black before DWM
+        // can draw the system backdrop behind it. Keep the composition target
+        // transparent so the live desktop material remains visible.
+        if (HwndSource.FromHwnd(hwnd)?.CompositionTarget is { } compositionTarget)
+        {
+            compositionTarget.BackgroundColor = Colors.Transparent;
+        }
+
         // Extend the DWM frame through the client area. This lets the system
         // backdrop occupy the same pixels as the WPF preview surface.
         var margins = new NativeMethods.Margins
