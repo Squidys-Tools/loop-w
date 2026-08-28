@@ -38,6 +38,25 @@ jobs:
           --no-restore
           --output publish\LoopW
 
+      - name: Verify live preview runtime files
+        shell: pwsh
+        run: |
+          $required = @(
+            'Microsoft.Graphics.Canvas.dll',
+            'msvcp140_app.dll',
+            'msvcp140_1_app.dll',
+            'msvcp140_2_app.dll',
+            'vcruntime140_app.dll',
+            'vcruntime140_1_app.dll'
+          )
+
+          $missing = $required | Where-Object {
+            -not (Test-Path (Join-Path 'publish\LoopW' $_))
+          }
+          if ($missing) {
+            throw "Portable publish is missing: $($missing -join ', ')"
+          }
+
       - name: Create archive and checksum
         id: package
         shell: pwsh

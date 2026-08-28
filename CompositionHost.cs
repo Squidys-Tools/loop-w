@@ -78,21 +78,6 @@ internal sealed class CompositionHost : HwndHost
             throw new InvalidOperationException("Unable to create the composition host window.");
         }
 
-        // HostBackdropBrush is evaluated by DWM for the HWND that owns the
-        // composition target. Applying it only to the outer WPF window leaves
-        // this child surface with a flat gray or black fill on some systems.
-        var enabled = 1;
-        if (NativeMethods.DwmSetWindowAttribute(
-                _hwnd,
-                NativeMethods.DwmwaUseHostBackdropBrush,
-                ref enabled,
-                sizeof(int)) != 0)
-        {
-            DestroyWindow(_hwnd);
-            _hwnd = IntPtr.Zero;
-            throw new InvalidOperationException("The composition host does not support DWM host backdrop brushes.");
-        }
-
         _compositorDesktopInterop.CreateDesktopWindowTarget(_hwnd, isTopmost: true, out var target);
         _compositionTarget = target;
         return new HandleRef(this, _hwnd);

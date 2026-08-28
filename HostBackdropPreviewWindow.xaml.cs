@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.Numerics;
 using System.Runtime.Versioning;
 using System.Windows;
@@ -163,6 +164,27 @@ public partial class HostBackdropPreviewWindow : Window
     {
         var hwnd = new WindowInteropHelper(this).Handle;
         NativeMethods.MakeMouseClickThrough(hwnd);
+
+        // DWM requires this flag on the top-level HWND. The Composition target
+        // is hosted by a child HWND, but enabling the flag only on that child
+        // can produce a flat gray or black surface on another machine.
+        if (HwndSource.FromHwnd(hwnd)?.CompositionTarget is { } compositionTarget)
+        {
+            compositionTarget.BackgroundColor = Colors.Transparent;
+        }
+
+        Background = Brushes.Transparent;
+        var enabled = 1;
+        var result = NativeMethods.DwmSetWindowAttribute(
+            hwnd,
+            NativeMethods.DwmwaUseHostBackdropBrush,
+            ref enabled,
+            sizeof(int));
+        if (result != 0)
+        {
+            Debug.WriteLine($"LoopW live preview: DwmSetWindowAttribute failed with HRESULT 0x{result:X8}.");
+            _initializationFailed = true;
+        }
     }
 
     private void OnLoaded(object sender, RoutedEventArgs e) => TryInitializeComposition();
