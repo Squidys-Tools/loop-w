@@ -23,7 +23,7 @@ jobs:
           dotnet-version: 8.0.x
 
       - name: Restore dependencies
-        run: dotnet restore LoopW.Tests/LoopW.Tests.csproj
+        run: dotnet restore LoopW.Tests/LoopW.Tests.csproj --runtime win-x64
 
       - name: Run automated tests
         run: dotnet run --project LoopW.Tests/LoopW.Tests.csproj --configuration Release --no-restore
