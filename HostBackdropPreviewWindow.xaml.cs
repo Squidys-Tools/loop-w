@@ -112,22 +112,45 @@ public partial class HostBackdropPreviewWindow : Window
             Top = -1,
             Bottom = -1
         };
-        if (NativeMethods.DwmExtendFrameIntoClientArea(hwnd, ref margins) != 0)
-        {
-            _initializationFailed = true;
-            return;
-        }
+        var frameExtended = NativeMethods.DwmExtendFrameIntoClientArea(hwnd, ref margins) == 0;
 
         var backdropType = NativeMethods.DwmSystemBackdropTransientWindow;
-        if (NativeMethods.DwmSetWindowAttribute(
-                hwnd,
-                NativeMethods.DwmwaSystemBackdropType,
-                ref backdropType,
-                sizeof(int)) != 0)
+        var systemBackdropEnabled = NativeMethods.DwmSetWindowAttribute(
+            hwnd,
+            NativeMethods.DwmwaSystemBackdropType,
+            ref backdropType,
+            sizeof(int)) == 0;
+
+        var acrylicTint = ParseColor(
+            _settings.IsLightAppearance ? "#38FFFFFF" : "#38101827",
+            "#38101827");
+        var acrylicEnabled = NativeMethods.TrySetAcrylicBackdrop(
+            hwnd,
+            ToAccentGradientColor(acrylicTint));
+
+        // Apply transparency after the native backdrop is installed. Setting
+        // the WPF Window background earlier can cause WPF to retain an opaque
+        // client render target, which appears as a flat gray material.
+        Background = Brushes.Transparent;
+        if (HwndSource.FromHwnd(hwnd)?.CompositionTarget is { } transparentTarget)
         {
-            _initializationFailed = true;
-            return;
+            transparentTarget.BackgroundColor = Colors.Transparent;
         }
+
+        // Force DWM/WPF to refresh the frame after changing its composition
+        // ownership. This is needed for borderless windows created hidden.
+        NativeMethods.SetWindowPos(
+            hwnd,
+            NativeMethods.HwndTop,
+            0,
+            0,
+            0,
+            0,
+            NativeMethods.SwpNoMove |
+            NativeMethods.SwpNoSize |
+            NativeMethods.SwpNoZOrder |
+            NativeMethods.SwpNoActivate |
+            NativeMethods.SwpFrameChanged);
 
         var cornerPreference = NativeMethods.DwmWindowCornerRound;
         NativeMethods.DwmSetWindowAttribute(
@@ -143,7 +166,16 @@ public partial class HostBackdropPreviewWindow : Window
             ref darkMode,
             sizeof(int));
 
-        _backdropEnabled = true;
+        // The accent policy is preferred for this non-activating overlay: it
+        // keeps sampling the desktop while the pointer moves between wedges.
+        // DWM's documented system backdrop remains active when the policy is
+        // unavailable.
+        _backdropEnabled = frameExtended && (acrylicEnabled || systemBackdropEnabled);
+        if (!_backdropEnabled)
+        {
+            _initializationFailed = true;
+            return;
+        }
     }
 
     private void ApplySurfaceSettings()
@@ -174,4 +206,10 @@ public partial class HostBackdropPreviewWindow : Window
 
         return (Color)ColorConverter.ConvertFromString(fallback)!;
     }
+
+    private static uint ToAccentGradientColor(Color color) =>
+        ((uint)color.A << 24) |
+        ((uint)color.B << 16) |
+        ((uint)color.G << 8) |
+        color.R;
 }

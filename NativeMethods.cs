@@ -65,6 +65,8 @@ internal static class NativeMethods
     public const int DwmwaWindowCornerPreference = 33;
     public const int DwmSystemBackdropTransientWindow = 3;
     public const int DwmWindowCornerRound = 2;
+    public const int WcaAccentPolicy = 19;
+    public const int AccentEnableAcrylicBlurBehind = 4;
     public const uint SrcCopy = 0x00CC0020;
     public const uint AttachParentProcess = 0xFFFFFFFF;
 
@@ -90,6 +92,23 @@ internal static class NativeMethods
         public int Right;
         public int Top;
         public int Bottom;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct AccentPolicy
+    {
+        public int AccentState;
+        public int AccentFlags;
+        public uint GradientColor;
+        public int AnimationId;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct WindowCompositionAttributeData
+    {
+        public int Attribute;
+        public IntPtr Data;
+        public IntPtr SizeOfData;
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -202,6 +221,54 @@ internal static class NativeMethods
 
     [DllImport("dwmapi.dll")]
     public static extern int DwmExtendFrameIntoClientArea(IntPtr hwnd, ref Margins margins);
+
+    [DllImport("user32.dll", EntryPoint = "SetWindowCompositionAttribute")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool SetWindowCompositionAttribute(
+        IntPtr hwnd,
+        ref WindowCompositionAttributeData data);
+
+    public static bool TrySetAcrylicBackdrop(IntPtr hwnd, uint gradientColor)
+    {
+        if (hwnd == IntPtr.Zero)
+        {
+            return false;
+        }
+
+        var policy = new AccentPolicy
+        {
+            AccentState = AccentEnableAcrylicBlurBehind,
+            AccentFlags = 0,
+            GradientColor = gradientColor,
+            AnimationId = 0
+        };
+        var size = Marshal.SizeOf<AccentPolicy>();
+        var buffer = Marshal.AllocHGlobal(size);
+
+        try
+        {
+            Marshal.StructureToPtr(policy, buffer, false);
+            var data = new WindowCompositionAttributeData
+            {
+                Attribute = WcaAccentPolicy,
+                Data = buffer,
+                SizeOfData = (IntPtr)size
+            };
+            return SetWindowCompositionAttribute(hwnd, ref data);
+        }
+        catch (EntryPointNotFoundException)
+        {
+            return false;
+        }
+        catch (DllNotFoundException)
+        {
+            return false;
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(buffer);
+        }
+    }
 
     [DllImport("dwmapi.dll")]
     public static extern int DwmGetWindowAttribute(IntPtr hwnd, int attribute, out Rect value, int size);
