@@ -61,6 +61,7 @@ internal static class NativeMethods
     public const int DwmwaCaptionColor = 35;
     public const int DwmwaTextColor = 36;
     public const int DwmwaExtendedFrameBounds = 9;
+    public const int DwmwaUseHostBackdropBrush = 17;
     public const int DwmwaSystemBackdropType = 38;
     public const int DwmwaWindowCornerPreference = 33;
     public const int DwmSystemBackdropTransientWindow = 3;

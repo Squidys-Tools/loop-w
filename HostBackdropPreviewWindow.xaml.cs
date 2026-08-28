@@ -1,38 +1,104 @@
 using System;
+using System.Numerics;
 using System.Runtime.Versioning;
 using System.Windows;
 using System.Windows.Interop;
 using System.Windows.Media;
+using Microsoft.Graphics.Canvas.Effects;
+using Windows.UI.Composition;
+using MediaColor = System.Windows.Media.Color;
 
 #pragma warning disable CA1416
 
 namespace LoopW;
 
 /// <summary>
-/// Live desktop preview backed by Windows 11's native DWM Desktop Acrylic
-/// backdrop. It has no Win2D or Visual C++ runtime dependency. The bitmap
-/// preview remains available in <see cref="PreviewOverlayWindow"/> when the
-/// system backdrop is unavailable or disabled.
+/// Live desktop backdrop preview rendered by Windows Composition and Win2D.
+/// The bitmap preview remains available in <see cref="PreviewOverlayWindow"/>
+/// when the native composition path cannot start.
 /// </summary>
-[SupportedOSPlatform("windows10.0.22621")]
+[SupportedOSPlatform("windows10.0.17134")]
 public partial class HostBackdropPreviewWindow : Window
 {
+    // A low radius keeps the desktop readable while still removing sharp detail.
+    // The old prototype used 20, which made the material look like a flat fill.
+    private const float LiveBlurAmount = 7f;
+
+    private readonly CompositionHost _compositionHost;
+    private readonly ShapeVisual _surfaceVisual = null!;
+    private readonly CompositionRoundedRectangleGeometry _backdropGeometry = null!;
+    private readonly CompositionRoundedRectangleGeometry _tintGeometry = null!;
+    private readonly CompositionRoundedRectangleGeometry _borderGeometry = null!;
+    private readonly CompositionSpriteShape _backdropShape = null!;
+    private readonly CompositionSpriteShape _tintShape = null!;
+    private readonly CompositionSpriteShape _borderShape = null!;
+    private readonly CompositionColorBrush _tintBrush = null!;
+    private readonly CompositionColorBrush _borderBrush = null!;
+    private readonly CompositionBackdropBrush _hostBackdropBrush = null!;
+    private readonly CompositionEffectBrush _backdropEffectBrush = null!;
     private readonly AppSettings _settings;
-    private bool _backdropEnabled;
+    private bool _initialized;
     private bool _initializationFailed;
 
     internal HostBackdropPreviewWindow(AppSettings settings)
     {
         InitializeComponent();
         _settings = settings;
-        ApplySurfaceSettings();
+        _compositionHost = CompositionHostElement;
+
         SourceInitialized += OnSourceInitialized;
+        Loaded += OnLoaded;
+
+        try
+        {
+            var compositor = _compositionHost.Compositor;
+            _surfaceVisual = compositor.CreateShapeVisual();
+            _hostBackdropBrush = compositor.CreateHostBackdropBrush();
+            var blurEffect = new GaussianBlurEffect
+            {
+                Name = "BackdropBlur",
+                BlurAmount = LiveBlurAmount,
+                BorderMode = EffectBorderMode.Hard,
+                Source = new CompositionEffectSourceParameter("Backdrop")
+            };
+            _backdropEffectBrush = compositor
+                .CreateEffectFactory(blurEffect)
+                .CreateBrush();
+            _backdropEffectBrush.SetSourceParameter("Backdrop", _hostBackdropBrush);
+            _tintBrush = compositor.CreateColorBrush(ToCompositionColor(
+                settings.IsLightAppearance ? "#30FFFFFF" : "#30101827",
+                "#30101827"));
+            _borderBrush = compositor.CreateColorBrush(ToCompositionColor(
+                settings.PreviewBorderColor,
+                "#B8007AFF"));
+
+            _backdropGeometry = compositor.CreateRoundedRectangleGeometry();
+            _tintGeometry = compositor.CreateRoundedRectangleGeometry();
+            _borderGeometry = compositor.CreateRoundedRectangleGeometry();
+
+            _backdropShape = compositor.CreateSpriteShape(_backdropGeometry);
+            _backdropShape.FillBrush = _backdropEffectBrush;
+
+            _tintShape = compositor.CreateSpriteShape(_tintGeometry);
+            _tintShape.FillBrush = _tintBrush;
+
+            _borderShape = compositor.CreateSpriteShape(_borderGeometry);
+            _borderShape.StrokeBrush = _borderBrush;
+            _borderShape.IsStrokeNonScaling = true;
+
+            _surfaceVisual.Shapes.Add(_backdropShape);
+            _surfaceVisual.Shapes.Add(_tintShape);
+            _surfaceVisual.Shapes.Add(_borderShape);
+        }
+        catch
+        {
+            _initializationFailed = true;
+        }
     }
 
     internal bool TryShowFrame(NativeMethods.Rect frame)
     {
-        if (_initializationFailed ||
-            !OperatingSystem.IsWindowsVersionAtLeast(10, 0, 22621))
+        if (_initializationFailed || !OperatingSystem.IsWindowsVersionAtLeast(10, 0, 22000))
         {
             return false;
         }
@@ -46,17 +112,20 @@ public partial class HostBackdropPreviewWindow : Window
 
         var scaleX = 96.0 / dpiX;
         var scaleY = 96.0 / dpiY;
-        Left = frame.Left * scaleX + 8;
-        Top = frame.Top * scaleY + 8;
-        Width = Math.Max(frame.Width * scaleX - 16, 1);
-        Height = Math.Max(frame.Height * scaleY - 16, 1);
+        var left = frame.Left * scaleX + 8;
+        var top = frame.Top * scaleY + 8;
+        var width = Math.Max(frame.Width * scaleX - 16, 1);
+        var height = Math.Max(frame.Height * scaleY - 16, 1);
+
+        Left = left;
+        Top = top;
+        Width = width;
+        Height = height;
 
         if (!IsVisible)
         {
             try
             {
-                // Opacity starts at zero, so the native backdrop can be
-                // configured before the preview becomes visible.
                 Show();
             }
             catch
@@ -66,13 +135,13 @@ public partial class HostBackdropPreviewWindow : Window
             }
         }
 
-        if (!_backdropEnabled)
+        if (!_initialized && !TryInitializeComposition())
         {
             Hide();
             return false;
         }
 
-        ApplySurfaceSettings();
+        UpdateSurface(width * dpiX / 96.0, height * dpiY / 96.0, dpiX / 96.0, dpiY / 96.0);
         Opacity = 1;
         return true;
     }
@@ -94,119 +163,67 @@ public partial class HostBackdropPreviewWindow : Window
     {
         var hwnd = new WindowInteropHelper(this).Handle;
         NativeMethods.MakeMouseClickThrough(hwnd);
+    }
 
-        // WPF otherwise clears the client surface to opaque black before DWM
-        // can draw the system backdrop behind it. Keep the composition target
-        // transparent so the live desktop material remains visible.
-        if (HwndSource.FromHwnd(hwnd)?.CompositionTarget is { } compositionTarget)
+    private void OnLoaded(object sender, RoutedEventArgs e) => TryInitializeComposition();
+
+    private bool TryInitializeComposition()
+    {
+        if (_initialized)
         {
-            compositionTarget.BackgroundColor = Colors.Transparent;
+            return true;
         }
 
-        // Extend the DWM frame through the client area. This lets the system
-        // backdrop occupy the same pixels as the WPF preview surface.
-        var margins = new NativeMethods.Margins
+        if (_initializationFailed || !_compositionHost.IsReady)
         {
-            Left = -1,
-            Right = -1,
-            Top = -1,
-            Bottom = -1
-        };
-        var frameExtended = NativeMethods.DwmExtendFrameIntoClientArea(hwnd, ref margins) == 0;
-
-        var backdropType = NativeMethods.DwmSystemBackdropTransientWindow;
-        var systemBackdropEnabled = NativeMethods.DwmSetWindowAttribute(
-            hwnd,
-            NativeMethods.DwmwaSystemBackdropType,
-            ref backdropType,
-            sizeof(int)) == 0;
-
-        var liveTint = ParseColor(
-            _settings.IsLightAppearance ? "#18FFFFFF" : "#18101827",
-            "#18101827");
-        var liveEnabled = NativeMethods.TrySetLiveBackdrop(
-            hwnd,
-            ToAccentGradientColor(liveTint));
-
-        if (liveEnabled)
-        {
-            // The transparent-gradient policy is the readable live mode. Do
-            // not stack DWM's fixed-radius blur underneath it.
-            var noSystemBackdrop = 1;
-            NativeMethods.DwmSetWindowAttribute(
-                hwnd,
-                NativeMethods.DwmwaSystemBackdropType,
-                ref noSystemBackdrop,
-                sizeof(int));
+            return false;
         }
 
-        // Apply transparency after the native backdrop is installed. Setting
-        // the WPF Window background earlier can cause WPF to retain an opaque
-        // client render target, which appears as a flat gray material.
-        Background = Brushes.Transparent;
-        if (HwndSource.FromHwnd(hwnd)?.CompositionTarget is { } transparentTarget)
+        try
         {
-            transparentTarget.BackgroundColor = Colors.Transparent;
+            var root = _compositionHost.CreateRoot();
+            root.Children.InsertAtTop(_surfaceVisual);
+            _compositionHost.SetRoot(root);
+            _initialized = true;
+            return true;
         }
-
-        // Force DWM/WPF to refresh the frame after changing its composition
-        // ownership. This is needed for borderless windows created hidden.
-        NativeMethods.SetWindowPos(
-            hwnd,
-            NativeMethods.HwndTop,
-            0,
-            0,
-            0,
-            0,
-            NativeMethods.SwpNoMove |
-            NativeMethods.SwpNoSize |
-            NativeMethods.SwpNoZOrder |
-            NativeMethods.SwpNoActivate |
-            NativeMethods.SwpFrameChanged);
-
-        var cornerPreference = NativeMethods.DwmWindowCornerRound;
-        NativeMethods.DwmSetWindowAttribute(
-            hwnd,
-            NativeMethods.DwmwaWindowCornerPreference,
-            ref cornerPreference,
-            sizeof(int));
-
-        var darkMode = _settings.IsLightAppearance ? 0 : 1;
-        NativeMethods.DwmSetWindowAttribute(
-            hwnd,
-            NativeMethods.DwmwaUseImmersiveDarkMode,
-            ref darkMode,
-            sizeof(int));
-
-        // The transparent-gradient policy is preferred for this non-activating
-        // overlay: it keeps the desktop live and readable without imposing a
-        // fixed-radius blur. DWM's documented system backdrop remains active
-        // when the policy is unavailable.
-        _backdropEnabled = frameExtended && (liveEnabled || systemBackdropEnabled);
-        if (!_backdropEnabled)
+        catch
         {
             _initializationFailed = true;
-            return;
+            return false;
         }
     }
 
-    private void ApplySurfaceSettings()
+    private void UpdateSurface(double width, double height, double scaleX, double scaleY)
     {
-        SurfaceElement.CornerRadius = new CornerRadius(_settings.PreviewCornerRadius);
-        SurfaceElement.BorderThickness = new Thickness(_settings.PreviewBorderWidth);
-        SurfaceElement.Background = new SolidColorBrush(ParseColor(
-            _settings.IsLightAppearance ? "#18FFFFFF" : "#18101827",
-            "#18101827"));
-        SurfaceElement.BorderBrush = new SolidColorBrush(ParseColor(
-            _settings.PreviewBorderColor,
-            "#B8007AFF"));
+        var size = new Vector2((float)Math.Max(width, 1), (float)Math.Max(height, 1));
+        var radius = (float)Math.Min(
+            _settings.PreviewCornerRadius * Math.Min(scaleX, scaleY),
+            Math.Min(width, height) / 2);
+
+        _surfaceVisual.Size = size;
+        _backdropGeometry.Size = size;
+        _backdropGeometry.CornerRadius = new Vector2(radius, radius);
+        _tintGeometry.Size = size;
+        _tintGeometry.CornerRadius = new Vector2(radius, radius);
+        _borderGeometry.Size = size;
+        _borderGeometry.CornerRadius = new Vector2(radius, radius);
+        _borderShape.StrokeThickness = (float)Math.Max(
+            _settings.PreviewBorderWidth * Math.Min(scaleX, scaleY),
+            0);
     }
 
-    private static Color ParseColor(string? value, string fallback)
+    private static Windows.UI.Color ToCompositionColor(string? value, string fallback)
+    {
+        var color = ParseColor(value, fallback);
+        return Windows.UI.Color.FromArgb(color.A, color.R, color.G, color.B);
+    }
+
+    private static MediaColor ParseColor(string? value, string fallback)
     {
         try
         {
-            if (ColorConverter.ConvertFromString(value ?? string.Empty) is Color color)
+            if (ColorConverter.ConvertFromString(value ?? string.Empty) is MediaColor color)
             {
                 return color;
             }
@@ -216,12 +233,6 @@ public partial class HostBackdropPreviewWindow : Window
             // Invalid settings use the fallback color.
         }
 
-        return (Color)ColorConverter.ConvertFromString(fallback)!;
+        return (MediaColor)ColorConverter.ConvertFromString(fallback)!;
     }
-
-    private static uint ToAccentGradientColor(Color color) =>
-        ((uint)color.A << 24) |
-        ((uint)color.B << 16) |
-        ((uint)color.G << 8) |
-        color.R;
 }

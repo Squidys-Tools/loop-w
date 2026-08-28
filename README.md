@@ -45,6 +45,10 @@ You need:
 - Windows
 - The .NET 8 SDK
 
+The live preview uses the prebuilt Win2D package restored by NuGet. An MSVC
+compiler is not needed to build LoopW. The published folder carries the native
+Canvas dependency and C++ forwarders needed at runtime.
+
 From PowerShell:
 
 ```powershell
@@ -57,6 +61,20 @@ dotnet run --project LoopW.csproj
 The app starts hidden in the system tray. Open Settings from the tray icon to
 change the trigger, keybinds, radial assignments, previews, appearance, and
 advanced window policies.
+
+To make a portable x64 folder, publish the app instead of copying the build
+output:
+
+```powershell
+dotnet publish LoopW.csproj -c Release -r win-x64 --self-contained true `
+  -p:PublishSingleFile=true -o publish\LoopW
+```
+
+Copy the whole `publish\LoopW` folder. The single-file executable contains the
+.NET runtime, while the folder also carries the native Win2D Canvas DLL and its
+app-local C++ forwarders. Do not distribute only `LoopW.exe`. The live preview
+also needs Windows 11 build 22000 or newer. Older Windows versions use the
+existing bitmap preview path.
 
 Run the automated checks with:
 
