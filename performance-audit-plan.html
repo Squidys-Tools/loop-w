@@ -1,0 +1,523 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark light">
+  <title>LoopW performance audit plan</title>
+  <style>
+    :root {
+      --ink: #111111;
+      --paper: #f2f0e8;
+      --signal: #d8ff00;
+      --muted: #c7c4b9;
+      --line: 3px solid var(--ink);
+      --shadow: 7px 7px 0 var(--ink);
+    }
+
+    * { box-sizing: border-box; }
+
+    html { background: var(--ink); }
+
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: var(--paper);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+      font-size: 16px;
+      line-height: 1.45;
+    }
+
+    a { color: inherit; font-weight: 800; text-decoration-thickness: 2px; }
+
+    .wrap {
+      width: min(100% - 28px, 860px);
+      margin: 0 auto;
+    }
+
+    header {
+      padding: 18px 0 24px;
+      border-bottom: var(--line);
+    }
+
+    .kicker {
+      display: inline-block;
+      padding: 5px 8px;
+      color: var(--ink);
+      background: var(--signal);
+      border: var(--line);
+      box-shadow: 4px 4px 0 var(--ink);
+      font-size: 12px;
+      font-weight: 900;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+
+    h1, h2, h3, p { margin-top: 0; }
+
+    h1 {
+      max-width: 720px;
+      margin: 22px 0 10px;
+      font-size: clamp(2.2rem, 12vw, 6rem);
+      line-height: .9;
+      letter-spacing: -.09em;
+      text-transform: uppercase;
+    }
+
+    h2 {
+      margin-bottom: 12px;
+      font-size: clamp(1.35rem, 5vw, 2rem);
+      line-height: 1;
+      letter-spacing: -.05em;
+      text-transform: uppercase;
+    }
+
+    h3 {
+      margin-bottom: 5px;
+      font-size: 1rem;
+      line-height: 1.15;
+      text-transform: uppercase;
+    }
+
+    .lede {
+      max-width: 680px;
+      margin-bottom: 0;
+      font-size: 1.08rem;
+      font-weight: 700;
+    }
+
+    .status {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 10px;
+      margin: 20px 0;
+    }
+
+    .stamp {
+      padding: 12px;
+      border: var(--line);
+      background: var(--signal);
+      box-shadow: var(--shadow);
+      font-weight: 900;
+    }
+
+    .stamp.dark {
+      color: var(--paper);
+      background: var(--ink);
+    }
+
+    nav {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin: 22px 0;
+    }
+
+    nav a {
+      padding: 7px 9px;
+      border: 2px solid var(--ink);
+      background: var(--paper);
+      font-size: 12px;
+      text-decoration: none;
+      text-transform: uppercase;
+    }
+
+    main { padding: 24px 0 48px; }
+
+    section { margin: 0 0 38px; }
+
+    .section-head {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 12px;
+      border-bottom: var(--line);
+      padding-bottom: 8px;
+      margin-bottom: 12px;
+    }
+
+    .section-no {
+      color: #55534d;
+      font-size: 12px;
+      font-weight: 900;
+      white-space: nowrap;
+    }
+
+    .signal-box {
+      padding: 14px;
+      border: var(--line);
+      background: var(--ink);
+      color: var(--paper);
+      box-shadow: var(--shadow);
+    }
+
+    .signal-box strong { color: var(--signal); }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 12px;
+    }
+
+    .card {
+      border: var(--line);
+      background: #fffef8;
+      box-shadow: 5px 5px 0 var(--ink);
+    }
+
+    .card > * { padding-left: 13px; padding-right: 13px; }
+
+    .card-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      min-height: 44px;
+      padding-top: 9px;
+      padding-bottom: 9px;
+      border-bottom: 2px solid var(--ink);
+      background: var(--muted);
+    }
+
+    .priority {
+      padding: 3px 5px;
+      border: 2px solid var(--ink);
+      background: var(--signal);
+      font-size: 12px;
+      font-weight: 900;
+      white-space: nowrap;
+    }
+
+    .card-body { padding-top: 12px; padding-bottom: 12px; }
+
+    .meta {
+      margin: 0 0 9px;
+      color: #4e4c46;
+      font-size: 12px;
+      font-weight: 800;
+      text-transform: uppercase;
+    }
+
+    .card-body p:last-child { margin-bottom: 0; }
+
+    details {
+      border-top: 2px solid var(--ink);
+      background: var(--paper);
+    }
+
+    summary {
+      cursor: pointer;
+      padding: 10px 13px;
+      font-weight: 900;
+      list-style-position: inside;
+    }
+
+    details[open] summary { background: var(--signal); }
+
+    .detail { padding: 0 13px 12px; }
+
+    .detail ul, .detail ol { margin: 8px 0 0; padding-left: 20px; }
+
+    .detail li { margin: 5px 0; }
+
+    .step {
+      display: grid;
+      grid-template-columns: 46px 1fr;
+      gap: 12px;
+      padding: 12px 0;
+      border-bottom: 2px solid var(--ink);
+    }
+
+    .step:last-child { border-bottom: 0; }
+
+    .step-no {
+      align-self: start;
+      padding: 5px 4px;
+      border: 2px solid var(--ink);
+      background: var(--signal);
+      font-weight: 900;
+      text-align: center;
+    }
+
+    .step p { margin-bottom: 0; }
+
+    .gate {
+      padding: 12px;
+      border: var(--line);
+      background: var(--signal);
+      font-weight: 800;
+    }
+
+    .gate + .gate { margin-top: 10px; }
+
+    .small { color: #4e4c46; font-size: 13px; }
+
+    footer {
+      padding: 18px 0 30px;
+      border-top: var(--line);
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    @media (min-width: 680px) {
+      .status { grid-template-columns: 1fr 1fr; }
+      .grid.two { grid-template-columns: 1fr 1fr; }
+      .wrap { width: min(100% - 44px, 860px); }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { scroll-behavior: auto !important; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="wrap">
+      <span class="kicker">LoopW / read-only audit / 2026-08-27</span>
+      <h1>Make the app faster. Keep it the same.</h1>
+      <p class="lede">A ranked path for reducing idle work, input lag, UI stalls, and startup cost. No visual redesign. No behavior rewrite.</p>
+
+      <div class="status">
+        <div class="stamp">STATUS: NO IMPLEMENTATION</div>
+        <div class="stamp dark">BUILD: PASS / TESTS: 39 PASS</div>
+      </div>
+
+      <nav aria-label="Plan sections">
+        <a href="#signal">Signal</a>
+        <a href="#now">Do first</a>
+        <a href="#later">Do later</a>
+        <a href="#gates">Regression gates</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <section id="signal">
+      <div class="section-head">
+        <h2>The signal</h2>
+        <span class="section-no">01 / diagnosis</span>
+      </div>
+      <div class="signal-box">
+        <p><strong>Primary problem:</strong> work happens too often, on the UI thread, or inside global input callbacks.</p>
+        <p><strong>Do not start with:</strong> geometry math. It is bounded and action-only.</p>
+        <p><strong>Start with:</strong> measurement, duplicate work removal, and event coalescing.</p>
+      </div>
+    </section>
+
+    <section id="now">
+      <div class="section-head">
+        <h2>Do first</h2>
+        <span class="section-no">02 / low risk</span>
+      </div>
+
+      <div class="grid">
+        <article class="card">
+          <div class="card-head"><h3>Instrument the hot paths</h3><span class="priority">P0</span></div>
+          <div class="card-body">
+            <p class="meta">Safe / required before tuning</p>
+            <p>Measure startup, settings saves, stash polling, hook duration, preview capture, placement latency, allocations, and UI stalls.</p>
+          </div>
+          <details>
+            <summary>Exit condition</summary>
+            <div class="detail">Baseline p50 and p95 values on idle, drag, radial, preview, settings, stash, and placement flows. No per-mouse-event logging.</div>
+          </details>
+        </article>
+
+        <article class="card">
+          <div class="card-head"><h3>Remove duplicate stash work</h3><span class="priority">P1</span></div>
+          <div class="card-body">
+            <p class="meta">MainWindow / WindowStashService</p>
+            <p>The 80 ms timer prunes stale windows, then reveal logic prunes them again. Each check can inspect HWND, process, title, class, and executable path.</p>
+          </div>
+          <details>
+            <summary>Plan</summary>
+            <div class="detail">
+              <ul>
+                <li>Run one maintenance pass per tick.</li>
+                <li>Reuse the cleaned runtime set for reveal.</li>
+                <li>Stop polling when no stash records exist.</li>
+              </ul>
+            </div>
+          </details>
+        </article>
+
+        <article class="card">
+          <div class="card-head"><h3>Cut idle mouse-hook work</h3><span class="priority">P1</span></div>
+          <div class="card-body">
+            <p class="meta">DragSnapService / global input</p>
+            <p>Every global mouse move is parsed and can enter the WPF dispatcher, even when drag snapping is disabled or no drag is active.</p>
+          </div>
+          <details>
+            <summary>Plan</summary>
+            <div class="detail">
+              <ul>
+                <li>Fast-path idle moves before marshaling.</li>
+                <li>Keep only the newest pending drag point.</li>
+                <li>Preserve button-down and button-up ordering.</li>
+                <li>Resample on release.</li>
+              </ul>
+            </div>
+          </details>
+        </article>
+
+        <article class="card">
+          <div class="card-head"><h3>Cache process facts per scan</h3><span class="priority">P1</span></div>
+          <div class="card-body">
+            <p class="meta">WindowPolicy / WindowQuery</p>
+            <p>Window enumeration can resolve the same process path and name repeatedly for multi-window applications.</p>
+          </div>
+          <details>
+            <summary>Safety rule</summary>
+            <div class="detail">Use an enumeration-scoped cache keyed by PID. Do not keep a long-lived PID cache. Preserve elevated-process fallbacks and z-order.</div>
+          </details>
+        </article>
+
+        <article class="card">
+          <div class="card-head"><h3>Reuse one action plan</h3><span class="priority">P1</span></div>
+          <div class="card-body">
+            <p class="meta">WindowActionService</p>
+            <p>Action execution authorizes and resolves the target more than once, then performs another monitor lookup.</p>
+          </div>
+          <details>
+            <summary>Safety rule</summary>
+            <div class="detail">Carry policy, current frame, monitor snapshot, target frame, work area, and limits through one operation. Keep one final validity and actual-frame check.</div>
+          </details>
+        </article>
+
+        <article class="card">
+          <div class="card-head"><h3>Remove duplicate refresh passes</h3><span class="priority">P2</span></div>
+          <div class="card-body">
+            <p class="meta">SettingsWindow</p>
+            <p>Startup and appearance changes reapply themes and radial controls more than once. Unrelated slider changes refresh unrelated controls.</p>
+          </div>
+          <details>
+            <summary>Plan</summary>
+            <div class="detail">Make one method own each state transition. Update only the changed domain, paired input, label, swatch, or surface.</div>
+          </details>
+        </article>
+      </div>
+    </section>
+
+    <section id="later">
+      <div class="section-head">
+        <h2>Do later</h2>
+        <span class="section-no">03 / measured risk</span>
+      </div>
+
+      <div class="grid">
+        <article class="card">
+          <div class="card-head"><h3>Coalesce settings saves</h3><span class="priority">P1</span></div>
+          <div class="card-body">
+            <p>Slider changes currently serialize and write the complete settings file synchronously. Keep in-memory values and live previews immediate. Debounce only durable writes.</p>
+          </div>
+          <details>
+            <summary>Flush points</summary>
+            <div class="detail">Focus loss, navigation, reset, close, shutdown, and explicit discrete changes. Keep atomic replacement and error reporting.</div>
+          </details>
+        </article>
+
+        <article class="card">
+          <div class="card-head"><h3>Fix radial double sampling</h3><span class="priority">P2</span></div>
+          <div class="card-body">
+            <p>The overlay has both a 20 ms cursor timer and WPF mouse-move selection. Consolidate them only after edge and keyboard behavior is verified.</p>
+          </div>
+        </article>
+
+        <article class="card">
+          <div class="card-head"><h3>Defer or reuse overlays</h3><span class="priority">P2</span></div>
+          <div class="card-body">
+            <p>Radial and preview windows are created during repeated interactions. Defer preview creation until needed. Consider hide/reset reuse after lifecycle tests.</p>
+          </div>
+        </article>
+
+        <article class="card">
+          <div class="card-head"><h3>Profile screen capture</h3><span class="priority">P2</span></div>
+          <div class="card-body">
+            <p>Preview capture is synchronous and covers the full work area. Profile 4K and mixed-DPI displays before changing capture size or threading.</p>
+          </div>
+          <details>
+            <summary>Hard rule</summary>
+            <div class="detail">Any asynchronous bitmap must be rejected if its monitor, DPI, work area, or interaction generation is stale.</div>
+          </details>
+        </article>
+
+        <article class="card">
+          <div class="card-head"><h3>Replace placement sleeps</h3><span class="priority">P3</span></div>
+          <div class="card-body">
+            <p>Window placement can block the WPF dispatcher with repeated sleeps and native polling. This has the largest potential payoff and the highest regression risk.</p>
+          </div>
+          <details>
+            <summary>Do not break</summary>
+            <div class="detail">Keep the double SetWindowPlacement pattern, async placement flags, final frame verification, DPI behavior, focus, z-order, and a bounded timeout. Consider SetWinEventHook plus a timeout state machine.</div>
+          </details>
+        </article>
+      </div>
+    </section>
+
+    <section>
+      <div class="section-head">
+        <h2>Build decisions</h2>
+        <span class="section-no">04 / do not churn</span>
+      </div>
+      <div class="grid two">
+        <div class="gate">KEEP<br><span class="small">Self-contained win-x64 release model.</span></div>
+        <div class="gate">REJECT<br><span class="small">Trimming. The WPF publish path rejects it.</span></div>
+        <div class="gate">MEASURE<br><span class="small">ReadyToRun only if startup improves enough to justify larger artifacts.</span></div>
+        <div class="gate">ADD<br><span class="small">Publish smoke test, artifact size tracking, startup, exit, and CLI checks.</span></div>
+      </div>
+    </section>
+
+    <section id="gates">
+      <div class="section-head">
+        <h2>Regression gates</h2>
+        <span class="section-no">05 / mandatory</span>
+      </div>
+      <div class="card">
+        <div class="card-body">
+          <div class="step"><span class="step-no">01</span><p>Visual output stays identical: geometry, blur, shadow, opacity, theme, easing, and timing.</p></div>
+          <div class="step"><span class="step-no">02</span><p>Input stays complete: trigger, keybind, drag, release, radial pointer selection, keyboard selection.</p></div>
+          <div class="step"><span class="step-no">03</span><p>Window state stays correct: focus, z-order, activation, minimized/maximized behavior, elevated apps, and exact final frame.</p></div>
+          <div class="step"><span class="step-no">04</span><p>Persistence stays durable: restart, stash recovery, closed windows, reused HWNDs, save failure, and shutdown.</p></div>
+          <div class="step"><span class="step-no">05</span><p>Desktop matrix passes: 100%, 125%, 150%, 200%, negative coordinates, multiple monitors, mixed DPI, normal and high-polling mice.</p></div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="section-head">
+        <h2>Reference signal</h2>
+        <span class="section-no">06 / comparable software</span>
+      </div>
+      <div class="signal-box">
+        <p>Upstream Loop is already moving toward cancelled stale resize work, cached window snapshots, fewer redundant reads, and lower drag-event overhead.</p>
+        <p><a href="https://github.com/MrKai77/Loop/releases">Loop releases</a> · <a href="https://github.com/MrKai77/Loop/pull/1065">window snapshot work</a> · <a href="https://github.com/MrKai77/Loop/pull/1013">resize cancellation</a> · <a href="https://github.com/MrKai77/Loop/pull/1094">event-monitor lifecycle</a></p>
+        <p>Use the architecture pattern, not a rewrite: event-driven invalidation, short-lived snapshots, fast hooks, and reusable overlays.</p>
+      </div>
+    </section>
+
+    <section>
+      <div class="section-head">
+        <h2>First authorized slice</h2>
+        <span class="section-no">07 / execution order</span>
+      </div>
+      <div class="card">
+        <div class="card-body">
+          <ol>
+            <li>Add measurements only.</li>
+            <li>Remove duplicate stash pruning.</li>
+            <li>Cut idle mouse-hook dispatch.</li>
+            <li>Add per-enumeration process caching.</li>
+            <li>Remove duplicate settings refreshes.</li>
+            <li>Measure again.</li>
+            <li>Then coalesce settings persistence.</li>
+          </ol>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="wrap">LOOPW PERFORMANCE PLAN / AUDIT ONLY / VISUAL AND UX PARITY IS THE RELEASE CONDITION</div>
+  </footer>
+</body>
+</html>

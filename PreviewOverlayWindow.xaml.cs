@@ -5,6 +5,8 @@ using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Media.Imaging;
 
+#pragma warning disable CA1416
+
 namespace LoopW;
 
 public partial class PreviewOverlayWindow : Window
@@ -13,6 +15,9 @@ public partial class PreviewOverlayWindow : Window
 
     private readonly AppSettings _settings;
     private readonly double _blurMargin;
+    private HostBackdropPreviewWindow? _livePreview;
+    private bool _livePreviewUnavailable;
+    private bool _livePreviewCapabilityLogged;
     private double _workLeft;
     private double _workTop;
     private double _workWidth;
@@ -32,8 +37,18 @@ public partial class PreviewOverlayWindow : Window
         _settings = settings;
         PreviewSurface.ApplySettings(settings);
         _blurMargin = PreviewSurface.BlurMargin;
-
         SourceInitialized += PreviewOverlayWindow_SourceInitialized;
+    }
+
+    internal bool IsPreviewVisible => IsVisible || (_livePreview?.IsVisible ?? false);
+
+    internal void HidePreview()
+    {
+        _livePreview?.HidePreview();
+        if (IsVisible)
+        {
+            Hide();
+        }
     }
 
     private void PreviewOverlayWindow_SourceInitialized(object? sender, EventArgs e)
@@ -41,8 +56,65 @@ public partial class PreviewOverlayWindow : Window
         NativeMethods.MakeMouseClickThrough(new System.Windows.Interop.WindowInteropHelper(this).Handle);
     }
 
+    private bool TryShowLiveFrame(NativeMethods.Rect frame)
+    {
+        if (!_settings.LiveBackdropPreviewEnabled)
+        {
+            RecordLivePreviewCapability("disabled-in-settings");
+            return false;
+        }
+
+        if (_livePreviewUnavailable)
+        {
+            return false;
+        }
+
+        if (!OperatingSystem.IsWindowsVersionAtLeast(10, 0, 22000))
+        {
+            RecordLivePreviewCapability("requires-windows-11-build-22000");
+            return false;
+        }
+
+        try
+        {
+            _livePreview ??= new HostBackdropPreviewWindow(_settings);
+            return _livePreview.TryShowFrame(frame);
+        }
+        catch (Exception exception)
+        {
+            LivePreviewDiagnostics.Record("preview-entry", exception: exception);
+            _livePreviewUnavailable = true;
+            _livePreview?.HidePreview();
+            return false;
+        }
+    }
+
+    private void RecordLivePreviewCapability(string detail)
+    {
+        if (_livePreviewCapabilityLogged)
+        {
+            return;
+        }
+
+        _livePreviewCapabilityLogged = true;
+        LivePreviewDiagnostics.Record("preview-gate", detail);
+    }
+
     internal void ShowFrame(NativeMethods.Rect frame, WindowAction action)
     {
+        if (TryShowLiveFrame(frame))
+        {
+            if (IsVisible)
+            {
+                Hide();
+            }
+
+            _hasRenderedFrame = false;
+            return;
+        }
+
+        _livePreview?.HidePreview();
+
         if (!NativeMethods.TryGetMonitorWorkRect(frame, out var workArea))
         {
             return;
@@ -210,6 +282,7 @@ public partial class PreviewOverlayWindow : Window
     internal void HideImmediately(bool destroy = false)
     {
         _transitionVersion++;
+        _livePreview?.HidePreview(destroy);
         _backdrop = null;
         _hasRenderedFrame = false;
         _lastAction = null;
@@ -237,6 +310,7 @@ public partial class PreviewOverlayWindow : Window
 
     private void CaptureFullBackdrop(NativeMethods.Rect workArea, double dpiX, double dpiY)
     {
+        using var performance = PerformanceDiagnostics.Measure(PerformanceMetric.OverlayCapture);
         _backdrop = null;
         try
         {

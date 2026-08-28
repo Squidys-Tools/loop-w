@@ -14,6 +14,7 @@ public partial class MainWindow : FluentWindow
 {
     private readonly GlobalHotkey _hotkey = new();
     private readonly AppSettings _settings;
+    private readonly SettingsWindow _settingsPanel;
     private readonly DragSnapService _dragSnap;
     private IReadOnlyList<RadialTarget> _radialTargets = Array.Empty<RadialTarget>();
     private IntPtr _targetWindow;
@@ -33,9 +34,9 @@ public partial class MainWindow : FluentWindow
         WindowStashService.Configure(_settings);
         _radialTargets = RadialActionCatalog.LoadTargets(_settings);
 
-        var settingsPanel = new SettingsWindow(_hotkey, _settings);
-        settingsPanel.SettingsChanged += ApplySettings;
-        SettingsHost.Content = settingsPanel;
+        _settingsPanel = new SettingsWindow(_hotkey, _settings);
+        _settingsPanel.SettingsChanged += ApplySettings;
+        SettingsHost.Content = _settingsPanel;
 
         _hotkey.SetBinding(_settings.TriggerModifiers, _settings.TriggerVk);
         _hotkey.SetTriggerBehavior(
@@ -84,6 +85,7 @@ public partial class MainWindow : FluentWindow
     private void Window_Closed(object? sender, EventArgs e)
     {
         _stashTimer.Stop();
+        _settingsPanel.FlushPendingSave();
         _dragSnap.TargetChanged -= DragSnap_TargetChanged;
         _dragSnap.TargetCleared -= DragSnap_TargetCleared;
         _dragSnap.GestureEnded -= DragSnap_GestureEnded;
@@ -95,6 +97,11 @@ public partial class MainWindow : FluentWindow
 
     private void StashTimer_Tick(object? sender, EventArgs e)
     {
+        if (!WindowStashService.HasStashedWindows)
+        {
+            return;
+        }
+
         WindowStashService.Poll();
         if (NativeMethods.GetCursorPos(out var cursor) &&
             WindowStashService.TryRevealAtCursor(cursor, out var message))
@@ -417,23 +424,60 @@ public partial class MainWindow : FluentWindow
         TargetStatus.Text = $"  ·  {message}{(applied ? selection.StatusSuffix : string.Empty)}";
     }
 
-    private void ApplySettings(AppSettings settings)
+    private void ApplySettings(AppSettings settings, SettingsChangeDomain domains)
     {
-        WindowStashService.UpdateSettings(settings);
-        MonitorService.UpdateSettings(settings);
-        WindowPolicy.UpdateSettings(settings);
-        _radialTargets = RadialActionCatalog.LoadTargets(settings);
-        _hotkey.SetBinding(settings.TriggerModifiers, settings.TriggerVk);
-        _hotkey.SetTriggerBehavior(
-            settings.TriggerModifierSide,
-            settings.TriggerDelayMilliseconds,
-            settings.TriggerTimeoutMilliseconds,
-            settings.DoubleClickToTrigger,
-            settings.MiddleClickToTrigger);
-        _hotkey.SetKeybinds(settings.Keybinds);
-        _dragPreview?.HideImmediately();
-        _dragSnap.UpdateSettings();
-        UpdateTriggerLabel();
+        using var performance = PerformanceDiagnostics.Measure(PerformanceMetric.SettingsApply);
+        if (domains == SettingsChangeDomain.None)
+        {
+            return;
+        }
+
+        if (domains.HasFlag(SettingsChangeDomain.Stash))
+        {
+            WindowStashService.UpdateSettings(settings);
+        }
+
+        if (domains.HasFlag(SettingsChangeDomain.Monitor))
+        {
+            MonitorService.UpdateSettings(settings);
+        }
+
+        if (domains.HasFlag(SettingsChangeDomain.Exclusions))
+        {
+            WindowPolicy.UpdateSettings(settings);
+        }
+
+        if (domains.HasFlag(SettingsChangeDomain.Radial) ||
+            domains.HasFlag(SettingsChangeDomain.Keybinds))
+        {
+            _radialTargets = RadialActionCatalog.LoadTargets(settings);
+        }
+
+        if (domains.HasFlag(SettingsChangeDomain.Trigger) ||
+            domains.HasFlag(SettingsChangeDomain.Keybinds))
+        {
+            _hotkey.SetBinding(settings.TriggerModifiers, settings.TriggerVk);
+            _hotkey.SetTriggerBehavior(
+                settings.TriggerModifierSide,
+                settings.TriggerDelayMilliseconds,
+                settings.TriggerTimeoutMilliseconds,
+                settings.DoubleClickToTrigger,
+                settings.MiddleClickToTrigger);
+            _hotkey.SetKeybinds(settings.Keybinds);
+            UpdateTriggerLabel();
+        }
+
+        if (domains.HasFlag(SettingsChangeDomain.Preview) ||
+            domains.HasFlag(SettingsChangeDomain.Appearance) ||
+            domains.HasFlag(SettingsChangeDomain.DragSnap))
+        {
+            _dragPreview?.HideImmediately();
+        }
+
+        if (domains.HasFlag(SettingsChangeDomain.DragSnap))
+        {
+            _dragSnap.UpdateSettings();
+        }
     }
 
     private void DragSnap_TargetChanged(DragSnapTarget target)

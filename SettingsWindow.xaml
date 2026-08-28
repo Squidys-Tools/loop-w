@@ -353,7 +353,7 @@
                                                              AutomationProperties.Name="Show the radial menu" />
                                             <StackPanel Grid.Row="1" Margin="0,16,0,0">
                                                 <TextBlock Text="Cursor direction selects" FontSize="13" />
-                                                <TextBlock Text="Move toward a wedge to preview its action."
+                                                <TextBlock Text="Move toward a wedge to select it. Turn off to select by hovering."
                                                            Margin="0,3,14,0"
                                                            FontSize="12"
                                                            TextWrapping="Wrap"

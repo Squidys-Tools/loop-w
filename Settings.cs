@@ -57,6 +57,10 @@ public sealed class AppSettings
 
     public bool PreviewEnabled { get; set; } = true;
 
+    // Native Windows 11 Desktop Acrylic path. The existing bitmap renderer is
+    // used automatically if the system backdrop is unavailable.
+    public bool LiveBackdropPreviewEnabled { get; set; } = true;
+
     public bool DragSnapEnabled { get; set; } = true;
 
     public int DragSnapThreshold { get; set; } = 24;
@@ -131,6 +135,7 @@ public sealed class AppSettings
 
     public bool Save()
     {
+        using var performance = PerformanceDiagnostics.Measure(PerformanceMetric.SettingsSave);
         string? temporaryPath = null;
         try
         {
@@ -247,6 +252,7 @@ public sealed class AppSettings
         RadialOuterRadius = defaults.RadialOuterRadius;
         RadialInnerRadius = defaults.RadialInnerRadius;
         PreviewEnabled = defaults.PreviewEnabled;
+        LiveBackdropPreviewEnabled = defaults.LiveBackdropPreviewEnabled;
         DragSnapEnabled = defaults.DragSnapEnabled;
         DragSnapThreshold = defaults.DragSnapThreshold;
         RestorePreDragFrameOnSnapCancel = defaults.RestorePreDragFrameOnSnapCancel;

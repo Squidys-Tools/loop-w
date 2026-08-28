@@ -25,6 +25,16 @@ internal readonly record struct WindowPolicyDecision(
     bool IsResizable,
     bool IsBorderlessFullscreen);
 
+internal readonly record struct ProcessMetadata(
+    bool IsAvailable,
+    string? ExecutablePath,
+    string? ProcessName);
+
+internal sealed class WindowPolicyEnumerationCache
+{
+    internal Dictionary<uint, ProcessMetadata> ByProcessId { get; } = new();
+}
+
 internal static class WindowPolicy
 {
     private static AppSettings _settings = new();
@@ -73,18 +83,42 @@ internal static class WindowPolicy
 
     public static bool IsEligibleForEnumeration(IntPtr window, IntPtr excludedWindow)
     {
+        return IsEligibleForEnumeration(window, excludedWindow, cache: null);
+    }
+
+    internal static bool IsEligibleForEnumeration(
+        IntPtr window,
+        IntPtr excludedWindow,
+        WindowPolicyEnumerationCache? cache)
+    {
         if (window == excludedWindow)
         {
             return false;
         }
 
-        var decision = Evaluate(window);
+        var decision = Evaluate(window, cache);
         return decision.IsAllowed && !decision.IsBorderlessFullscreen;
     }
 
     public static bool IsExcluded(IntPtr window) => Evaluate(window).Restriction == WindowRestriction.Excluded;
 
-    private static WindowPolicyDecision Evaluate(IntPtr window)
+    internal static WindowPolicyEnumerationCache CreateEnumerationCache() => new();
+
+    internal static ProcessMetadata GetProcessMetadata(
+        uint processId,
+        WindowPolicyEnumerationCache cache)
+    {
+        if (cache.ByProcessId.TryGetValue(processId, out var cached))
+        {
+            return cached;
+        }
+
+        var metadata = ReadProcessMetadata(processId);
+        cache.ByProcessId[processId] = metadata;
+        return metadata;
+    }
+
+    private static WindowPolicyDecision Evaluate(IntPtr window, WindowPolicyEnumerationCache? cache = null)
     {
         if (window == IntPtr.Zero || !NativeMethods.IsWindow(window))
         {
@@ -119,7 +153,7 @@ internal static class WindowPolicy
             return Denied(WindowRestriction.Owned, "Owned utility windows are not action targets.");
         }
 
-        if (IsExcludedBySettings(processId))
+        if (IsExcludedBySettings(processId, cache))
         {
             return Denied(WindowRestriction.Excluded, "The target application is excluded in LoopW settings.");
         }
@@ -134,13 +168,21 @@ internal static class WindowPolicy
             isBorderlessFullscreen);
     }
 
-    private static bool IsExcludedBySettings(uint processId)
+    private static bool IsExcludedBySettings(uint processId, WindowPolicyEnumerationCache? cache)
     {
         if (_excludedExecutablePaths.Count == 0 && _excludedProcessNames.Count == 0)
         {
             return false;
         }
 
+        var metadata = cache == null
+            ? ReadProcessMetadata(processId)
+            : GetProcessMetadata(processId, cache);
+        return IsExcluded(metadata);
+    }
+
+    private static ProcessMetadata ReadProcessMetadata(uint processId)
+    {
         try
         {
             using var process = Process.GetProcessById((int)processId);
@@ -164,21 +206,33 @@ internal static class WindowPolicy
                 // The path check above remains useful when the name is denied.
             }
 
-            return (!string.IsNullOrWhiteSpace(path) && _excludedExecutablePaths.Contains(path)) ||
-                (!string.IsNullOrWhiteSpace(processName) && _excludedProcessNames.Contains(processName));
+            return new ProcessMetadata(true, path, processName);
         }
         catch (Win32Exception)
         {
-            return false;
+            return new ProcessMetadata(false, null, null);
         }
         catch (InvalidOperationException)
         {
-            return false;
+            return new ProcessMetadata(false, null, null);
         }
         catch (ArgumentException)
         {
+            return new ProcessMetadata(false, null, null);
+        }
+    }
+
+    private static bool IsExcluded(ProcessMetadata metadata)
+    {
+        if (!metadata.IsAvailable)
+        {
             return false;
         }
+
+        return (!string.IsNullOrWhiteSpace(metadata.ExecutablePath) &&
+                _excludedExecutablePaths.Contains(metadata.ExecutablePath)) ||
+            (!string.IsNullOrWhiteSpace(metadata.ProcessName) &&
+             _excludedProcessNames.Contains(metadata.ProcessName));
     }
 
     private static void RebuildExclusionLookups(AppSettings settings)

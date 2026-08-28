@@ -44,10 +44,11 @@ internal static class WindowQuery
     private static List<WindowCandidate> Enumerate(IntPtr excludedWindow)
     {
         var windows = new List<WindowCandidate>();
+        var cache = WindowPolicy.CreateEnumerationCache();
         NativeMethods.EnumWindows((window, _) =>
         {
             if (!NativeMethods.IsIconic(window) &&
-                WindowPolicy.IsEligibleForEnumeration(window, excludedWindow) &&
+                WindowPolicy.IsEligibleForEnumeration(window, excludedWindow, cache) &&
                 NativeMethods.GetWindowRect(window, out var frame) &&
                 frame.Width > 0 && frame.Height > 0)
             {

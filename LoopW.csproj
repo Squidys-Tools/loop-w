@@ -8,12 +8,41 @@
     <UseWPF>true</UseWPF>
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <PlatformTarget>x64</PlatformTarget>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="WPF-UI" Version="4.3.0" />
     <PackageReference Include="WPF-UI.Tray" Version="4.3.0" />
     <Compile Remove="LoopW.Tests/**/*.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageDownload Include="Microsoft.Windows.SDK.NET.Ref" Version="[10.0.19041.56]" />
+    <PackageDownload Include="Win2D.uwp" Version="[1.28.3]" />
+    <PackageDownload Include="Microsoft.VCRTForwarders.140" Version="[1.1.0]" />
+    <Reference Include="Microsoft.Windows.SDK.NET">
+      <HintPath>$(NuGetPackageRoot)microsoft.windows.sdk.net.ref\10.0.19041.56\lib\net8.0\Microsoft.Windows.SDK.NET.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="WinRT.Runtime">
+      <HintPath>$(NuGetPackageRoot)microsoft.windows.sdk.net.ref\10.0.19041.56\lib\net8.0\WinRT.Runtime.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="Microsoft.Graphics.Canvas.Interop">
+      <HintPath>$(NuGetPackageRoot)win2d.uwp\1.28.3\lib\net8.0-windows10.0.19041.0\Microsoft.Graphics.Canvas.Interop.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Content Include="$(NuGetPackageRoot)win2d.uwp\1.28.3\runtimes\win-x64\native\Microsoft.Graphics.Canvas.dll">
+      <Link>Microsoft.Graphics.Canvas.dll</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
+    <Content Include="$(NuGetPackageRoot)microsoft.vcrtforwarders.140\1.1.0\runtimes\win-x64\native\release\*.dll">
+      <Link>%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
   </ItemGroup>
 
 </Project>

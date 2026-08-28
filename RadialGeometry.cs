@@ -37,6 +37,19 @@ internal static class RadialGeometry
         return geometry;
     }
 
+    public static int? IndexAtDirection(Point point, double center, double deadzone)
+    {
+        var dx = point.X - center;
+        var dy = point.Y - center;
+        var minimumDistance = Math.Max(0, deadzone);
+        if (dx * dx + dy * dy < minimumDistance * minimumDistance)
+        {
+            return null;
+        }
+
+        return RadialActionCatalog.IndexAt(Math.Atan2(dy, dx) * 180 / Math.PI);
+    }
+
     private static PathFigure BuildCircle(double center, double radius)
     {
         var start = Polar(center, radius, 0);

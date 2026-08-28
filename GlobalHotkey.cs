@@ -198,6 +198,7 @@ public sealed class GlobalHotkey : IDisposable
 
     private IntPtr HookProc(int nCode, IntPtr wParam, IntPtr lParam)
     {
+        using var performance = PerformanceDiagnostics.Measure(PerformanceMetric.HotkeyHook);
         if (nCode >= 0)
         {
             var message = wParam.ToInt32();
@@ -228,6 +229,7 @@ public sealed class GlobalHotkey : IDisposable
             var message = wParam.ToInt32();
             if (message == NativeMethods.WmMButtonDown || message == NativeMethods.WmMButtonUp)
             {
+                using var performance = PerformanceDiagnostics.Measure(PerformanceMetric.MouseHook);
                 lock (_stateGate)
                 {
                     var suppress = message == NativeMethods.WmMButtonDown

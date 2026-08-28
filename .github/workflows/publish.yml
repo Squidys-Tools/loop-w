@@ -23,7 +23,7 @@ jobs:
           dotnet-version: 8.0.x
 
       - name: Restore dependencies
-        run: dotnet restore LoopW.Tests/LoopW.Tests.csproj
+        run: dotnet restore LoopW.Tests/LoopW.Tests.csproj --runtime win-x64
 
       - name: Run automated tests
         run: dotnet run --project LoopW.Tests/LoopW.Tests.csproj --configuration Release --no-restore
@@ -37,6 +37,25 @@ jobs:
           --property:PublishSingleFile=true
           --no-restore
           --output publish\LoopW
+
+      - name: Verify live preview runtime files
+        shell: pwsh
+        run: |
+          $required = @(
+            'Microsoft.Graphics.Canvas.dll',
+            'msvcp140_app.dll',
+            'msvcp140_1_app.dll',
+            'msvcp140_2_app.dll',
+            'vcruntime140_app.dll',
+            'vcruntime140_1_app.dll'
+          )
+
+          $missing = $required | Where-Object {
+            -not (Test-Path (Join-Path 'publish\LoopW' $_))
+          }
+          if ($missing) {
+            throw "Portable publish is missing: $($missing -join ', ')"
+          }
 
       - name: Create archive and checksum
         id: package
