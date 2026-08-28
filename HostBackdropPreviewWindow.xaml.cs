@@ -121,12 +121,12 @@ public partial class HostBackdropPreviewWindow : Window
             ref backdropType,
             sizeof(int)) == 0;
 
-        var acrylicTint = ParseColor(
-            _settings.IsLightAppearance ? "#38FFFFFF" : "#38101827",
-            "#38101827");
-        var acrylicEnabled = NativeMethods.TrySetAcrylicBackdrop(
+        var blurTint = ParseColor(
+            _settings.IsLightAppearance ? "#18FFFFFF" : "#18101827",
+            "#18101827");
+        var blurEnabled = NativeMethods.TrySetBlurBackdrop(
             hwnd,
-            ToAccentGradientColor(acrylicTint));
+            ToAccentGradientColor(blurTint));
 
         // Apply transparency after the native backdrop is installed. Setting
         // the WPF Window background earlier can cause WPF to retain an opaque
@@ -166,11 +166,12 @@ public partial class HostBackdropPreviewWindow : Window
             ref darkMode,
             sizeof(int));
 
-        // The accent policy is preferred for this non-activating overlay: it
-        // keeps sampling the desktop while the pointer moves between wedges.
+        // The lighter blur policy is preferred for this non-activating
+        // overlay: it keeps sampling the desktop while avoiding the stronger
+        // fixed-radius Acrylic treatment.
         // DWM's documented system backdrop remains active when the policy is
         // unavailable.
-        _backdropEnabled = frameExtended && (acrylicEnabled || systemBackdropEnabled);
+        _backdropEnabled = frameExtended && (blurEnabled || systemBackdropEnabled);
         if (!_backdropEnabled)
         {
             _initializationFailed = true;
@@ -183,8 +184,8 @@ public partial class HostBackdropPreviewWindow : Window
         SurfaceElement.CornerRadius = new CornerRadius(_settings.PreviewCornerRadius);
         SurfaceElement.BorderThickness = new Thickness(_settings.PreviewBorderWidth);
         SurfaceElement.Background = new SolidColorBrush(ParseColor(
-            _settings.IsLightAppearance ? "#30FFFFFF" : "#30101827",
-            "#30101827"));
+            _settings.IsLightAppearance ? "#18FFFFFF" : "#18101827",
+            "#18101827"));
         SurfaceElement.BorderBrush = new SolidColorBrush(ParseColor(
             _settings.PreviewBorderColor,
             "#B8007AFF"));
