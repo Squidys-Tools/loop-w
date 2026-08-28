@@ -61,7 +61,10 @@ internal static class NativeMethods
     public const int DwmwaCaptionColor = 35;
     public const int DwmwaTextColor = 36;
     public const int DwmwaExtendedFrameBounds = 9;
-    public const int DwmwaUseHostBackdropBrush = 17;
+    public const int DwmwaSystemBackdropType = 38;
+    public const int DwmwaWindowCornerPreference = 33;
+    public const int DwmSystemBackdropTransientWindow = 3;
+    public const int DwmWindowCornerRound = 2;
     public const uint SrcCopy = 0x00CC0020;
     public const uint AttachParentProcess = 0xFFFFFFFF;
 
@@ -78,6 +81,15 @@ internal static class NativeMethods
 
         public int Width => Right - Left;
         public int Height => Bottom - Top;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct Margins
+    {
+        public int Left;
+        public int Right;
+        public int Top;
+        public int Bottom;
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -187,6 +199,9 @@ internal static class NativeMethods
 
     [DllImport("dwmapi.dll")]
     public static extern int DwmSetWindowAttribute(IntPtr hwnd, int attribute, ref int value, int size);
+
+    [DllImport("dwmapi.dll")]
+    public static extern int DwmExtendFrameIntoClientArea(IntPtr hwnd, ref Margins margins);
 
     [DllImport("dwmapi.dll")]
     public static extern int DwmGetWindowAttribute(IntPtr hwnd, int attribute, out Rect value, int size);

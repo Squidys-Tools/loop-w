@@ -59,7 +59,7 @@ public partial class PreviewOverlayWindow : Window
     {
         if (!_settings.LiveBackdropPreviewEnabled ||
             _livePreviewUnavailable ||
-            !OperatingSystem.IsWindowsVersionAtLeast(10, 0, 22000))
+            !OperatingSystem.IsWindowsVersionAtLeast(10, 0, 22621))
         {
             return false;
         }

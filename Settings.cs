@@ -57,8 +57,8 @@ public sealed class AppSettings
 
     public bool PreviewEnabled { get; set; } = true;
 
-    // Temporary proof-of-concept switch. The live compositor path falls back
-    // to the existing bitmap renderer if initialization is unavailable.
+    // Native Windows 11 Desktop Acrylic path. The existing bitmap renderer is
+    // used automatically if the system backdrop is unavailable.
     public bool LiveBackdropPreviewEnabled { get; set; } = true;
 
     public bool DragSnapEnabled { get; set; } = true;
