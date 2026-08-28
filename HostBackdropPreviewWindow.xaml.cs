@@ -91,8 +91,9 @@ public partial class HostBackdropPreviewWindow : Window
             _surfaceVisual.Shapes.Add(_tintShape);
             _surfaceVisual.Shapes.Add(_borderShape);
         }
-        catch
+        catch (Exception exception)
         {
+            LivePreviewDiagnostics.Record("composition-create", exception: exception);
             _initializationFailed = true;
         }
     }
@@ -129,8 +130,9 @@ public partial class HostBackdropPreviewWindow : Window
             {
                 Show();
             }
-            catch
+            catch (Exception exception)
             {
+                LivePreviewDiagnostics.Record("preview-show", exception: exception);
                 _initializationFailed = true;
                 return false;
             }
@@ -182,7 +184,9 @@ public partial class HostBackdropPreviewWindow : Window
             sizeof(int));
         if (result != 0)
         {
-            Debug.WriteLine($"LoopW live preview: DwmSetWindowAttribute failed with HRESULT 0x{result:X8}.");
+            var detail = $"HRESULT 0x{result:X8}";
+            Debug.WriteLine($"LoopW live preview: DwmSetWindowAttribute failed with {detail}.");
+            LivePreviewDiagnostics.Record("dwm-host-backdrop", detail);
             _initializationFailed = true;
         }
     }
@@ -198,6 +202,9 @@ public partial class HostBackdropPreviewWindow : Window
 
         if (_initializationFailed || !_compositionHost.IsReady)
         {
+            LivePreviewDiagnostics.Record(
+                "composition-not-ready",
+                _initializationFailed ? "initialization-failed" : "composition-host-not-ready");
             return false;
         }
 
@@ -209,8 +216,9 @@ public partial class HostBackdropPreviewWindow : Window
             _initialized = true;
             return true;
         }
-        catch
+        catch (Exception exception)
         {
+            LivePreviewDiagnostics.Record("composition-root", exception: exception);
             _initializationFailed = true;
             return false;
         }

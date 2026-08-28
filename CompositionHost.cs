@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using System.Windows.Interop;
@@ -27,6 +28,7 @@ internal sealed class CompositionHost : HwndHost
 
     public CompositionHost()
     {
+        PreloadNativeDependencies();
         _dispatcherQueue = InitializeDispatcherQueue();
         Compositor = new Compositor();
         _compositorDesktopInterop = (ICompositorDesktopInterop)(object)Compositor;
@@ -104,6 +106,43 @@ internal sealed class CompositionHost : HwndHost
     }
 
     internal void RegisterForDispose(IDisposable disposable) => _disposables.Add(disposable);
+
+    private static void PreloadNativeDependencies()
+    {
+        var baseDirectory = AppContext.BaseDirectory;
+        var nativeFiles = new[]
+        {
+            "concrt140_app.dll",
+            "msvcp140_1_app.dll",
+            "msvcp140_2_app.dll",
+            "msvcp140_app.dll",
+            "msvcp140_atomic_wait_app.dll",
+            "vcamp140_app.dll",
+            "vccorlib140_app.dll",
+            "vcomp140_app.dll",
+            "vcruntime140_1_app.dll",
+            "vcruntime140_app.dll",
+            "Microsoft.Graphics.Canvas.dll"
+        };
+
+        foreach (var nativeFile in nativeFiles)
+        {
+            var path = Path.Combine(baseDirectory, nativeFile);
+            if (!File.Exists(path))
+            {
+                continue;
+            }
+
+            try
+            {
+                NativeLibrary.Load(path);
+            }
+            catch (Exception exception)
+            {
+                LivePreviewDiagnostics.Record("native-load", nativeFile, exception);
+            }
+        }
+    }
 
     private static object InitializeDispatcherQueue()
     {

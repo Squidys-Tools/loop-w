@@ -17,6 +17,7 @@ public partial class PreviewOverlayWindow : Window
     private readonly double _blurMargin;
     private HostBackdropPreviewWindow? _livePreview;
     private bool _livePreviewUnavailable;
+    private bool _livePreviewCapabilityLogged;
     private double _workLeft;
     private double _workTop;
     private double _workWidth;
@@ -57,10 +58,20 @@ public partial class PreviewOverlayWindow : Window
 
     private bool TryShowLiveFrame(NativeMethods.Rect frame)
     {
-        if (!_settings.LiveBackdropPreviewEnabled ||
-            _livePreviewUnavailable ||
-            !OperatingSystem.IsWindowsVersionAtLeast(10, 0, 22000))
+        if (!_settings.LiveBackdropPreviewEnabled)
         {
+            RecordLivePreviewCapability("disabled-in-settings");
+            return false;
+        }
+
+        if (_livePreviewUnavailable)
+        {
+            return false;
+        }
+
+        if (!OperatingSystem.IsWindowsVersionAtLeast(10, 0, 22000))
+        {
+            RecordLivePreviewCapability("requires-windows-11-build-22000");
             return false;
         }
 
@@ -69,12 +80,24 @@ public partial class PreviewOverlayWindow : Window
             _livePreview ??= new HostBackdropPreviewWindow(_settings);
             return _livePreview.TryShowFrame(frame);
         }
-        catch
+        catch (Exception exception)
         {
+            LivePreviewDiagnostics.Record("preview-entry", exception: exception);
             _livePreviewUnavailable = true;
             _livePreview?.HidePreview();
             return false;
         }
+    }
+
+    private void RecordLivePreviewCapability(string detail)
+    {
+        if (_livePreviewCapabilityLogged)
+        {
+            return;
+        }
+
+        _livePreviewCapabilityLogged = true;
+        LivePreviewDiagnostics.Record("preview-gate", detail);
     }
 
     internal void ShowFrame(NativeMethods.Rect frame, WindowAction action)

@@ -62,6 +62,11 @@ The app starts hidden in the system tray. Open Settings from the tray icon to
 change the trigger, keybinds, radial assignments, previews, appearance, and
 advanced window policies.
 
+If the live preview falls back to the bitmap preview, inspect
+`%LOCALAPPDATA%\LoopW\live-preview.log` after reproducing it. The log records
+whether Windows rejected the backdrop, Win2D failed to load, or Composition
+failed to attach.
+
 To make a portable x64 folder, publish the app instead of copying the build
 output:
 
