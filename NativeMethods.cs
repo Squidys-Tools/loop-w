@@ -66,7 +66,7 @@ internal static class NativeMethods
     public const int DwmSystemBackdropTransientWindow = 3;
     public const int DwmWindowCornerRound = 2;
     public const int WcaAccentPolicy = 19;
-    public const int AccentEnableBlurBehind = 3;
+    public const int AccentEnableTransparentGradient = 2;
     public const uint SrcCopy = 0x00CC0020;
     public const uint AttachParentProcess = 0xFFFFFFFF;
 
@@ -228,7 +228,7 @@ internal static class NativeMethods
         IntPtr hwnd,
         ref WindowCompositionAttributeData data);
 
-    public static bool TrySetBlurBackdrop(IntPtr hwnd, uint gradientColor)
+    public static bool TrySetLiveBackdrop(IntPtr hwnd, uint gradientColor)
     {
         if (hwnd == IntPtr.Zero)
         {
@@ -237,7 +237,7 @@ internal static class NativeMethods
 
         var policy = new AccentPolicy
         {
-            AccentState = AccentEnableBlurBehind,
+            AccentState = AccentEnableTransparentGradient,
             AccentFlags = 0,
             GradientColor = gradientColor,
             AnimationId = 0

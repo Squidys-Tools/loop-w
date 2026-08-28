@@ -121,12 +121,24 @@ public partial class HostBackdropPreviewWindow : Window
             ref backdropType,
             sizeof(int)) == 0;
 
-        var blurTint = ParseColor(
+        var liveTint = ParseColor(
             _settings.IsLightAppearance ? "#18FFFFFF" : "#18101827",
             "#18101827");
-        var blurEnabled = NativeMethods.TrySetBlurBackdrop(
+        var liveEnabled = NativeMethods.TrySetLiveBackdrop(
             hwnd,
-            ToAccentGradientColor(blurTint));
+            ToAccentGradientColor(liveTint));
+
+        if (liveEnabled)
+        {
+            // The transparent-gradient policy is the readable live mode. Do
+            // not stack DWM's fixed-radius blur underneath it.
+            var noSystemBackdrop = 1;
+            NativeMethods.DwmSetWindowAttribute(
+                hwnd,
+                NativeMethods.DwmwaSystemBackdropType,
+                ref noSystemBackdrop,
+                sizeof(int));
+        }
 
         // Apply transparency after the native backdrop is installed. Setting
         // the WPF Window background earlier can cause WPF to retain an opaque
@@ -166,12 +178,11 @@ public partial class HostBackdropPreviewWindow : Window
             ref darkMode,
             sizeof(int));
 
-        // The lighter blur policy is preferred for this non-activating
-        // overlay: it keeps sampling the desktop while avoiding the stronger
-        // fixed-radius Acrylic treatment.
-        // DWM's documented system backdrop remains active when the policy is
-        // unavailable.
-        _backdropEnabled = frameExtended && (blurEnabled || systemBackdropEnabled);
+        // The transparent-gradient policy is preferred for this non-activating
+        // overlay: it keeps the desktop live and readable without imposing a
+        // fixed-radius blur. DWM's documented system backdrop remains active
+        // when the policy is unavailable.
+        _backdropEnabled = frameExtended && (liveEnabled || systemBackdropEnabled);
         if (!_backdropEnabled)
         {
             _initializationFailed = true;
