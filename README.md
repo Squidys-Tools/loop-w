@@ -2,11 +2,16 @@
 
 LoopW is a Windows window manager built around a radial menu. Hold the trigger,
 move toward a direction, and release to place the active window. It is a native
-WPF and Win32 app inspired by [Loop for macOS](https://github.com/MrKai77/Loop).
+Rust + [iced](https://iced.rs) and Win32 app inspired by [Loop for macOS](https://github.com/MrKai77/Loop).
 
-LoopW is still early-stage. The core features are implemented, but the project
-needs a full manual desktop QA pass across different window types, display
-scales, and Windows configurations. Expect rough edges.
+This tree is the Rust port (iced 0.14 UI, self-contained `win-x64` EXE, no
+.NET runtime). The C# / WPF implementation has been replaced at the repo root;
+`git log` retains its history.
+
+LoopW is still early-stage. The core logic, settings model, radial/preview
+surfaces, and settings UI are ported and tested, but the project needs a full
+manual desktop QA pass across different window types, display scales, and
+Windows configurations. Expect rough edges.
 
 ## What it does
 
@@ -33,7 +38,7 @@ the trigger in Settings.
 When a GitHub Release is available, download the Windows ZIP and checksum from
 the [Releases page](https://github.com/Squidys-Tools/loop-w/releases), extract
 the archive, and run `LoopW.exe`. The publish workflow produces a
-self-contained `win-x64` build, so a separate .NET runtime is not needed for
+self-contained `win-x64` build, so no separate runtime is needed for
 that package.
 
 For now, building from source is the most reliable way to try the current code.
@@ -43,38 +48,49 @@ For now, building from source is the most reliable way to try the current code.
 You need:
 
 - Windows
-- The .NET 8 SDK
+- The Rust stable toolchain (`rustup`)
 
 From PowerShell:
 
 ```powershell
 git clone https://github.com/Squidys-Tools/loop-w.git
 cd loop-w
-dotnet build LoopW.csproj
-dotnet run --project LoopW.csproj
+cargo build
+cargo run
 ```
 
-The app starts hidden in the system tray. Open Settings from the tray icon to
-change the trigger, keybinds, radial assignments, previews, appearance, and
-advanced window policies.
+The app starts with the Settings window. Tray-resident operation, global hooks,
+and overlays connect as the Win32 backend lands (see roadmap note below).
 
 Run the automated checks with:
 
 ```powershell
-dotnet run --project LoopW.Tests/LoopW.Tests.csproj
+cargo test
+cargo clippy --all-targets
 ```
+
+Ship a self-contained release binary with:
+
+```powershell
+cargo build --release
+```
+
+The EXE at `target\release\loopw.exe` (`LoopW.exe` when packaged) needs no
+separate runtime.
 
 ## Configuration
 
-LoopW saves settings here:
+LoopW saves settings here (same path and keys as the previous C# build, so
+existing files load without loss):
 
 ```text
-%LOCALAPPDATA%\\LoopW\\settings.json
+%LOCALAPPDATA%\LoopW\settings.json
 ```
 
 Settings changes save automatically. The app normalizes invalid or older values
 when it loads them, and radial slots that point to missing keybinds fall back to
-no action.
+no action. Saves go through a temp file + rename so a crash mid-write keeps the
+last complete file.
 
 Global keyboard and mouse hooks are part of the product. Review the trigger and
 exclusion settings before using LoopW on a machine where those hooks are not
@@ -104,6 +120,21 @@ Use `list/actions` to see the action names supported by the current build.
 - [`docs/QA.md`](docs/QA.md) contains the manual Windows test checklist.
 - [`specs/settings-ui-redesign-spec.md`](specs/settings-ui-redesign-spec.md)
   records the settings UI requirements and acceptance scenarios.
+
+## Port notes
+
+- `src/core` is platform-independent and fully unit tested (`cargo test`).
+- `src/settings` keeps the exact C# JSON contract (PascalCase keys, integer
+  enums) with a tolerant loader.
+- `src/ui` is the iced 0.14 settings surface plus the shared text-free radial
+  and preview canvas renderers. It improves on the WPF surface with live canvas
+  previews leading the Radial and Preview pages, preset-first appearance, and
+  inline validation.
+- `src/win` owns all Win32 side effects (hooks, window actions, snap, stash,
+  IPC, tray). Live backend wiring is the active workstream; pure logic it
+  depends on is already tested in `src/core`.
+- No source file exceeds ~450 lines; most are under 250. New code should stay
+  modular rather than growing single large files.
 
 ## License
 

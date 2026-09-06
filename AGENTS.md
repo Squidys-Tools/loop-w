@@ -1,1 +1,1 @@
-The .NET 8 SDK is installed per-user at ~\.dotnet.
+Rust stable toolchain via rustup (Windows MSVC host). Build with `cargo build`, test with `cargo test`, lint with `cargo clippy --all-targets`. Keep source files small and modular (no 1000+ line files).
