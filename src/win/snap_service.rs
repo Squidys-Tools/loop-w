@@ -1,28 +1,203 @@
-//! Title-bar drag snapping runtime (edge preview + commit/cancel).
+//! Title-bar drag snapping: detect, preview, commit or restore.
 //!
-//! Ports `DragSnapService` staging: threshold checks are pure
-//! (`crate::core::drag_snap`); this module tracks the pre-drag frame so a
-//! cancelled snap can restore it when the setting is enabled.
+//! Ports `DragSnapService`. Button down/up arrives from the mouse hook;
+//! move tracking is driven once per UI frame (`track`) while a drag is
+//! active, which subsumes the C# move events + 45 ms watchdog without
+//! flooding the event queue. Nothing moves until button-up.
 
-use crate::core::rect::Rect;
+use std::sync::{Mutex, OnceLock};
 
-/// In-flight drag state for one window.
-#[derive(Debug, Default)]
-pub struct DragState {
-    pub window: u64,
-    pub pre_drag_frame: Option<Rect>,
-    pub active: bool,
+use windows::Win32::UI::WindowsAndMessaging::*;
+
+use super::native;
+use crate::core::actions::WindowAction;
+use crate::core::drag_snap::try_resolve;
+use crate::core::frame_math::zone_frame;
+use crate::core::rect::{Point, Rect};
+
+const DRAG_START_DISTANCE_SQ: i32 = 16; // 4 px, squared
+const HTCAPTION: usize = 2;
+const VK_LBUTTON: i32 = 0x01;
+
+/// What the preview window should do after a track step.
+#[derive(Debug, Clone, PartialEq)]
+pub enum SnapTrack {
+    Idle,
+    Show(Rect),
+    Update(Rect),
+    Hide,
 }
 
-impl DragState {
-    pub fn begin(&mut self, window: u64, frame: Rect) {
-        self.window = window;
-        self.pre_drag_frame = Some(frame);
-        self.active = true;
-    }
+/// How a finished gesture resolves (applied by the UI thread).
+#[derive(Debug, Clone)]
+pub enum SnapFinish {
+    Nothing,
+    Apply { window: u64, action: WindowAction, frame: Rect },
+    Restore { window: u64, frame: Rect },
+}
 
-    pub fn cancel(&mut self) -> Option<Rect> {
-        self.active = false;
-        self.pre_drag_frame.take()
+struct SnapState {
+    window: u64,
+    original_frame: Rect,
+    start_point: Point,
+    dragging: bool,
+    target: Option<(WindowAction, Rect)>,
+    had_candidate: bool,
+}
+
+static STATE: OnceLock<Mutex<Option<SnapState>>> = OnceLock::new();
+
+fn state() -> &'static Mutex<Option<SnapState>> {
+    STATE.get_or_init(|| Mutex::new(None))
+}
+
+/// Hook-thread input: physical left-button transitions.
+pub fn note_button(down: bool) {
+    if down {
+        if let Some(cursor) = native::cursor_pos() {
+            super::events::push(super::events::RuntimeEvent::SnapBegin {
+                window: 0, // resolved on the UI thread (hit-test may block)
+                frame: Rect::new(0, 0, 0, 0),
+                cursor,
+            });
+        }
+    } else {
+        super::events::push(super::events::RuntimeEvent::SnapEnd { released: true });
     }
+}
+
+/// UI-thread drag start: caption hit-test + eligibility gates.
+pub fn begin_at_cursor(cursor: Point) {
+    if !super::shared::snapshot().drag_snap_enabled {
+        return;
+    }
+    if state().lock().map(|s| s.is_some()).unwrap_or(true) {
+        return;
+    }
+    let hwnd = native::ancestor_root(native::window_from_point(cursor));
+    if hwnd.is_invalid() {
+        return;
+    }
+    let raw = native::raw(hwnd) as u64;
+    if !super::query::is_eligible_for_snap(raw) || native::is_zoomed(hwnd) {
+        return;
+    }
+    if (native::window_style(hwnd) as u32 & WS_CAPTION.0) == 0 {
+        return;
+    }
+    if native::nc_hit_test(hwnd, cursor) != Some(HTCAPTION) {
+        return;
+    }
+    let Some(frame) = native::window_rect(hwnd) else {
+        return;
+    };
+    *state().lock().expect("snap state poisoned") = Some(SnapState {
+        window: raw,
+        original_frame: frame,
+        start_point: cursor,
+        dragging: false,
+        target: None,
+        had_candidate: false,
+    });
+}
+
+/// Per-frame tracking. Returns preview action + optional finished gesture.
+/// The watchdog is folded in: a physically-released button or a dead window
+/// resolves here as a cancel when no SnapEnd event arrives first.
+pub fn track(cursor: Point) -> (SnapTrack, Option<SnapFinish>) {
+    let mut slot = state().lock().expect("snap state poisoned");
+    let Some(drag) = slot.as_mut() else {
+        return (SnapTrack::Idle, None);
+    };
+    if !native::async_key_down(VK_LBUTTON)
+        || !native::is_window(native::from_raw(drag.window as isize))
+    {
+        let finished = finish_gesture(drag, false);
+        *slot = None;
+        let preview = match &finished {
+            Some(SnapFinish::Restore { .. }) | Some(SnapFinish::Apply { .. }) => SnapTrack::Hide,
+            None => SnapTrack::Hide,
+        };
+        return (preview, finished);
+    }
+    let dx = cursor.x - drag.start_point.x;
+    let dy = cursor.y - drag.start_point.y;
+    if !drag.dragging {
+        if dx * dx + dy * dy < DRAG_START_DISTANCE_SQ {
+            return (SnapTrack::Idle, None);
+        }
+        drag.dragging = true;
+    }
+    let settings = super::shared::snapshot();
+    let target = super::monitor_service::for_point(cursor).and_then(|snapshot| {
+        try_resolve(
+            snapshot.monitor,
+            snapshot.work,
+            cursor,
+            settings.drag_snap_threshold,
+        )
+        .map(|zone| {
+            let action = zone.action();
+            (action, zone_frame(snapshot.work, action))
+        })
+    });
+    let had_previous = drag.target.is_some();
+    if target.map(|(_, frame)| frame) == drag.target.map(|(_, frame)| frame) {
+        return (SnapTrack::Idle, None);
+    }
+    drag.target = target;
+    match target {
+        None => (SnapTrack::Hide, None),
+        Some((_, frame)) => {
+            drag.had_candidate = true;
+            if had_previous {
+                (SnapTrack::Update(frame), None)
+            } else {
+                (SnapTrack::Show(frame), None)
+            }
+        }
+    }
+}
+
+/// Button-up resolution from a SnapEnd event.
+pub fn end_released() -> Option<SnapFinish> {
+    let mut slot = state().lock().expect("snap state poisoned");
+    let Some(drag) = slot.take() else {
+        return None;
+    };
+    if !drag.dragging || !drag.had_candidate {
+        return None;
+    }
+    finish_gesture(&drag, true)
+}
+
+fn finish_gesture(drag: &SnapState, released: bool) -> Option<SnapFinish> {
+    let commit = released && drag.target.is_some();
+    match drag.target {
+        Some((action, frame)) if commit => Some(SnapFinish::Apply {
+            window: drag.window,
+            action,
+            frame,
+        }),
+        _ => {
+            if super::shared::snapshot().restore_pre_drag_on_cancel {
+                Some(SnapFinish::Restore {
+                    window: drag.window,
+                    frame: drag.original_frame,
+                })
+            } else {
+                None
+            }
+        }
+    }
+}
+
+/// Current live target for preview refresh (display-change path).
+pub fn current_target() -> Option<(WindowAction, Rect)> {
+    state().lock().ok().and_then(|s| s.as_ref().and_then(|d| d.target))
+}
+
+/// Abort any in-flight gesture (feature disabled mid-drag).
+pub fn abort() {
+    *state().lock().expect("snap state poisoned") = None;
 }

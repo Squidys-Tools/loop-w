@@ -10,7 +10,10 @@ pub mod theme;
 pub mod views;
 pub mod widgets;
 
-/// Boot the iced settings application.
-pub fn run_settings() -> iced::Result {
-    app::run()
+/// Boot the resident daemon (hidden start, tray-first lifecycle).
+pub fn run_daemon(
+    startup_command: Option<String>,
+    instance: crate::win::instance::InstanceGuard,
+) -> iced::Result {
+    app::run(startup_command, instance)
 }

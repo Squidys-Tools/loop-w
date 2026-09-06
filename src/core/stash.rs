@@ -149,14 +149,61 @@ impl Default for StashEdge {
     }
 }
 
-/// Frame for a stashed window: a thin visible strip along `edge`.
-pub fn stashed_frame(work: Rect, edge: StashEdge, peek: i32) -> Rect {
-    let peek = peek.clamp(1, 48);
+/// Edge of the work area a window is nearest to. Strict `<` scan in
+/// Left, Right, Top, Bottom order, so ties break toward Left.
+pub fn nearest_edge(work: Rect, window: Rect) -> StashEdge {
+    let left = (window.left - work.left).abs();
+    let right = (work.right - window.right).abs();
+    let top = (window.top - work.top).abs();
+    let bottom = (work.bottom - window.bottom).abs();
+    let mut edge = StashEdge::Left;
+    let mut best = left;
+    if right < best {
+        edge = StashEdge::Right;
+        best = right;
+    }
+    if top < best {
+        edge = StashEdge::Top;
+        best = top;
+    }
+    if bottom < best {
+        edge = StashEdge::Bottom;
+        best = bottom;
+    }
+    edge
+}
+
+/// Stashed frame: the window keeps its full size and cross-axis position;
+/// only the stash axis moves off-screen, leaving `peek` pixels visible.
+pub fn calculate_stashed_frame(work: Rect, window: Rect, edge: StashEdge, peek: i32) -> Rect {
+    let width = window.width().max(1);
+    let height = window.height().max(1);
+    let visible = peek.clamp(1, 48).max(1).min(width.min(height));
     match edge {
-        StashEdge::Left => Rect::new(work.left - work.width() + peek, work.top, work.left + peek, work.bottom),
-        StashEdge::Right => Rect::new(work.right - peek, work.top, work.right + work.width() - peek, work.bottom),
-        StashEdge::Top => Rect::new(work.left, work.top - work.height() + peek, work.right, work.top + peek),
-        StashEdge::Bottom => Rect::new(work.left, work.bottom - peek, work.right, work.bottom + work.height() - peek),
+        StashEdge::Left => Rect::new(
+            work.left - width + visible,
+            window.top,
+            work.left + visible,
+            window.bottom,
+        ),
+        StashEdge::Right => Rect::new(
+            work.right - visible,
+            window.top,
+            work.right + width - visible,
+            window.bottom,
+        ),
+        StashEdge::Top => Rect::new(
+            window.left,
+            work.top - height + visible,
+            window.right,
+            work.top + visible,
+        ),
+        StashEdge::Bottom => Rect::new(
+            window.left,
+            work.bottom - visible,
+            window.right,
+            work.bottom + height - visible,
+        ),
     }
 }
 
@@ -166,10 +213,16 @@ mod tests {
 
     #[test]
     fn stash_frames_keep_visible_peek() {
-        let work = Rect::new(0, 0, 1920, 1040);
-        let left = stashed_frame(work, StashEdge::Left, 8);
-        assert_eq!(left.right - work.left, 8);
-        let right = stashed_frame(work, StashEdge::Right, 8);
-        assert_eq!(work.right - right.left, 8);
+        let work = Rect::new(0, 0, 1000, 800);
+        let window = Rect::new(100, 120, 500, 520);
+        assert_eq!(nearest_edge(work, Rect::new(-2, 120, 398, 520)), StashEdge::Left);
+        assert_eq!(
+            calculate_stashed_frame(work, window, StashEdge::Left, 8),
+            Rect::new(-392, 120, 8, 520)
+        );
+        assert_eq!(
+            calculate_stashed_frame(work, window, StashEdge::Right, 8),
+            Rect::new(992, 120, 1392, 520)
+        );
     }
 }

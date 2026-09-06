@@ -1,25 +1,168 @@
 //! Cached monitor enumeration + DPI-aware work areas.
 //!
-//! Ports `MonitorService` caching (generation counter + snapshot cache). Live
-//! `EnumDisplayMonitors` calls are Windows-only; padding/translation math is
-//! tested in `crate::core::monitor`.
+//! Ports `MonitorService`: generation counter, HMONITOR-keyed snapshot
+//! cache, sorted monitor list, and padding/translation math from
+//! `crate::core::monitor`. Invalidated on display/DPI/setting changes.
 
-use crate::core::monitor::MonitorSnapshot;
+use std::collections::HashMap;
+use std::sync::{Mutex, OnceLock};
 
-/// Cache generation; bumped whenever displays, DPI, or padding change.
-#[derive(Debug, Default)]
-pub struct MonitorCache {
+use windows::Win32::Foundation::*;
+use windows::Win32::UI::HiDpi::*;
+use windows::Win32::UI::WindowsAndMessaging::*;
+
+use super::native;
+use crate::core::monitor::{MonitorMoveSizePolicy, MonitorSnapshot, apply_padding};
+
+struct Cache {
     generation: u64,
-    monitors: Vec<MonitorSnapshot>,
+    snapshots: HashMap<isize, MonitorSnapshot>,
+    all: Option<Vec<MonitorSnapshot>>,
 }
 
-impl MonitorCache {
-    pub fn invalidate(&mut self) {
-        self.generation += 1;
-        self.monitors.clear();
-    }
+static CACHE: OnceLock<Mutex<Cache>> = OnceLock::new();
 
-    pub fn generation(&self) -> u64 {
-        self.generation
+fn cache() -> &'static Mutex<Cache> {
+    CACHE.get_or_init(|| {
+        Mutex::new(Cache {
+            generation: 0,
+            snapshots: HashMap::new(),
+            all: None,
+        })
+    })
+}
+
+pub fn generation() -> u64 {
+    cache().lock().map(|c| c.generation).unwrap_or(0)
+}
+
+pub fn move_size_policy() -> MonitorMoveSizePolicy {
+    super::shared::snapshot().monitor_move_policy
+}
+
+/// Drop all cached snapshots (display/DPI/settings changed).
+pub fn invalidate() {
+    if let Ok(mut guard) = cache().lock() {
+        guard.generation += 1;
+        guard.snapshots.clear();
+        guard.all = None;
+    }
+}
+
+/// Snapshot for the monitor containing a window (raw HWND as u64).
+pub fn for_window(hwnd: u64) -> Option<MonitorSnapshot> {
+    let monitor = unsafe { MonitorFromWindow(native::from_raw(hwnd as isize), MONITOR_DEFAULTTONEAREST) };
+    read(monitor)
+}
+
+/// Snapshot for the monitor containing a rect.
+pub fn for_rect(rect: crate::core::rect::Rect) -> Option<MonitorSnapshot> {
+    let mut native_rect = native::rect_to_native(rect);
+    let monitor =
+        unsafe { MonitorFromRect(&mut native_rect as *mut RECT, MONITOR_DEFAULTTONEAREST) };
+    read(monitor)
+}
+
+/// Snapshot for the monitor containing a point.
+pub fn for_point(point: crate::core::rect::Point) -> Option<MonitorSnapshot> {
+    let monitor = unsafe {
+        MonitorFromPoint(
+            windows::Win32::Foundation::POINT { x: point.x, y: point.y },
+            MONITOR_DEFAULTTONEAREST,
+        )
+    };
+    read(monitor)
+}
+
+/// All monitors sorted by work-area left, then top.
+pub fn all() -> Vec<MonitorSnapshot> {
+    if let Ok(guard) = cache().lock() {
+        if let Some(all) = guard.all.clone() {
+            return all;
+        }
+    }
+    let mut monitors = Vec::new();
+    unsafe extern "system" fn enum_proc(
+        monitor: HMONITOR,
+        _hdc: HDC,
+        _rect: *mut RECT,
+        _data: LPARAM,
+    ) -> BOOL {
+        if let Some(snapshot) = read(monitor) {
+            let out = &mut *(_data.0 as *mut Vec<MonitorSnapshot>);
+            out.push(snapshot);
+        }
+        BOOL::from(true)
+    }
+    unsafe {
+        let _ = EnumDisplayMonitors(
+            None,
+            None,
+            Some(enum_proc),
+            LPARAM(&mut monitors as *mut Vec<MonitorSnapshot> as isize),
+        );
+    }
+    monitors.sort_by_key(|snapshot| (snapshot.work.left, snapshot.work.top));
+    if let Ok(mut guard) = cache().lock() {
+        guard.all = Some(monitors.clone());
+    }
+    monitors
+}
+
+fn read(monitor: HMONITOR) -> Option<MonitorSnapshot> {
+    if monitor.is_invalid() {
+        return None;
+    }
+    let key = monitor.0 as isize;
+    if let Ok(guard) = cache().lock() {
+        if let Some(snapshot) = guard.snapshots.get(&key) {
+            return Some(*snapshot);
+        }
+    }
+    let mut info = MONITORINFO::default();
+    info.cbSize = core::mem::size_of::<MONITORINFO>() as u32;
+    unsafe {
+        if GetMonitorInfoW(monitor, &mut info).as_bool() {
+            let (dpi_x, dpi_y) = monitor_dpi(monitor);
+            let settings = super::shared::snapshot();
+            let work = apply_padding(
+                native::rect_from_native(info.rcWork),
+                settings.global_padding,
+                settings.padding_left,
+                settings.padding_top,
+                settings.padding_right,
+                settings.padding_bottom,
+            );
+            let snapshot = MonitorSnapshot {
+                monitor: native::rect_from_native(info.rcMonitor),
+                work,
+                dpi_x: normalize_dpi(dpi_x),
+                dpi_y: normalize_dpi(dpi_y),
+            };
+            if let Ok(mut guard) = cache().lock() {
+                guard.snapshots.insert(key, snapshot);
+            }
+            return Some(snapshot);
+        }
+    }
+    None
+}
+
+fn monitor_dpi(monitor: HMONITOR) -> (f64, f64) {
+    unsafe {
+        let mut dpi_x = 0u32;
+        let mut dpi_y = 0u32;
+        if GetDpiForMonitor(monitor, MDT_EFFECTIVE_DPI, &mut dpi_x, &mut dpi_y).is_ok() {
+            return (dpi_x as f64, dpi_y as f64);
+        }
+    }
+    (96.0, 96.0)
+}
+
+fn normalize_dpi(dpi: f64) -> f64 {
+    if dpi.is_finite() && dpi > 0.0 {
+        dpi
+    } else {
+        96.0
     }
 }

@@ -3,5 +3,6 @@
 pub mod advanced;
 pub mod appearance;
 pub mod general;
+pub mod overlay;
 pub mod preview;
 pub mod radial;

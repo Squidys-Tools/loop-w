@@ -77,7 +77,7 @@ impl RadialTargetSettings {
 pub enum RadialTarget {
     None,
     BuiltIn { action: WindowAction, cycle: bool },
-    Keybind { id: String, action: WindowAction, cycle: bool },
+    Keybind { id: String, action: WindowAction, cycle: bool, label: String },
 }
 
 impl RadialTarget {
@@ -101,9 +101,47 @@ impl RadialTarget {
         match self {
             RadialTarget::None => "No action".to_string(),
             RadialTarget::BuiltIn { action, .. } => action.display_name().to_string(),
-            RadialTarget::Keybind { action, .. } => action.display_name().to_string(),
+            RadialTarget::Keybind { action, label, .. } => {
+                if label.is_empty() {
+                    action.display_name().to_string()
+                } else {
+                    format!("{label} · {}", action.display_name())
+                }
+            }
         }
     }
+}
+
+/// Resolve one persisted slot against the keybind list.
+pub fn resolve_slot(
+    slot: &RadialTargetSettings,
+    keybinds: &[ResolvedKeybind],
+) -> RadialTarget {
+    match slot.kind {
+        RadialTargetKind::None => RadialTarget::None,
+        RadialTargetKind::Action => RadialTarget::BuiltIn {
+            action: slot.action,
+            cycle: slot.cycle_enabled,
+        },
+        RadialTargetKind::Keybind => keybinds
+            .iter()
+            .find(|keybind| keybind.id == slot.keybind_id)
+            .map(|keybind| RadialTarget::Keybind {
+                id: keybind.id.clone(),
+                action: keybind.action,
+                cycle: slot.cycle_enabled,
+                label: keybind.label.clone(),
+            })
+            .unwrap_or(RadialTarget::None),
+    }
+}
+
+/// Minimal keybind view for radial resolution (avoids a settings dep).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResolvedKeybind {
+    pub id: String,
+    pub action: WindowAction,
+    pub label: String,
 }
 
 pub fn default_slots() -> Vec<RadialTargetSettings> {

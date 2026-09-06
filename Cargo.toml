@@ -25,10 +25,12 @@ windows = { version = "0.61", features = [
     "Win32_Graphics_Gdi",
     "Win32_System_Registry",
     "Win32_System_Threading",
+    "Win32_System_Console",
+    "Win32_System_Pipes",
+    "Win32_Security",
     "Win32_Storage_FileSystem",
 ] }
 tray-icon = "0.20"
-single-instance = "0.3"
 
 [profile.release]
 opt-level = 2
