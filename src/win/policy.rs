@@ -174,26 +174,31 @@ fn is_excluded_by_settings(pid: u32) -> bool {
         return false;
     }
     // Fast path: process-name check avoids the costlier full-path query.
+    // Unicode case-insensitive compare, matching OrdinalIgnoreCase.
     if !settings.excluded_processes.is_empty() {
         let name = native::process_name(pid);
-        if !name.is_empty()
-            && settings
+        if !name.is_empty() {
+            let lower = name.to_lowercase();
+            if settings
                 .excluded_processes
                 .iter()
-                .any(|excluded| excluded.eq_ignore_ascii_case(&name))
-        {
-            return true;
+                .any(|excluded| excluded.to_lowercase() == lower)
+            {
+                return true;
+            }
         }
     }
     if !settings.excluded_executables.is_empty() {
         let path = native::executable_path(pid);
-        if !path.is_empty()
-            && settings
+        if !path.is_empty() {
+            let lower = path.to_lowercase();
+            if settings
                 .excluded_executables
                 .iter()
-                .any(|excluded| excluded.eq_ignore_ascii_case(&path))
-        {
-            return true;
+                .any(|excluded| excluded.to_lowercase() == lower)
+            {
+                return true;
+            }
         }
     }
     false

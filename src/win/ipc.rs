@@ -12,7 +12,8 @@ use std::time::Duration;
 use windows::core::{BOOL, PCWSTR};
 use windows::Win32::Foundation::*;
 use windows::Win32::Security::Authorization::{
-    ConvertSidToStringSidW, ConvertStringSecurityDescriptorToSecurityDescriptorW, SDDL_REVISION_1,
+    ConvertSidToStringSidW, ConvertStringSecurityDescriptorToSecurityDescriptorW, GetSecurityInfo,
+    SDDL_REVISION_1, SE_KERNEL_OBJECT,
 };
 use windows::Win32::Security::*;
 use windows::Win32::Storage::FileSystem::*;
@@ -55,6 +56,32 @@ pub fn start_server() {
             .spawn(server_loop)
             .expect("pipe thread spawns");
     });
+}
+
+static STOP: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Stop the pipe server (quit path). Unblocks the listener with a
+/// self-connection, mirroring Dispose's cancellation of the accept loop.
+pub fn stop_server() {
+    use std::sync::atomic::Ordering;
+    STOP.store(true, Ordering::SeqCst);
+    // Wake ConnectNamedPipe so the loop observes STOP.
+    let name = pipe_name_wide();
+    unsafe {
+        if WaitNamedPipeW(PCWSTR(name.as_ptr()), 500).as_bool() {
+            if let Ok(pipe) = CreateFileW(
+                PCWSTR(name.as_ptr()),
+                FILE_GENERIC_READ.0 | FILE_GENERIC_WRITE.0,
+                FILE_SHARE_NONE,
+                None,
+                OPEN_EXISTING,
+                FILE_ATTRIBUTE_NORMAL,
+                None,
+            ) {
+                let _ = CloseHandle(pipe);
+            }
+        }
+    }
 }
 
 fn wide_null(text: &str) -> Vec<u16> {
@@ -135,6 +162,9 @@ fn server_loop() {
     // Keep the box alive for the thread's lifetime.
     let _keep = sa_box;
     loop {
+        if STOP.load(std::sync::atomic::Ordering::SeqCst) {
+            break;
+        }
         let pipe = unsafe {
             CreateNamedPipeW(
                 PCWSTR(name.as_ptr()),
@@ -166,15 +196,22 @@ fn server_loop() {
             push(RuntimeEvent::PipeCommand { id, command });
             // Wait briefly for the UI thread to execute and reply.
             let deadline = std::time::Instant::now() + Duration::from_millis(READ_TIMEOUT_MS);
+            let mut replied = false;
             loop {
                 if let Some(reply) = take_reply(id) {
                     write_line(pipe, &reply);
+                    replied = true;
                     break;
                 }
                 if std::time::Instant::now() >= deadline {
                     break;
                 }
                 std::thread::sleep(Duration::from_millis(10));
+            }
+            if !replied {
+                // Reap the slot so a late reply cannot leak or surprise
+                // a future command reusing the id space.
+                take_reply(id);
             }
         }
         unsafe {
@@ -198,11 +235,10 @@ fn read_command(pipe: HANDLE) -> Option<String> {
         }
         let mut read = 0u32;
         if unsafe { ReadFile(pipe, Some(&mut chunk[..]), Some(&mut read), None) }.is_err() {
-            return if bytes.is_empty() {
-                None
-            } else {
-                Some(decode(&bytes))
-            };
+            // Aborted connection: drop partial bytes (C# IOException path
+            // never invokes the handler). Graceful EOF (read==0 below) with
+            // partial bytes still executes, matching ReadCommandAsync.
+            return None;
         }
         if read == 0 {
             return if bytes.is_empty() {
@@ -260,7 +296,12 @@ pub fn try_forward_to_running(command: &str) -> Option<String> {
                 None,
             );
             let Ok(pipe) = open else {
-                // UnauthorizedAccess (other user) or vanished server: no server.
+                // Cross-user pipes are refused immediately (C# maps
+                // UnauthorizedAccessException straight to false); other
+                // failures retry.
+                if GetLastError() == ERROR_ACCESS_DENIED {
+                    return None;
+                }
                 if attempt < 2 {
                     std::thread::sleep(Duration::from_millis(50));
                     continue;
@@ -277,6 +318,12 @@ pub fn try_forward_to_running(command: &str) -> Option<String> {
                 }
                 return None;
             }
+            // Client-side CurrentUserOnly: refuse to talk to a pipe owned
+            // by anyone but the current user.
+            if !pipe_owned_by_self(pipe) {
+                let _ = CloseHandle(pipe);
+                return None;
+            }
             let reply = read_reply_line(pipe);
             let _ = CloseHandle(pipe);
             if reply.is_some() {
@@ -290,6 +337,74 @@ pub fn try_forward_to_running(command: &str) -> Option<String> {
     None
 }
 
+/// True when `pipe` is owned by the current user.
+/// Reads the pipe's owner SID and compares it with the process token user.
+fn pipe_owned_by_self(pipe: HANDLE) -> bool {
+    use windows::Win32::Security::{EqualSid, OWNER_SECURITY_INFORMATION, PSID};
+    unsafe {
+        let mut owner: PSID = PSID::default();
+        let mut descriptor = PSECURITY_DESCRIPTOR::default();
+        let status = GetSecurityInfo(
+            pipe,
+            SE_KERNEL_OBJECT,
+            OWNER_SECURITY_INFORMATION,
+            Some(&mut owner),
+            None,
+            None,
+            None,
+            Some(&mut descriptor),
+        );
+        if status != ERROR_SUCCESS {
+            return false;
+        }
+        let owned = self_user_sid()
+            .map(|mut sid| {
+                EqualSid(owner, PSID(sid.as_mut_ptr() as *mut core::ffi::c_void)).is_ok()
+            })
+            .unwrap_or(false);
+        let _ = LocalFree(Some(HLOCAL(descriptor.0)));
+        owned
+    }
+}
+
+/// Current process user SID bytes (for owner comparison).
+fn self_user_sid() -> Option<Vec<u8>> {
+    unsafe {
+        let mut token = HANDLE::default();
+        if OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut token).is_err() {
+            return None;
+        }
+        let mut needed = 0u32;
+        let _ = GetTokenInformation(token, TokenUser, None, 0, &mut needed);
+        let mut buffer = vec![0u8; needed.max(64) as usize];
+        let capacity = buffer.len() as u32;
+        let ok = GetTokenInformation(
+            token,
+            TokenUser,
+            Some(buffer.as_mut_ptr() as *mut core::ffi::c_void),
+            capacity,
+            &mut needed,
+        )
+        .is_ok();
+        let _ = CloseHandle(token);
+        if !ok {
+            return None;
+        }
+        let user = &*(buffer.as_ptr() as *const TOKEN_USER);
+        let sid_ptr = user.User.Sid.0 as *const u8;
+        if sid_ptr.is_null() {
+            return None;
+        }
+        let length = GetLengthSid(user.User.Sid);
+        if length == 0 || length > 256 {
+            return None;
+        }
+        // Copy the SID bytes themselves (NOT the TOKEN_USER header: the
+        // struct starts with the SID pointer + attributes).
+        Some(core::slice::from_raw_parts(sid_ptr, length as usize).to_vec())
+    }
+}
+
 /// Single ReadLine (first line only) with a 2 s deadline.
 fn read_reply_line(pipe: HANDLE) -> Option<String> {
     let mut bytes = Vec::new();
@@ -300,14 +415,12 @@ fn read_reply_line(pipe: HANDLE) -> Option<String> {
             return None;
         }
         let mut read = 0u32;
-        if unsafe { ReadFile(pipe, Some(&mut chunk[..]), Some(&mut read), None) }.is_err()
-            || read == 0
-        {
-            return if bytes.is_empty() {
-                None
-            } else {
-                Some(decode(&bytes))
-            };
+        if unsafe { ReadFile(pipe, Some(&mut chunk[..]), Some(&mut read), None) }.is_err() {
+            return None;
+        }
+        if read == 0 {
+            // Clean EOF: C# ReadLineAsync yields null -> success with "".
+            return Some(decode(&bytes));
         }
         if chunk[0] == b'\n' {
             return Some(decode(&bytes));
@@ -321,5 +434,56 @@ pub fn reply_for(command: &str) -> String {
     match crate::core::commands::parse_command(command) {
         Ok(_) => "OK".to_string(),
         Err(error) => format!("ERROR: {error}"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Same-user pipe ownership roundtrip: a pipe we create must verify
+    /// as self-owned (guards the CurrentUserOnly client check).
+    #[test]
+    fn pipe_owner_verifies_self_owned_pipe() {
+        use windows::Win32::Security::PSID;
+        let sid = self_user_sid();
+        assert!(sid.is_some(), "self_user_sid is None");
+        // Roundtrip against a freshly created pipe owned by us.
+        let name = format!(
+            r"\\.\pipe\LoopW-Debug-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        );
+        let wide = wide_null(&name);
+        unsafe {
+            let server = CreateNamedPipeW(
+                PCWSTR(wide.as_ptr()),
+                PIPE_ACCESS_DUPLEX,
+                PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_WAIT,
+                1,
+                4096,
+                4096,
+                0,
+                None,
+            );
+            assert!(!server.is_invalid(), "create pipe");
+            let client = CreateFileW(
+                PCWSTR(wide.as_ptr()),
+                FILE_GENERIC_READ.0 | FILE_GENERIC_WRITE.0,
+                FILE_SHARE_NONE,
+                None,
+                OPEN_EXISTING,
+                FILE_ATTRIBUTE_NORMAL,
+                None,
+            )
+            .expect("open pipe");
+            let owned = pipe_owned_by_self(client);
+            let _ = CloseHandle(client);
+            let _ = CloseHandle(server);
+            assert!(owned, "owner check fails on own pipe");
+        }
+        let _ = PSID::default();
     }
 }

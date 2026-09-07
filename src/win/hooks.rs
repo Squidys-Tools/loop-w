@@ -30,6 +30,8 @@ const WM_SYSKEYDOWN: u32 = 0x0104;
 const WM_SYSKEYUP: u32 = 0x0105;
 const WM_MBUTTONDOWN: u32 = 0x0207;
 const WM_MBUTTONUP: u32 = 0x0208;
+const WM_LBUTTONDOWN: u32 = 0x0201;
+const WM_LBUTTONUP: u32 = 0x0202;
 const WM_QUIT_LOOP: u32 = 0x0012;
 
 const VK_SHIFT: i32 = 0x10;
@@ -264,9 +266,12 @@ fn hook_thread() {
             WM_MBUTTONUP => handle_middle_up_locked(&mut guard),
             _ => false,
         });
-        // Forward move/button traffic to the snap tracker (never swallowed).
-        if message == WM_MBUTTONDOWN || message == WM_MBUTTONUP {
-            super::snap_service::note_button(message == WM_MBUTTONDOWN);
+        // Title-bar drag traffic goes to the snap tracker (never swallowed);
+        // middle-button traffic drives the alternate trigger only.
+        match message {
+            WM_LBUTTONDOWN => super::snap_service::note_button(true),
+            WM_LBUTTONUP => super::snap_service::note_button(false),
+            _ => {}
         }
         if swallow.unwrap_or(false) {
             LRESULT(1)

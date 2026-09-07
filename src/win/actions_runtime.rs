@@ -132,6 +132,28 @@ pub fn apply_snap(hwnd: u64, action: WindowAction, frame: Rect) -> Result<String
     }
     let actual = native::window_rect(native::from_raw(hwnd as isize))
         .ok_or_else(|| "Could not read the snapped window's final position.".to_string())?;
+    // Re-anchor pass, mirroring the hotkey path: apps that clamp to
+    // min-size without honoring the anchor get one correction attempt.
+    let mut actual = actual;
+    if !placement::rects_equal(actual, fitted) {
+        let reanchored = fit_frame(
+            snapshot.work,
+            action,
+            actual,
+            MinMaxLimits {
+                min_w: 0,
+                min_h: 0,
+                max_w: 0,
+                max_h: 0,
+            },
+        );
+        if !placement::rects_equal(reanchored, fitted) {
+            let _ = placement::place_window(hwnd, reanchored);
+            if let Some(updated) = native::window_rect(native::from_raw(hwnd as isize)) {
+                actual = updated;
+            }
+        }
+    }
     let label = action.display_name();
     if sizes_equal(actual, frame) {
         Ok(format!("Applied drag snap: {label}"))
@@ -162,7 +184,8 @@ pub fn restore_frame(hwnd: u64, frame: Rect) -> Result<String, String> {
         Some(actual) if placement::rects_equal(actual, frame) => {
             Ok("Restored the pre-drag frame".to_string())
         }
-        Some(_) => Ok("The application did not accept the pre-drag frame.".to_string()),
+        // The application did not accept the frame: failure, like C#.
+        Some(_) => Err("The application did not accept the pre-drag frame.".to_string()),
         None => Err("Could not restore the pre-drag frame.".to_string()),
     }
 }
@@ -205,9 +228,13 @@ fn focus_directional(hwnd: u64, action: WindowAction) -> Result<String, String> 
         .map(|candidate| (candidate.hwnd, candidate.frame))
         .collect();
     let Some(target) = find_directional(source, &candidates, dir) else {
-        let name = action.display_name();
-        let short = name.strip_prefix("Focus ").unwrap_or(name).to_lowercase();
-        return Err(format!("No eligible window found {short}."));
+        let direction = match action {
+            WindowAction::FocusUp => "up",
+            WindowAction::FocusDown => "down",
+            WindowAction::FocusLeft => "left",
+            _ => "right",
+        };
+        return Err(format!("No eligible window found {direction}."));
     };
     focus_window(target, action.display_name())
 }

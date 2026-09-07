@@ -173,9 +173,10 @@ fn normalize_stash_records(records: &mut Vec<crate::core::stash::StashRecord>) {
         records.drain(0..records.len() - MAX_STASH_RECORDS);
     }
     let mut ids: HashSet<String> = HashSet::new();
-    // Repair ids first, then drop nulls (no nulls in Rust) and fix shapes.
+    // Repair newest-first (reverse): the newest record keeps its id, older
+    // duplicates are repaired — matching NormalizeStashRecords.
     let mut repaired: Vec<(String, usize)> = Vec::new();
-    for record in records.iter_mut() {
+    for record in records.iter_mut().rev() {
         if record.id.trim().is_empty() || !ids.insert(record.id.clone()) {
             loop {
                 let fresh = uuid::Uuid::new_v4().simple().to_string();

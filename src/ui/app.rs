@@ -100,6 +100,7 @@ pub enum Message {
     EditPreviewBorderColor(String),
     AddKeybind,
     DeleteKeybind(String),
+    SetKeybindAction(String, String),
     SetMonitorPolicy(String),
     NudgeGlobalPadding(i32),
     EditExcludedProcesses(String),
@@ -209,10 +210,12 @@ impl State {
             Some(args) => (args.startup, args.instance),
             None => (None, None),
         };
-        let status = if hooks_ok {
-            "Saved".to_string()
-        } else {
+        let status = if !hooks_ok {
             "Could not install the global keyboard hook".to_string()
+        } else if tray.is_none() {
+            "Tray icon unavailable — quit via Task Manager or pipe".to_string()
+        } else {
+            "Saved".to_string()
         };
         let task = if startup_command.is_some() {
             Task::done(Message::RunStartupCommand)
@@ -271,6 +274,7 @@ fn commit_settings(state: &mut State, status: &str) {
     }
     win::hooks::notify_settings_changed();
     win::monitor_service::invalidate();
+    win::stash_service::handle_settings_changed();
 }
 
 // --- update ---
@@ -386,14 +390,27 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
         Message::SetPreviewEnabled(value) => {
             state.settings.preview_enabled = value;
             commit_settings(state, "Saved");
+            if !value {
+                let mut tasks = Vec::new();
+                close_preview(state, &mut tasks);
+                return Task::batch(tasks);
+            }
             Task::none()
         }
         Message::SetDragSnap(value) => {
             state.settings.drag_snap_enabled = value;
-            if !value {
-                win::snap_service::abort();
-            }
             commit_settings(state, "Saved");
+            if !value {
+                // End mid-drag as Disabled: hide preview, restore pre-drag
+                // frame when a candidate was seen.
+                let mut tasks = Vec::new();
+                if let Some(finish) = win::snap_service::disable() {
+                    apply_snap_finish(state, &mut tasks, finish);
+                } else {
+                    close_preview(state, &mut tasks);
+                }
+                return Task::batch(tasks);
+            }
             Task::none()
         }
         Message::SetPreviewPadding(value) => {
@@ -468,6 +485,19 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
         }
         Message::DeleteKeybind(id) => {
             state.settings.keybinds.retain(|k| k.id != id);
+            commit_settings(state, "Saved");
+            Task::none()
+        }
+        Message::SetKeybindAction(id, name) => {
+            if let Some(bind) = state.settings.keybinds.iter_mut().find(|k| k.id == id) {
+                if let Some(action) = WindowAction::ALL
+                    .iter()
+                    .copied()
+                    .find(|action| action.display_name() == name)
+                {
+                    bind.action = action;
+                }
+            }
             commit_settings(state, "Saved");
             Task::none()
         }
@@ -570,6 +600,31 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
     }
 }
 
+/// Reject a captured keybind that collides with the trigger or duplicates
+/// another row (C# HasKeybindConflict): the colliding bind would be
+/// permanently inert (trigger-Vk exclusion) or shadowed (first-wins).
+fn keybind_conflict(
+    settings: &AppSettings,
+    skip_id: &str,
+    modifiers: u32,
+    vk: u32,
+) -> Option<String> {
+    use crate::core::hotkey::hotkey_name;
+    use crate::core::hotkey::TriggerModifierSide;
+    let label = hotkey_name(modifiers, vk, TriggerModifierSide::Any);
+    if modifiers == settings.trigger_modifiers && vk == settings.trigger_vk {
+        return Some(format!("{label} is already the trigger."));
+    }
+    if settings
+        .keybinds
+        .iter()
+        .any(|other| other.id != skip_id && other.modifiers == modifiers && other.vk == vk)
+    {
+        return Some(format!("{label} is already used by another keybind."));
+    }
+    None
+}
+
 fn apply_color_edit(state: &mut State, field: &str, value: String) {
     let normalized = crate::settings::normalize_color(&value, "__invalid__");
     if normalized == "__invalid__" {
@@ -659,12 +714,15 @@ fn frame_tick(state: &mut State) -> Task<Message> {
         handle_runtime(state, &mut tasks, event);
     }
     if let Some(cursor) = native::cursor_pos() {
-        // Snap tracking.
+        // Snap tracking (preview honors the PreviewEnabled gate here so a
+        // disabled preview never opens for drags; hover path gates inside).
         let (track, finish) = win::snap_service::track(cursor);
         match track {
             win::snap_service::SnapTrack::Show(frame)
             | win::snap_service::SnapTrack::Update(frame) => {
-                ensure_preview(state, &mut tasks, frame);
+                if state.settings.preview_enabled {
+                    ensure_preview(state, &mut tasks, frame);
+                }
             }
             win::snap_service::SnapTrack::Hide => close_preview(state, &mut tasks),
             win::snap_service::SnapTrack::Idle => {}
@@ -717,6 +775,9 @@ fn handle_runtime(state: &mut State, tasks: &mut Vec<Task<Message>>, event: Runt
                     )
                 );
                 state.pending_target = None;
+            } else if state.radial.is_some() {
+                // Already open (e.g. chorded re-press): never leak the prior id.
+                state.pending_target = Some(foreground);
             } else {
                 state.pending_target = Some(foreground);
                 if state.settings.radial_enabled {
@@ -745,8 +806,8 @@ fn handle_runtime(state: &mut State, tasks: &mut Vec<Task<Message>>, event: Runt
             cycle_enabled,
             bypass_trigger,
         } => {
-            // Dismiss any overlay first so a later release cannot double-commit.
-            close_overlays(state, tasks);
+            // Resolve the target BEFORE dismissing: a failed keybind must
+            // leave a live overlay alone (C# only dismisses on success path).
             let target = if bypass_trigger {
                 let foreground = win::query::foreground_window();
                 let pid = if foreground == 0 {
@@ -760,17 +821,23 @@ fn handle_runtime(state: &mut State, tasks: &mut Vec<Task<Message>>, event: Runt
                 }
                 foreground
             } else {
-                match state.pending_target.or_else(|| {
-                    let foreground = win::query::foreground_window();
-                    (foreground != 0).then_some(foreground)
-                }) {
+                match state.pending_target {
                     Some(target) => target,
                     None => {
-                        state.status = "No external foreground window is available.".to_string();
+                        state.status = format!(
+                            "  ·  Capture a target first with {}",
+                            hotkey_name(
+                                state.settings.trigger_modifiers,
+                                state.settings.trigger_vk,
+                                state.settings.trigger_modifier_side,
+                            )
+                        );
                         return;
                     }
                 }
             };
+            // Dismiss any overlay first so a later release cannot double-commit.
+            close_overlays(state, tasks);
             state.status = commit_action(state, target, action, cycle_enabled);
         }
         RuntimeEvent::RevealStashed => {
@@ -783,6 +850,12 @@ fn handle_runtime(state: &mut State, tasks: &mut Vec<Task<Message>>, event: Runt
             keybind,
         } => match keybind {
             Some(id) => {
+                if let Some(reason) = keybind_conflict(&state.settings, &id, modifiers, vk) {
+                    state.capturing_keybind = None;
+                    state.capturing_trigger = false;
+                    state.status = reason;
+                    return;
+                }
                 if let Some(bind) = state.settings.keybinds.iter_mut().find(|k| k.id == id) {
                     bind.modifiers = modifiers;
                     bind.vk = vk;
@@ -817,8 +890,13 @@ fn handle_runtime(state: &mut State, tasks: &mut Vec<Task<Message>>, event: Runt
             show_main(state, tasks);
         }
         RuntimeEvent::TrayQuit => {
+            // C# OnExit order: pipe stop -> tray dispose -> stash restore ->
+            // window close -> hook dispose. Windows themselves are reclaimed
+            // at process teardown; the tray icon MUST drop first so it never
+            // lingers, and hooks go last so no event fires mid-teardown.
+            win::ipc::stop_server();
+            state.tray = None;
             win::stash_service::restore_all();
-            win::shared::save_now();
             win::hooks::stop();
             tasks.push(iced::exit());
         }
@@ -832,6 +910,11 @@ fn handle_runtime(state: &mut State, tasks: &mut Vec<Task<Message>>, event: Runt
         }
         RuntimeEvent::SnapEnd { released } => {
             let _ = released;
+            // Only a live drag session may touch the preview: a bare click
+            // release must never close a radial hover-preview.
+            if !win::snap_service::is_active() {
+                return;
+            }
             if let Some(finish) = win::snap_service::end_released() {
                 apply_snap_finish(state, tasks, finish);
             } else {
@@ -938,20 +1021,15 @@ fn state_cursor_interaction() -> bool {
 }
 
 fn update_radial_hover(state: &mut State, tasks: &mut Vec<Task<Message>>, cursor: Point) {
-    let changed = match state.radial.as_mut() {
+    match state.radial.as_mut() {
         Some(session) => {
-            let hovered = wedge_at(session, cursor);
-            if hovered == session.hovered {
-                return;
-            }
-            session.hovered = hovered;
-            true
+            session.hovered = wedge_at(session, cursor);
         }
         None => return,
-    };
-    if changed {
-        refresh_preview_for_hover(state, tasks);
     }
+    // Always refresh while open: display/DPI/work-area changes must move a
+    // live preview even when the cursor (and hover) did not.
+    refresh_preview_for_hover(state, tasks);
 }
 
 fn refresh_preview_for_hover(state: &mut State, tasks: &mut Vec<Task<Message>>) {
@@ -1081,6 +1159,19 @@ fn select_wedge(state: &mut State, tasks: &mut Vec<Task<Message>>, index: usize)
 // --- command execution (IPC + startup command) ---
 
 fn execute_command(state: &mut State, tasks: &mut Vec<Task<Message>>, command: &str) -> String {
+    // A panicking handler must reply, never crash the resident loop.
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        execute_command_inner(state, tasks, command)
+    }));
+    result.unwrap_or_else(|_| "ERROR: command execution failed.".to_string())
+}
+
+#[allow(clippy::too_many_lines)]
+fn execute_command_inner(
+    state: &mut State,
+    tasks: &mut Vec<Task<Message>>,
+    command: &str,
+) -> String {
     match crate::core::commands::parse_command(command) {
         Err(error) => format!("ERROR: {error}"),
         Ok(cmd) => match cmd {
@@ -1132,7 +1223,7 @@ fn execute_command(state: &mut State, tasks: &mut Vec<Task<Message>>, command: &
             }
             crate::core::commands::LoopCommand::ListAll => {
                 format!(
-                    "Actions:\n{}\n\nKeybinds:\n{}",
+                    "Actions:\r\n{}\r\n\r\nKeybinds:\r\n{}",
                     crate::core::commands::format_actions(),
                     {
                         let settings = win::shared::snapshot();

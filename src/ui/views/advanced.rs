@@ -17,17 +17,43 @@ pub fn view(state: &State) -> Element<'_, Message> {
             .push(text("No keybinds yet. Keybinds run without opening the radial menu.").size(13));
     }
     for bind in &settings.keybinds {
-        let label = format!(
-            "{} → {}",
-            hotkey_name(bind.modifiers, bind.vk, TriggerModifierSide::Any),
-            bind.action.display_name()
-        );
+        let capturing = state.capturing_keybind.as_deref() == Some(bind.id.as_str());
+        let key_label = if capturing {
+            "Press a key… (Esc cancels)".to_string()
+        } else {
+            hotkey_name(bind.modifiers, bind.vk, TriggerModifierSide::Any)
+        };
+        let actions: Vec<String> = WindowAction::ALL
+            .iter()
+            .map(|action| action.display_name().to_string())
+            .collect();
         binds = binds.push(
-            row![
-                text(label).size(13),
-                button("Delete").on_press(Message::DeleteKeybind(bind.id.clone())),
+            column![
+                row![
+                    button(text(key_label).size(13))
+                        .on_press(Message::BeginKeybindCapture(bind.id.clone())),
+                    pick_list(actions, Some(bind.action.display_name().to_string()), {
+                        let id = bind.id.clone();
+                        move |name: String| Message::SetKeybindAction(id.clone(), name)
+                    },),
+                    button("Delete").on_press(Message::DeleteKeybind(bind.id.clone())),
+                ]
+                .spacing(10),
+                row![
+                    text("Cycle").size(12),
+                    toggler(bind.cycle_enabled).on_toggle({
+                        let id = bind.id.clone();
+                        move |_| Message::ToggleKeybindCycle(id.clone())
+                    }),
+                    text("Bypass trigger").size(12),
+                    toggler(bind.bypass_trigger).on_toggle({
+                        let id = bind.id.clone();
+                        move |_| Message::ToggleKeybindBypass(id.clone())
+                    }),
+                ]
+                .spacing(10),
             ]
-            .spacing(10),
+            .spacing(4),
         );
     }
     binds = binds.push(row![button("Add keybind").on_press(Message::AddKeybind),].spacing(10));
@@ -96,10 +122,6 @@ pub fn view(state: &State) -> Element<'_, Message> {
             WindowAction::ALL.len()
         ))
         .size(11),
-        row![
-            text("Bypass toggles and per-edge padding editors live here next.").size(11),
-            toggler(false).on_toggle(|_| Message::Noop),
-        ],
     ]
     .spacing(10)
     .padding(16);

@@ -35,9 +35,11 @@ pub fn acquire() -> Result<Option<InstanceGuard>, String> {
             Ok(mutex) => {
                 if GetLastError() == ERROR_ALREADY_EXISTS {
                     let _ = CloseHandle(mutex);
-                    // Nudge the resident to show itself; ignore failures.
-                    let _ = super::ipc::try_forward_to_running("activate");
-                    signal_event();
+                    // Pipe first, raw event only as fallback (C# sends one
+                    // activation, not two — a double nudge would focus twice).
+                    if super::ipc::try_forward_to_running("activate").is_none() {
+                        signal_event();
+                    }
                     Ok(None)
                 } else {
                     start_event_watcher();

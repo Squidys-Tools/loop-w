@@ -78,12 +78,13 @@ fn parse_direction(name: &str) -> Option<WindowAction> {
 }
 
 /// One line per action: `action/<token> - <name>`.
+/// Lines join with CRLF, matching Environment.NewLine on Windows.
 pub fn format_actions() -> String {
     WindowAction::ALL
         .iter()
         .map(|a| format!("action/{} - {}", a.token(), a.display_name()))
         .collect::<Vec<_>>()
-        .join("\n")
+        .join("\r\n")
 }
 
 /// Keybind listing used by `list/keybinds`.
@@ -99,7 +100,7 @@ pub fn format_keybinds(
     )];
     if keybinds.is_empty() {
         lines.push("keybinds: none".to_string());
-        return lines.join("\n");
+        return lines.join("\r\n");
     }
     for (modifiers, vk, action, cycle, bypass) in keybinds {
         let mut line = format!(
@@ -115,7 +116,7 @@ pub fn format_keybinds(
         }
         lines.push(line);
     }
-    lines.join("\n")
+    lines.join("\r\n")
 }
 
 #[cfg(test)]

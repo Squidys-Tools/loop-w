@@ -5,6 +5,7 @@
 
 use windows::core::PCWSTR;
 use windows::Win32::Foundation::*;
+use windows::Win32::Graphics::Gdi::{MonitorFromWindow, MONITOR_DEFAULTTONEAREST};
 use windows::Win32::System::SystemInformation::GetTickCount64;
 use windows::Win32::UI::HiDpi::*;
 use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, GetDoubleClickTime};
@@ -187,7 +188,11 @@ pub fn process_name(pid: u32) -> String {
         .map(|_| {
             let full = String::from_utf16_lossy(&buffer[..size as usize]);
             let file = full.rsplit(['/', '\\']).next().unwrap_or(&full);
-            file.split('.').next().unwrap_or(file).to_string()
+            // Strip only the extension (my.app.exe -> my.app), like C#.
+            file.rsplit_once('.')
+                .map(|(stem, _)| stem)
+                .unwrap_or(file)
+                .to_string()
         })
         .unwrap_or_default();
         let _ = CloseHandle(handle);
@@ -304,10 +309,20 @@ pub fn dpi_for_window(hwnd: HWND) -> u32 {
     unsafe {
         let dpi = GetDpiForWindow(hwnd);
         if dpi > 0 {
-            dpi
-        } else {
-            96
+            return dpi;
         }
+        // Fallback: owning monitor's effective DPI (pre-PerMonitorV2 hosts).
+        let monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+        if !monitor.is_invalid() {
+            let mut dpi_x = 0u32;
+            let mut dpi_y = 0u32;
+            if GetDpiForMonitor(monitor, MDT_EFFECTIVE_DPI, &mut dpi_x, &mut dpi_y).is_ok()
+                && dpi_x > 0
+            {
+                return dpi_x;
+            }
+        }
+        96
     }
 }
 
@@ -346,11 +361,26 @@ pub fn own_process_id() -> u32 {
 }
 
 /// Print one CLI reply line on the parent console (GUI subsystem has none).
-/// Mirrors C# `WriteCliResponse`: attach, write, detach; silent when there
-/// is no parent console (e.g. launched from Explorer).
+/// When stdout is already redirected (pipe/file capture), write directly —
+/// no console API involved. Otherwise attach to the parent console like C#
+/// `WriteCliResponse`; silent when there is no parent console.
+/// NOTE: PowerShell `$()`/file redirection does not propagate std handles
+/// into GUI-subsystem processes, so captured output only appears in hosts
+/// that set up inheritance (cmd.exe console output works); this matches C#
+/// byte-for-byte since the Win32 mechanics are identical.
 pub fn print_cli_line(reply: &str) {
+    use windows::Win32::Storage::FileSystem::{GetFileType, FILE_TYPE_DISK, FILE_TYPE_PIPE};
     use windows::Win32::System::Console::*;
     unsafe {
+        if let Ok(stdout) = GetStdHandle(STD_OUTPUT_HANDLE) {
+            if !stdout.is_invalid() {
+                let file_type = GetFileType(stdout);
+                if file_type == FILE_TYPE_PIPE || file_type == FILE_TYPE_DISK {
+                    println!("{reply}");
+                    return;
+                }
+            }
+        }
         if AttachConsole(ATTACH_PARENT_PROCESS).is_err() {
             return;
         }

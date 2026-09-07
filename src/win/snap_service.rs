@@ -123,7 +123,13 @@ pub fn track(cursor: Point) -> (SnapTrack, Option<SnapFinish>) {
     if !native::async_key_down(VK_LBUTTON)
         || !native::is_window(native::from_raw(drag.window as isize))
     {
-        let finished = finish_gesture(drag, false);
+        // Watchdog: only a drag that actually saw a zone may restore;
+        // a plain click ends silently (matches EndGesture's hadCandidate gate).
+        let finished = if drag.had_candidate {
+            finish_gesture(drag, false)
+        } else {
+            None
+        };
         *slot = None;
         let preview = match &finished {
             Some(SnapFinish::Restore { .. })
@@ -211,9 +217,20 @@ pub fn current_target() -> Option<(WindowAction, Rect)> {
         .and_then(|s| s.as_ref().and_then(|d| d.target))
 }
 
-/// Abort any in-flight gesture (feature disabled mid-drag).
-pub fn abort() {
-    if let Ok(mut slot) = state().lock() {
-        *slot = None;
+/// Whether a drag session is in flight (for gating SnapEnd handling).
+pub fn is_active() -> bool {
+    state().lock().map(|s| s.is_some()).unwrap_or(false)
+}
+
+/// Abort any in-flight gesture.
+/// Returns the cancel resolution (restore-if-warranted) so disabling
+/// mid-drag ends as Disabled: preview hides and the pre-drag frame comes
+/// back when a candidate was seen — never a silent drop.
+pub fn disable() -> Option<SnapFinish> {
+    let mut slot = state().lock().ok()?;
+    let drag = slot.take()?;
+    if !drag.dragging || !drag.had_candidate {
+        return None;
     }
+    finish_gesture(&drag, false)
 }

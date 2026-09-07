@@ -81,3 +81,30 @@ pub fn layout_frames(excluded: u64) -> Vec<Rect> {
         .map(|candidate| candidate.frame)
         .collect()
 }
+
+/// Startup-restore candidate scan: same policy eligibility but WITHOUT the
+/// iconic / zero-area filters, so minimized windows restore after restart.
+/// Frames are best-effort (zero rect when unreadable).
+pub fn enumerate_for_restore() -> Vec<WindowCandidate> {
+    struct Pack {
+        out: Vec<WindowCandidate>,
+    }
+    unsafe extern "system" fn restore_proc(hwnd: HWND, lparam: LPARAM) -> BOOL {
+        let pack = &mut *(lparam.0 as *mut Pack);
+        let raw = native::raw(hwnd);
+        if !policy::is_eligible_for_enumeration(raw, 0) {
+            return BOOL::from(true);
+        }
+        let frame = native::window_rect(hwnd).unwrap_or(Rect::new(0, 0, 0, 0));
+        pack.out.push(WindowCandidate {
+            hwnd: raw as u64,
+            frame,
+        });
+        BOOL::from(true)
+    }
+    let mut pack = Pack { out: Vec::new() };
+    unsafe {
+        let _ = EnumWindows(Some(restore_proc), LPARAM(&mut pack as *mut Pack as isize));
+    }
+    pack.out
+}

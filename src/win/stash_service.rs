@@ -25,6 +25,7 @@ struct LiveRecord {
     edge: StashEdge,
     placement: WINDOWPLACEMENT,
     monitor: StashMonitor,
+    frame: Rect,
     identity: crate::core::identity::WindowIdentity,
     persisted_id: String,
 }
@@ -70,7 +71,7 @@ pub fn stash(hwnd: u64) -> Result<String, String> {
     let identity = native::window_identity(native_hwnd)
         .ok_or_else(|| "Could not identify the target window.".to_string())?;
     let original = native::window_placement(native_hwnd)
-        .ok_or_else(|| "Could not identify the target window.".to_string())?;
+        .ok_or_else(|| "Could not read the target window's placement.".to_string())?;
     let _ = native::window_rect(native_hwnd)
         .ok_or_else(|| "Could not identify the target window.".to_string())?;
     // Collapse maximized/minimized so geometry is measurable.
@@ -90,8 +91,8 @@ pub fn stash(hwnd: u64) -> Result<String, String> {
         );
     }
     let can_persist = settings.stash_persistence_enabled
-        && !identity.executable_path.is_empty()
-        && !identity.window_class.is_empty();
+        && !identity.executable_path.trim().is_empty()
+        && !identity.window_class.trim().is_empty();
     let persisted_id = if can_persist {
         uuid::Uuid::new_v4().simple().to_string()
     } else {
@@ -113,6 +114,7 @@ pub fn stash(hwnd: u64) -> Result<String, String> {
                 edge,
                 placement: original,
                 monitor,
+                frame,
                 identity: identity.clone(),
                 persisted_id: persisted_id.clone(),
             },
@@ -142,6 +144,7 @@ pub fn stash(hwnd: u64) -> Result<String, String> {
 /// Reveal the first stashed window in FIFO order (hotkey/command path).
 pub fn reveal_next() -> Result<String, String> {
     prune_stale();
+    reset_pending();
     let target = live()
         .lock()
         .ok()
@@ -149,6 +152,29 @@ pub fn reveal_next() -> Result<String, String> {
     match target {
         Some(hwnd) => reveal(hwnd),
         None => Err("No stashed windows to reveal.".to_string()),
+    }
+}
+
+/// Clear any armed hover-reveal (settings change, explicit reveal, exit).
+fn reset_pending() {
+    if let Ok(mut guard) = live().lock() {
+        guard.pending = None;
+    }
+}
+
+/// Settings changed: drop armed reveals; disabling persistence clears
+/// persisted records (matching Configure/UpdateSettings).
+pub fn handle_settings_changed() {
+    reset_pending();
+    let enabled = super::shared::snapshot().stash_persistence_enabled;
+    if !enabled {
+        let had_records = super::shared::snapshot().stash_records.is_empty();
+        if !had_records {
+            super::shared::update(|settings| {
+                settings.stash_records.clear();
+            });
+            super::shared::save_now();
+        }
     }
 }
 
@@ -181,7 +207,11 @@ pub fn reveal_at_cursor(cursor: Point) -> Option<String> {
             .iter()
             .filter_map(|hwnd| {
                 let record = guard.by_hwnd.get(hwnd)?;
-                let work: Rect = record.monitor.work.into();
+                // Resolve the CURRENT monitor from the stashed frame so
+                // display/padding/work-area changes move the hit zone.
+                let work = super::monitor_service::for_rect(record.frame)
+                    .map(|snapshot| snapshot.work)
+                    .unwrap_or_else(|| record.monitor.work.into());
                 Some((*hwnd, record.edge, work))
             })
             .collect()
@@ -239,7 +269,9 @@ fn reveal(hwnd: u64) -> Result<String, String> {
         placement.rcNormalPosition = native::rect_to_native(rebased);
     }
     if !native::set_placement(native::from_raw(hwnd as isize), &placement) {
-        if !native::is_window(native::from_raw(hwnd as isize)) {
+        // Drop only when the window is truly gone (full aliveness check:
+        // PID reuse or exe change must not strand retries on a live HWND).
+        if !is_stash_alive(hwnd) {
             remove_runtime(hwnd, true);
         }
         return Err(
@@ -335,26 +367,48 @@ fn remove_runtime(hwnd: u64, persist: bool) {
 }
 
 /// Restore every alive window (clean quit): nothing stays off-screen.
+/// Persisted records survive a clean quit (only a disabled persistence
+/// setting clears them); exactly one save happens iff anything changed.
 pub fn restore_all() {
     let hwnds: Vec<u64> = live()
         .lock()
         .map(|guard| guard.order.clone())
         .unwrap_or_default();
+    let mut changed = false;
     for hwnd in hwnds {
-        let _ = reveal_quiet(hwnd);
+        // reveal_quiet with persist=false keeps file records for next launch.
+        changed |= reveal_quiet_keep(hwnd);
     }
+    reset_pending();
+    if !super::shared::snapshot().stash_persistence_enabled {
+        let had_records = !super::shared::snapshot().stash_records.is_empty();
+        if had_records {
+            super::shared::update(|settings| {
+                settings.stash_records.clear();
+            });
+            changed = true;
+        }
+    }
+    // Drop any leftover runtime entries (dead windows) without touching disk.
     if let Ok(mut guard) = live().lock() {
-        guard.pending = None;
+        if !guard.by_hwnd.is_empty() || !guard.order.is_empty() {
+            guard.by_hwnd.clear();
+            guard.order.clear();
+            changed = true;
+        }
+    }
+    if changed {
+        super::shared::save_now();
     }
 }
 
-fn reveal_quiet(hwnd: u64) -> bool {
+fn reveal_quiet_keep(hwnd: u64) -> bool {
     let record = live()
         .lock()
         .ok()
         .and_then(|guard| guard.by_hwnd.get(&hwnd).map(clone_live));
     let Some(record) = record else {
-        remove_runtime(hwnd, true);
+        remove_runtime(hwnd, false);
         return false;
     };
     let monitors = super::monitor_service::all();
@@ -371,7 +425,7 @@ fn reveal_quiet(hwnd: u64) -> bool {
             native::rect_to_native(rebase_rect(normal, &record.monitor, &target_monitor));
     }
     let ok = native::set_placement(native::from_raw(hwnd as isize), &placement);
-    remove_runtime(hwnd, true);
+    remove_runtime(hwnd, false);
     ok
 }
 
@@ -387,7 +441,8 @@ pub fn restore_persisted() {
     }
     let mut claimed: Vec<u64> = Vec::new();
     for record in &records {
-        let candidates: Vec<(u64, WindowIdentity)> = super::query::enumerate(0)
+        // Enumerate once (restore scan keeps minimized/zero-area windows).
+        let candidates: Vec<(u64, WindowIdentity)> = super::query::enumerate_for_restore()
             .into_iter()
             .filter(|candidate| !claimed.contains(&candidate.hwnd))
             .filter_map(|candidate| {
@@ -414,7 +469,12 @@ fn restash_persisted(hwnd: u64, record: &StashRecord) {
     {
         Some(pair) => pair,
         None => {
-            let _ = native::set_placement(native_hwnd, &previous);
+            // Uncontrollable window: delete the record so it cannot act
+            // on every launch when even the rollback fails.
+            if native::set_placement(native_hwnd, &previous) {
+                return;
+            }
+            persist_remove(&record.id);
             return;
         }
     };
@@ -458,6 +518,7 @@ fn restash_persisted(hwnd: u64, record: &StashRecord) {
                 edge: record.edge,
                 placement: placement_from_stash(&record.original_placement),
                 monitor,
+                frame,
                 identity: identity.clone(),
                 persisted_id: record.id.clone(),
             },
@@ -576,7 +637,12 @@ fn placement_to_stash(placement: &WINDOWPLACEMENT) -> StashPlacement {
 fn placement_from_stash(placement: &StashPlacement) -> WINDOWPLACEMENT {
     let normal: Rect = placement.normal_position.into();
     WINDOWPLACEMENT {
-        length: core::mem::size_of::<WINDOWPLACEMENT>() as u32,
+        // Preserve the stored Length when present (C# ToNative semantics).
+        length: if placement.length != 0 {
+            placement.length as u32
+        } else {
+            core::mem::size_of::<WINDOWPLACEMENT>() as u32
+        },
         flags: WINDOWPLACEMENT_FLAGS(placement.flags),
         showCmd: placement.show_command,
         ptMinPosition: windows::Win32::Foundation::POINT {

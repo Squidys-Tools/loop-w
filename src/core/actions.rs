@@ -333,11 +333,13 @@ impl WindowAction {
 }
 
 pub fn normalize_token(value: &str) -> String {
+    // ASCII-only lowercase: action names are ASCII, and this avoids the
+    // Turkish-I trap of Unicode lowercase (ToLowerInvariant parity).
     value
         .chars()
         .filter(|c| *c != '-' && *c != '_')
         .collect::<String>()
-        .to_lowercase()
+        .to_ascii_lowercase()
 }
 
 #[cfg(test)]

@@ -20,9 +20,10 @@ pub fn rebase_rect(frame: Rect, original: &StashMonitor, target: &StashMonitor) 
     if orig_monitor == target_monitor && orig_work == target_work {
         // Same monitor, same work area: WINDOWPLACEMENT coords are physical
         // and Windows already adjusted them on a DPI-only change.
+        // (Degenerate recorded monitors take the DPI-scale path below.)
         return frame;
     }
-    if orig_monitor == target_monitor {
+    if orig_monitor == target_monitor && is_usable(orig_monitor) {
         // Same monitor, work area changed: translate by the origin delta.
         let dx = target_work.left - orig_work.left;
         let dy = target_work.top - orig_work.top;
@@ -61,13 +62,12 @@ pub fn find_restore_monitor<'a>(
         return None;
     }
     let (ox, oy) = center(orig_monitor);
-    current
-        .iter()
-        .filter(|s| is_usable(s.monitor))
-        .min_by_key(|s| {
-            let (cx, cy) = center(s.monitor);
-            ((cx - ox).abs() as i64) + ((cy - oy).abs() as i64)
-        })
+    // Nearest by Manhattan center distance over all monitors (even
+    // degenerate ones — C# orders the full list; empty list fails).
+    current.iter().min_by_key(|s| {
+        let (cx, cy) = center(s.monitor);
+        ((cx - ox).abs() as i64) + ((cy - oy).abs() as i64)
+    })
 }
 
 fn is_usable(rect: Rect) -> bool {
