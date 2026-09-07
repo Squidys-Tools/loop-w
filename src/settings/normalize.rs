@@ -9,7 +9,7 @@ use crate::core::actions::WindowAction;
 use crate::core::hotkey::{TRIGGER_MODIFIER_SIDES, VK_CAPITAL};
 use crate::core::monitor::MonitorMoveSizePolicy;
 use crate::core::radial::SLOT_COUNT;
-use crate::core::radial_targets::{RadialTargetKind, RadialTargetSettings, normalize_target};
+use crate::core::radial_targets::{normalize_target, RadialTargetKind, RadialTargetSettings};
 use crate::core::stash::{StashEdge, StashMonitor, StashPlacement, StashPoint, StashRect};
 
 use super::color::normalize_color;
@@ -32,9 +32,16 @@ impl AppSettings {
         self.trigger_timeout_ms = self.trigger_timeout_ms.clamp(0, 10_000);
 
         normalize_keybinds(&mut self.keybinds);
-        normalize_radial(&mut self.radial_slots, &mut self.center_target, &self.keybinds);
+        normalize_radial(
+            &mut self.radial_slots,
+            &mut self.center_target,
+            &self.keybinds,
+        );
 
-        if !matches!(self.appearance_mode.as_str(), "Dark" | "FollowWindows" | "Light") {
+        if !matches!(
+            self.appearance_mode.as_str(),
+            "Dark" | "FollowWindows" | "Light"
+        ) {
             self.appearance_mode = "Dark".to_string();
         }
 
@@ -130,17 +137,22 @@ fn normalize_radial(
 
 fn normalize_exclusions(executables: &mut Vec<String>, processes: &mut Vec<String>) {
     *executables = dedup_keep_order(
-        executables.iter().map(|s| s.trim().to_string()).filter(|s| !s.is_empty()),
+        executables
+            .iter()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty()),
     );
-    *processes = dedup_keep_order(processes.iter().map(|s| {
-        let trimmed = s.trim();
-        // Match C#: strip directory + extension (`app.exe` -> `app`).
-        let file = trimmed
-            .rsplit(['/', '\\'])
-            .next()
-            .unwrap_or(trimmed);
-        file.rsplit('.').last().unwrap_or(file).to_string()
-    }).filter(|s| !s.is_empty()));
+    *processes = dedup_keep_order(
+        processes
+            .iter()
+            .map(|s| {
+                let trimmed = s.trim();
+                // Match C#: strip directory + extension (`app.exe` -> `app`).
+                let file = trimmed.rsplit(['/', '\\']).next().unwrap_or(trimmed);
+                file.rsplit('.').last().unwrap_or(file).to_string()
+            })
+            .filter(|s| !s.is_empty()),
+    );
 }
 
 fn dedup_keep_order(items: impl Iterator<Item = String>) -> Vec<String> {
@@ -254,9 +266,6 @@ mod tests {
         settings.radial_slots[0].kind = RadialTargetKind::Keybind;
         settings.radial_slots[0].keybind_id = "missing".to_string();
         settings.normalize();
-        assert_eq!(
-            settings.radial_slots[0].kind,
-            RadialTargetKind::None
-        );
+        assert_eq!(settings.radial_slots[0].kind, RadialTargetKind::None);
     }
 }

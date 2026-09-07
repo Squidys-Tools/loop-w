@@ -7,9 +7,11 @@
 use serde::{Deserialize, Serialize};
 
 use crate::core::actions::WindowAction;
-use crate::core::hotkey::{MOD_ALT, MOD_CONTROL, MOD_SHIFT, MOD_WIN, TriggerModifierSide, VK_CAPITAL, VK_SPACE};
+use crate::core::hotkey::{
+    TriggerModifierSide, MOD_ALT, MOD_CONTROL, MOD_SHIFT, MOD_WIN, VK_CAPITAL, VK_SPACE,
+};
 use crate::core::monitor::MonitorMoveSizePolicy;
-use crate::core::radial_targets::{RadialTargetSettings, default_center, default_slots};
+use crate::core::radial_targets::{default_center, default_slots, RadialTargetSettings};
 use crate::core::stash::StashRecord;
 
 /// A trigger + key combination that applies an action.
@@ -143,7 +145,10 @@ pub struct AppSettings {
     pub radial_sector_stroke: String,
     #[serde(default = "default_ring_fill", rename = "RadialRingFill")]
     pub radial_ring_fill: String,
-    #[serde(default = "default_preview_border_color", rename = "PreviewBorderColor")]
+    #[serde(
+        default = "default_preview_border_color",
+        rename = "PreviewBorderColor"
+    )]
     pub preview_border_color: String,
 }
 

@@ -101,8 +101,14 @@ mod tests {
             (3, Rect::new(1100, 320, 1300, 520)),
             (4, Rect::new(600, 800, 800, 1000)),
         ];
-        assert_eq!(find_directional(current, &candidates, NavDir::Right), Some(2));
-        assert_eq!(find_directional(current, &candidates, NavDir::Down), Some(4));
+        assert_eq!(
+            find_directional(current, &candidates, NavDir::Right),
+            Some(2)
+        );
+        assert_eq!(
+            find_directional(current, &candidates, NavDir::Down),
+            Some(4)
+        );
         assert_eq!(find_directional(current, &candidates, NavDir::Left), None);
     }
 

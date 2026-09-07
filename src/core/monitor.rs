@@ -27,7 +27,14 @@ pub struct MonitorSnapshot {
 }
 
 /// Combine global + per-edge padding and clamp it inside `work`.
-pub fn apply_padding(work: Rect, global: i32, left: i32, top: i32, right: i32, bottom: i32) -> Rect {
+pub fn apply_padding(
+    work: Rect,
+    global: i32,
+    left: i32,
+    top: i32,
+    right: i32,
+    bottom: i32,
+) -> Rect {
     let left = (global + left).max(0);
     let top = (global + top).max(0);
     let right = (global + right).max(0);
@@ -91,7 +98,12 @@ mod tests {
     use super::*;
 
     fn snapshot(monitor: Rect, work: Rect, dpi: f64) -> MonitorSnapshot {
-        MonitorSnapshot { monitor, work, dpi_x: dpi, dpi_y: dpi }
+        MonitorSnapshot {
+            monitor,
+            work,
+            dpi_x: dpi,
+            dpi_y: dpi,
+        }
     }
 
     #[test]
@@ -105,17 +117,31 @@ mod tests {
 
     #[test]
     fn logical_moves_scale_with_dpi() {
-        let source = snapshot(Rect::new(0, 0, 1920, 1080), Rect::new(0, 0, 1920, 1040), 96.0);
+        let source = snapshot(
+            Rect::new(0, 0, 1920, 1080),
+            Rect::new(0, 0, 1920, 1040),
+            96.0,
+        );
         let target = snapshot(
             Rect::new(1920, 0, 3840, 1080),
             Rect::new(1920, 0, 3840, 1040),
             144.0,
         );
         let current = Rect::new(100, 100, 500, 400);
-        let moved = translate_frame(current, source, target, MonitorMoveSizePolicy::PreserveLogicalSize);
+        let moved = translate_frame(
+            current,
+            source,
+            target,
+            MonitorMoveSizePolicy::PreserveLogicalSize,
+        );
         assert_eq!(moved.width(), 600);
         assert_eq!(moved.height(), 450);
-        let pixels = translate_frame(current, source, target, MonitorMoveSizePolicy::PreservePixels);
+        let pixels = translate_frame(
+            current,
+            source,
+            target,
+            MonitorMoveSizePolicy::PreservePixels,
+        );
         assert_eq!((pixels.width(), pixels.height()), (400, 300));
     }
 }

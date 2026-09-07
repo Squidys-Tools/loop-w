@@ -4,7 +4,7 @@
 //! aliases and the single-token command contract.
 
 use super::actions::WindowAction;
-use super::hotkey::{TriggerModifierSide, hotkey_name};
+use super::hotkey::{hotkey_name, TriggerModifierSide};
 
 /// A parsed CLI / named-pipe command.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -124,14 +124,26 @@ mod tests {
 
     #[test]
     fn maps_direction_aliases() {
-        assert_eq!(parse_command("direction/right"), Ok(LoopCommand::Apply(WindowAction::RightHalf)));
-        assert_eq!(parse_command("direction/next"), Ok(LoopCommand::Apply(WindowAction::NextScreen)));
-        assert_eq!(parse_command("direction/prev"), Ok(LoopCommand::Apply(WindowAction::PreviousScreen)));
+        assert_eq!(
+            parse_command("direction/right"),
+            Ok(LoopCommand::Apply(WindowAction::RightHalf))
+        );
+        assert_eq!(
+            parse_command("direction/next"),
+            Ok(LoopCommand::Apply(WindowAction::NextScreen))
+        );
+        assert_eq!(
+            parse_command("direction/prev"),
+            Ok(LoopCommand::Apply(WindowAction::PreviousScreen))
+        );
     }
 
     #[test]
     fn maps_action_names() {
-        assert_eq!(parse_command("action/maximize"), Ok(LoopCommand::Apply(WindowAction::Maximize)));
+        assert_eq!(
+            parse_command("action/maximize"),
+            Ok(LoopCommand::Apply(WindowAction::Maximize))
+        );
         assert!(parse_command("action/nope").is_err());
     }
 
@@ -139,7 +151,10 @@ mod tests {
     fn maps_activation_and_lists() {
         assert_eq!(parse_command("activate"), Ok(LoopCommand::Activate));
         assert_eq!(parse_command("list/actions"), Ok(LoopCommand::ListActions));
-        assert_eq!(parse_command("list/keybinds"), Ok(LoopCommand::ListKeybinds));
+        assert_eq!(
+            parse_command("list/keybinds"),
+            Ok(LoopCommand::ListKeybinds)
+        );
         assert_eq!(parse_command("list/all"), Ok(LoopCommand::ListAll));
     }
 
@@ -155,7 +170,10 @@ mod tests {
     fn actions_cover_every_action() {
         let text = format_actions();
         for action in WindowAction::ALL {
-            assert!(text.contains(&format!("action/{}", action.token())), "missing {action:?}");
+            assert!(
+                text.contains(&format!("action/{}", action.token())),
+                "missing {action:?}"
+            );
         }
     }
 }

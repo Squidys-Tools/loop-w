@@ -43,7 +43,12 @@ impl CycleState {
         chain_for(action).is_some()
     }
 
-    pub fn select(&mut self, window: u64, requested: WindowAction, enabled: bool) -> CycleSelection {
+    pub fn select(
+        &mut self,
+        window: u64,
+        requested: WindowAction,
+        enabled: bool,
+    ) -> CycleSelection {
         let Some(chain) = chain_for(requested) else {
             self.cursors.remove(&window);
             return CycleSelection {
@@ -95,12 +100,8 @@ impl CycleState {
 fn chain_for(action: WindowAction) -> Option<&'static [WindowAction; 3]> {
     use WindowAction::*;
     match action {
-        LeftHalf | LeftThird | LeftTwoThirds => {
-            Some(&[LeftHalf, LeftThird, LeftTwoThirds])
-        }
-        RightHalf | RightThird | RightTwoThirds => {
-            Some(&[RightHalf, RightThird, RightTwoThirds])
-        }
+        LeftHalf | LeftThird | LeftTwoThirds => Some(&[LeftHalf, LeftThird, LeftTwoThirds]),
+        RightHalf | RightThird | RightTwoThirds => Some(&[RightHalf, RightThird, RightTwoThirds]),
         TopHalf | TopThird | TopTwoThirds => Some(&[TopHalf, TopThird, TopTwoThirds]),
         BottomHalf | BottomThird | BottomTwoThirds => {
             Some(&[BottomHalf, BottomThird, BottomTwoThirds])

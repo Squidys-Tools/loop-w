@@ -8,13 +8,14 @@ before testing minimize, hide, stash, or focus actions.
 Status: `[ ]` not run, `[x]` passed, `[!]` blocked or not supported on this
 Windows configuration.
 
-The current automated baseline is a warning-free build and 39 pure tests. Live
-named-pipe responses and desktop actions still require the manual checks below.
-Re-run the automated baseline after every action-model change.
+The current automated baseline is a warning-free `cargo build` and the
+`cargo test` unit suite (44 tests). Live named-pipe responses and desktop
+actions still require the manual checks below. Re-run the automated baseline
+after every action-model change.
 
 ## 1. Build and resident lifecycle
 
-- [ ] Build `LoopW.csproj` with zero warnings and run all `LoopW.Tests` tests.
+- [ ] Run `cargo build` with zero warnings and `cargo test` with all tests passing.
 - [ ] Launch LoopW. The main window stays hidden and exactly one tray icon appears.
 - [x] Launch LoopW a second time. The existing instance activates; no second hook,
   process, or tray icon remains.
@@ -180,12 +181,11 @@ does not target its own settings, radial, preview, or tray surfaces.
 
 ## 11. Final gate
 
-- [ ] Run the automated build and test commands from this document's companion
-  implementation plan.
+- [ ] Run `cargo build`, `cargo test`, and `cargo clippy --all-targets` clean.
 - [ ] Complete sections 1 through 10 on at least one local multi-monitor setup.
 - [ ] Complete mixed-DPI, RDP, elevated-app, and taskbar-layout checks or record
   explicit product limitations.
-- [ ] Update the implementation plan with the verified status and any remaining
+- [ ] Update `docs/ROADMAP.md` with the verified status and any remaining
   Windows-specific limitations.
 
 Packaging, signing, installer choice, update channels, and distribution are not

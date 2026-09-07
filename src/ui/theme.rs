@@ -59,11 +59,14 @@ pub fn matching_preset(
         normalize_color(ring_fill, "#000000"),
         normalize_color(preview_border, "#000000"),
     );
-    PRESETS.iter().find(|p| {
-        normalize_color(p.accent, "#111111") == a
-            && normalize_color(p.sector_fill, "#111111") == sf
-            && normalize_color(p.sector_stroke, "#111111") == ss
-            && normalize_color(p.ring_fill, "#111111") == rf
-            && normalize_color(p.preview_border, "#111111") == pb
-    }).map(|p| p.name)
+    PRESETS
+        .iter()
+        .find(|p| {
+            normalize_color(p.accent, "#111111") == a
+                && normalize_color(p.sector_fill, "#111111") == sf
+                && normalize_color(p.sector_stroke, "#111111") == ss
+                && normalize_color(p.ring_fill, "#111111") == rf
+                && normalize_color(p.preview_border, "#111111") == pb
+        })
+        .map(|p| p.name)
 }

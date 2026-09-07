@@ -76,8 +76,16 @@ impl RadialTargetSettings {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RadialTarget {
     None,
-    BuiltIn { action: WindowAction, cycle: bool },
-    Keybind { id: String, action: WindowAction, cycle: bool, label: String },
+    BuiltIn {
+        action: WindowAction,
+        cycle: bool,
+    },
+    Keybind {
+        id: String,
+        action: WindowAction,
+        cycle: bool,
+        label: String,
+    },
 }
 
 impl RadialTarget {
@@ -113,10 +121,7 @@ impl RadialTarget {
 }
 
 /// Resolve one persisted slot against the keybind list.
-pub fn resolve_slot(
-    slot: &RadialTargetSettings,
-    keybinds: &[ResolvedKeybind],
-) -> RadialTarget {
+pub fn resolve_slot(slot: &RadialTargetSettings, keybinds: &[ResolvedKeybind]) -> RadialTarget {
     match slot.kind {
         RadialTargetKind::None => RadialTarget::None,
         RadialTargetKind::Action => RadialTarget::BuiltIn {

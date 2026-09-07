@@ -13,7 +13,8 @@ pub fn view(state: &State) -> Element<'_, Message> {
 
     let mut binds = column![text("Keybinds").size(15)].spacing(6);
     if settings.keybinds.is_empty() {
-        binds = binds.push(text("No keybinds yet. Keybinds run without opening the radial menu.").size(13));
+        binds = binds
+            .push(text("No keybinds yet. Keybinds run without opening the radial menu.").size(13));
     }
     for bind in &settings.keybinds {
         let label = format!(
@@ -29,12 +30,7 @@ pub fn view(state: &State) -> Element<'_, Message> {
             .spacing(10),
         );
     }
-    binds = binds.push(
-        row![
-            button("Add keybind").on_press(Message::AddKeybind),
-        ]
-        .spacing(10),
-    );
+    binds = binds.push(row![button("Add keybind").on_press(Message::AddKeybind),].spacing(10));
 
     let content = column![
         text("Advanced").size(20),
@@ -47,14 +43,12 @@ pub fn view(state: &State) -> Element<'_, Message> {
                     "PreservePixels".to_string(),
                     "PreserveLogicalSize".to_string(),
                 ],
-                Some(
-                    match settings.monitor_move_policy {
-                        crate::core::monitor::MonitorMoveSizePolicy::PreservePixels =>
-                            "PreservePixels".to_string(),
-                        crate::core::monitor::MonitorMoveSizePolicy::PreserveLogicalSize =>
-                            "PreserveLogicalSize".to_string(),
-                    }
-                ),
+                Some(match settings.monitor_move_policy {
+                    crate::core::monitor::MonitorMoveSizePolicy::PreservePixels =>
+                        "PreservePixels".to_string(),
+                    crate::core::monitor::MonitorMoveSizePolicy::PreserveLogicalSize =>
+                        "PreserveLogicalSize".to_string(),
+                }),
                 Message::SetMonitorPolicy,
             ),
         ]
@@ -65,25 +59,22 @@ pub fn view(state: &State) -> Element<'_, Message> {
             button("+").on_press(Message::NudgeGlobalPadding(1)),
         ]
         .spacing(8),
-        row![
-            text("Excluded processes (one per line, e.g. game.exe)").size(13),
-        ],
-        text_input(
-            "excluded.exe",
-            &settings.excluded_processes.join("\n"),
-        )
-        .on_input(Message::EditExcludedProcesses),
+        row![text("Excluded processes (one per line, e.g. game.exe)").size(13),],
+        text_input("excluded.exe", &settings.excluded_processes.join("\n"),)
+            .on_input(Message::EditExcludedProcesses),
         row![
             text("Stash peek / hit zone / delay").size(13),
             button("Defaults").on_press(Message::ResetSection(Section::Advanced)),
         ],
-        row![
-            text(format!(
-                "Bypass note: {} keybind(s) bypass the trigger.",
-                settings.keybinds.iter().filter(|k| k.bypass_trigger).count()
-            ))
-            .size(12),
-        ],
+        row![text(format!(
+            "Bypass note: {} keybind(s) bypass the trigger.",
+            settings
+                .keybinds
+                .iter()
+                .filter(|k| k.bypass_trigger)
+                .count()
+        ))
+        .size(12),],
         row![
             button("Reset section").on_press(Message::ResetSection(Section::Advanced)),
             button("Reset ALL settings…").on_press(Message::ConfirmResetAll),
@@ -100,7 +91,11 @@ pub fn view(state: &State) -> Element<'_, Message> {
             row![].spacing(0)
         },
         text(&state.status).size(12),
-        text(format!("Window actions available: {}", WindowAction::ALL.len())).size(11),
+        text(format!(
+            "Window actions available: {}",
+            WindowAction::ALL.len()
+        ))
+        .size(11),
         row![
             text("Bypass toggles and per-edge padding editors live here next.").size(11),
             toggler(false).on_toggle(|_| Message::Noop),
@@ -109,5 +104,8 @@ pub fn view(state: &State) -> Element<'_, Message> {
     .spacing(10)
     .padding(16);
 
-    container(content).width(Length::Fill).height(Length::Fill).into()
+    container(content)
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .into()
 }

@@ -88,8 +88,12 @@ pub fn key_name(vk: u32) -> String {
         0x5D => "Menu".to_string(),
         0x90 => "Num Lock".to_string(),
         0x91 => "Scroll Lock".to_string(),
-        0x30..=0x39 => char::from_u32(vk).map(|c| c.to_string()).unwrap_or_else(|| format!("VK{vk:02X}")),
-        0x41..=0x5A => char::from_u32(vk).map(|c| c.to_string()).unwrap_or_else(|| format!("VK{vk:02X}")),
+        0x30..=0x39 => char::from_u32(vk)
+            .map(|c| c.to_string())
+            .unwrap_or_else(|| format!("VK{vk:02X}")),
+        0x41..=0x5A => char::from_u32(vk)
+            .map(|c| c.to_string())
+            .unwrap_or_else(|| format!("VK{vk:02X}")),
         0x60..=0x69 => format!("Num {}", vk - 0x60),
         0x6A => "Num *".to_string(),
         0x6B => "Num +".to_string(),

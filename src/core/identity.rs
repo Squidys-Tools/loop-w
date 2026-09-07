@@ -88,7 +88,12 @@ mod tests {
             edge: StashEdge::Left,
             original_placement: StashPlacement::default(),
             original_monitor: StashMonitor::default(),
-            stashed_frame: StashRect { left: 0, top: 0, right: 8, bottom: 100 },
+            stashed_frame: StashRect {
+                left: 0,
+                top: 0,
+                right: 8,
+                bottom: 100,
+            },
         }
     }
 

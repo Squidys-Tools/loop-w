@@ -25,13 +25,12 @@ fn main() -> iced::Result {
 #[cfg(windows)]
 fn enable_dpi_awareness() {
     use windows::Win32::UI::HiDpi::*;
+    use windows::Win32::UI::WindowsAndMessaging::SetProcessDPIAware;
     unsafe {
-        if SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2)
-            .as_bool()
-        {
+        if SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2).is_ok() {
             return;
         }
-        SetProcessDPIAware();
+        let _ = SetProcessDPIAware();
     }
 }
 

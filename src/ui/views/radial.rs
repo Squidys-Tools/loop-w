@@ -21,7 +21,10 @@ pub fn view(state: &State) -> Element<'_, Message> {
                     t.action.display_name().to_string()
                 }
                 crate::core::radial_targets::RadialTargetKind::Keybind => {
-                    format!("Keybind {}", t.keybind_id.chars().take(6).collect::<String>())
+                    format!(
+                        "Keybind {}",
+                        t.keybind_id.chars().take(6).collect::<String>()
+                    )
                 }
             })
             .unwrap_or_else(|| "No action".to_string());
@@ -42,30 +45,38 @@ pub fn view(state: &State) -> Element<'_, Message> {
             text("Enabled").size(14),
             toggler(settings.radial_enabled).on_toggle(Message::SetRadialEnabled),
             text("Cursor follows direction").size(14),
-            toggler(settings.cursor_interaction_enabled)
-                .on_toggle(Message::SetCursorInteraction),
+            toggler(settings.cursor_interaction_enabled).on_toggle(Message::SetCursorInteraction),
         ]
         .spacing(12),
-        text(format!("Outer radius: {:.0} px", settings.radial_outer_radius)).size(14),
+        text(format!(
+            "Outer radius: {:.0} px",
+            settings.radial_outer_radius
+        ))
+        .size(14),
         slider(
             64.0..=140.0,
             settings.radial_outer_radius as f32,
             Message::SetOuterRadius
         ),
-        text(format!("Inner radius: {:.0} px", settings.radial_inner_radius)).size(14),
+        text(format!(
+            "Inner radius: {:.0} px",
+            settings.radial_inner_radius
+        ))
+        .size(14),
         slider(
             24.0..=132.0,
             settings.radial_inner_radius as f32,
             Message::SetInnerRadius
         ),
         assignments,
-        row![
-            button("Reset section").on_press(Message::ResetSection(Section::Radial)),
-        ],
+        row![button("Reset section").on_press(Message::ResetSection(Section::Radial)),],
         text(&state.status).size(12),
     ]
     .spacing(12)
     .padding(16);
 
-    container(content).width(Length::Fill).height(Length::Fill).into()
+    container(content)
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .into()
 }

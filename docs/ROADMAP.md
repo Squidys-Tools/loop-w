@@ -4,7 +4,7 @@ LoopW is a Windows window manager built around a hold-to-open radial menu. The
 main product path is in the code now. This roadmap tracks the work that still
 needs to be verified or hardened before a wider release.
 
-LoopW targets .NET 8, WPF, and native Windows APIs. It runs as a tray resident
+LoopW targets Rust, iced 0.14, and native Windows APIs. It runs as a tray resident
 app and saves settings to `%LOCALAPPDATA%\\LoopW\\settings.json`.
 
 ## Current state
@@ -111,19 +111,20 @@ LoopW is ready for a broader release when:
 5. Unsupported windows fail safely and tell the user what happened.
 
 Packaging is a separate decision after this gate. The current GitHub Actions
-workflow builds a self-contained `win-x64` package for `v*` tags and stores the
-archive and checksum for manual workflow runs.
+workflow runs `cargo test` + `cargo clippy`, builds the release EXE for `v*`
+tags, renames it to `LoopW.exe`, and stores the ZIP archive and checksum for
+manual workflow runs.
 
 ## Development commands
 
 Run these commands from the repository root in PowerShell:
 
 ```powershell
-dotnet build LoopW.csproj
-dotnet run --project LoopW.Tests/LoopW.Tests.csproj
-dotnet run --project LoopW.csproj
-dotnet publish LoopW.csproj -c Release -r win-x64 --self-contained -p:PublishSingleFile=true
+cargo build
+cargo test
+cargo clippy --all-targets
+cargo run
+cargo build --release
 ```
 
-The tests are a small executable rather than a test-framework project, so use
-`dotnet run` for the test project.
+The release binary is `target\release\loopw.exe` (`LoopW.exe` when packaged).

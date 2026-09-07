@@ -7,9 +7,7 @@
 use serde_repr::{Deserialize_repr, Serialize_repr};
 
 /// Every window operation LoopW can perform.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize_repr, Deserialize_repr,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize_repr, Deserialize_repr)]
 #[repr(u8)]
 pub enum WindowAction {
     LeftHalf = 0,

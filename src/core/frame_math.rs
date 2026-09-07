@@ -25,12 +25,18 @@ pub fn zone_frame(work: Rect, action: WindowAction) -> Rect {
         WindowAction::TopRightQuarter => r(mid_x, top, right, mid_y),
         WindowAction::BottomLeftQuarter => r(left, mid_y, mid_x, bottom),
         WindowAction::BottomRightQuarter => r(mid_x, mid_y, right, bottom),
-        WindowAction::HorizontalCenterHalf => {
-            r(left + work.width() / 4, top, left + work.width() * 3 / 4, bottom)
-        }
-        WindowAction::VerticalCenterHalf => {
-            r(left, top + work.height() / 4, right, top + work.height() * 3 / 4)
-        }
+        WindowAction::HorizontalCenterHalf => r(
+            left + work.width() / 4,
+            top,
+            left + work.width() * 3 / 4,
+            bottom,
+        ),
+        WindowAction::VerticalCenterHalf => r(
+            left,
+            top + work.height() / 4,
+            right,
+            top + work.height() * 3 / 4,
+        ),
         WindowAction::LeftThird => r(left, top, left + third_w, bottom),
         WindowAction::LeftTwoThirds => r(left, top, left + two_third_w, bottom),
         WindowAction::HorizontalCenterThird => r(left + third_w, top, left + two_third_w, bottom),
@@ -42,12 +48,18 @@ pub fn zone_frame(work: Rect, action: WindowAction) -> Rect {
         WindowAction::BottomTwoThirds => r(left, top + third_h, right, bottom),
         WindowAction::BottomThird => r(left, top + two_third_h, right, bottom),
         WindowAction::FirstFourth => r(left, top, left + work.width() / 4, bottom),
-        WindowAction::SecondFourth => {
-            r(left + work.width() / 4, top, left + work.width() / 2, bottom)
-        }
-        WindowAction::ThirdFourth => {
-            r(left + work.width() / 2, top, left + work.width() * 3 / 4, bottom)
-        }
+        WindowAction::SecondFourth => r(
+            left + work.width() / 4,
+            top,
+            left + work.width() / 2,
+            bottom,
+        ),
+        WindowAction::ThirdFourth => r(
+            left + work.width() / 2,
+            top,
+            left + work.width() * 3 / 4,
+            bottom,
+        ),
         WindowAction::FourthFourth => r(left + work.width() * 3 / 4, top, right, bottom),
         WindowAction::LeftThreeFourths => r(left, top, left + work.width() * 3 / 4, bottom),
         WindowAction::RightThreeFourths => r(left + work.width() / 4, top, right, bottom),
@@ -157,37 +169,83 @@ pub fn manipulate_frame(work: Rect, action: WindowAction, current: Rect, dpi_sca
     let (mut width, mut height) = (current.width(), current.height());
     let r = Rect::new;
     match action {
-        WindowAction::Larger | WindowAction::Smaller | WindowAction::ScaleUp | WindowAction::ScaleDown => {
-            let (step_w, step_h) = (width.max(32) / 10 .max(32), height.max(32) / 10 .max(32));
+        WindowAction::Larger
+        | WindowAction::Smaller
+        | WindowAction::ScaleUp
+        | WindowAction::ScaleDown => {
+            let (step_w, step_h) = (width.max(32) / 10.max(32), height.max(32) / 10.max(32));
             // Note: mirrors C# `Math.Max(32, dim / 10)`.
             let (step_w, step_h) = (step_w.max(32), step_h.max(32));
             match action {
                 WindowAction::ScaleUp | WindowAction::ScaleDown => {
-                    let scale = if action == WindowAction::ScaleUp { 1.1 } else { 0.9 };
+                    let scale = if action == WindowAction::ScaleUp {
+                        1.1
+                    } else {
+                        0.9
+                    };
                     width = (width as f64 * scale).round() as i32;
                     height = (height as f64 * scale).round() as i32;
                 }
                 _ => {
-                    width = if action == WindowAction::Larger { width + step_w } else { width - step_w };
-                    height = if action == WindowAction::Larger { height + step_h } else { height - step_h };
+                    width = if action == WindowAction::Larger {
+                        width + step_w
+                    } else {
+                        width - step_w
+                    };
+                    height = if action == WindowAction::Larger {
+                        height + step_h
+                    } else {
+                        height - step_h
+                    };
                 }
             }
             width = width.max(step);
             height = height.max(step);
             let cx = current.left + current.width() / 2;
             let cy = current.top + current.height() / 2;
-            r(cx - width / 2, cy - height / 2, cx - width / 2 + width, cy - height / 2 + height)
+            r(
+                cx - width / 2,
+                cy - height / 2,
+                cx - width / 2 + width,
+                cy - height / 2 + height,
+            )
         }
-        WindowAction::GrowLeft => r(current.left - step, current.top, current.right, current.bottom),
-        WindowAction::GrowRight => r(current.left, current.top, current.right + step, current.bottom),
-        WindowAction::GrowTop => r(current.left, current.top - step, current.right, current.bottom),
-        WindowAction::GrowBottom => r(current.left, current.top, current.right, current.bottom + step),
-        WindowAction::GrowHorizontal => {
-            r(current.left - step, current.top, current.right + step, current.bottom)
-        }
-        WindowAction::GrowVertical => {
-            r(current.left, current.top - step, current.right, current.bottom + step)
-        }
+        WindowAction::GrowLeft => r(
+            current.left - step,
+            current.top,
+            current.right,
+            current.bottom,
+        ),
+        WindowAction::GrowRight => r(
+            current.left,
+            current.top,
+            current.right + step,
+            current.bottom,
+        ),
+        WindowAction::GrowTop => r(
+            current.left,
+            current.top - step,
+            current.right,
+            current.bottom,
+        ),
+        WindowAction::GrowBottom => r(
+            current.left,
+            current.top,
+            current.right,
+            current.bottom + step,
+        ),
+        WindowAction::GrowHorizontal => r(
+            current.left - step,
+            current.top,
+            current.right + step,
+            current.bottom,
+        ),
+        WindowAction::GrowVertical => r(
+            current.left,
+            current.top - step,
+            current.right,
+            current.bottom + step,
+        ),
         WindowAction::ShrinkLeft => r(
             (current.right - 1).min(current.left + step),
             current.top,
@@ -215,17 +273,47 @@ pub fn manipulate_frame(work: Rect, action: WindowAction, current: Rect, dpi_sca
         WindowAction::ShrinkHorizontal => {
             let new_width = (current.width() - 2 * step).max(1);
             let cx = current.left + current.width() / 2;
-            r(cx - new_width / 2, current.top, cx - new_width / 2 + new_width, current.bottom)
+            r(
+                cx - new_width / 2,
+                current.top,
+                cx - new_width / 2 + new_width,
+                current.bottom,
+            )
         }
         WindowAction::ShrinkVertical => {
             let new_height = (current.height() - 2 * step).max(1);
             let cy = current.top + current.height() / 2;
-            r(current.left, cy - new_height / 2, current.right, cy - new_height / 2 + new_height)
+            r(
+                current.left,
+                cy - new_height / 2,
+                current.right,
+                cy - new_height / 2 + new_height,
+            )
         }
-        WindowAction::MoveLeft => r(current.left - step, current.top, current.right - step, current.bottom),
-        WindowAction::MoveRight => r(current.left + step, current.top, current.right + step, current.bottom),
-        WindowAction::MoveUp => r(current.left, current.top - step, current.right, current.bottom - step),
-        WindowAction::MoveDown => r(current.left, current.top + step, current.right, current.bottom + step),
+        WindowAction::MoveLeft => r(
+            current.left - step,
+            current.top,
+            current.right - step,
+            current.bottom,
+        ),
+        WindowAction::MoveRight => r(
+            current.left + step,
+            current.top,
+            current.right + step,
+            current.bottom,
+        ),
+        WindowAction::MoveUp => r(
+            current.left,
+            current.top - step,
+            current.right,
+            current.bottom - step,
+        ),
+        WindowAction::MoveDown => r(
+            current.left,
+            current.top + step,
+            current.right,
+            current.bottom + step,
+        ),
         _ => current,
     }
 }
@@ -393,9 +481,18 @@ mod tests {
     #[test]
     fn halves_and_quarters_cover_work_area() {
         let work = Rect::new(0, 0, 1200, 800);
-        assert_eq!(zone_frame(work, WindowAction::LeftHalf), Rect::new(0, 0, 600, 800));
-        assert_eq!(zone_frame(work, WindowAction::RightHalf), Rect::new(600, 0, 1200, 800));
-        assert_eq!(zone_frame(work, WindowAction::TopLeftQuarter), Rect::new(0, 0, 600, 400));
+        assert_eq!(
+            zone_frame(work, WindowAction::LeftHalf),
+            Rect::new(0, 0, 600, 800)
+        );
+        assert_eq!(
+            zone_frame(work, WindowAction::RightHalf),
+            Rect::new(600, 0, 1200, 800)
+        );
+        assert_eq!(
+            zone_frame(work, WindowAction::TopLeftQuarter),
+            Rect::new(0, 0, 600, 400)
+        );
         assert_eq!(
             zone_frame(work, WindowAction::BottomRightQuarter),
             Rect::new(600, 400, 1200, 800)
@@ -408,7 +505,10 @@ mod tests {
         let left = zone_frame(work, WindowAction::LeftThird);
         let center = zone_frame(work, WindowAction::HorizontalCenterThird);
         let right = zone_frame(work, WindowAction::RightThird);
-        assert_eq!((left.width(), center.width(), right.width()), (400, 400, 400));
+        assert_eq!(
+            (left.width(), center.width(), right.width()),
+            (400, 400, 400)
+        );
         assert_eq!(left.right, center.left);
         assert_eq!(center.right, right.left);
         assert_eq!(right.right, work.right);
@@ -442,7 +542,12 @@ mod tests {
     fn fit_clamps_and_anchors_right_edge() {
         let bounds = Rect::new(0, 0, 1000, 800);
         let frame = Rect::new(800, 0, 1400, 800);
-        let limits = MinMaxLimits { min_w: 100, min_h: 100, max_w: 0, max_h: 0 };
+        let limits = MinMaxLimits {
+            min_w: 100,
+            min_h: 100,
+            max_w: 0,
+            max_h: 0,
+        };
         let fitted = fit_frame(bounds, WindowAction::RightHalf, frame, limits);
         assert_eq!(fitted.right, bounds.right);
         assert!(fitted.width() <= bounds.width());

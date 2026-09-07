@@ -21,14 +21,46 @@ impl SlotGeometry {
 
 /// Clockwise wedge layout starting at Right.
 pub const GEOMETRY: [SlotGeometry; 8] = [
-    SlotGeometry { label: "Right", from_deg: -22.5, to_deg: 22.5 },
-    SlotGeometry { label: "Bottom-right", from_deg: 22.5, to_deg: 67.5 },
-    SlotGeometry { label: "Bottom", from_deg: 67.5, to_deg: 112.5 },
-    SlotGeometry { label: "Bottom-left", from_deg: 112.5, to_deg: 157.5 },
-    SlotGeometry { label: "Left", from_deg: 157.5, to_deg: 202.5 },
-    SlotGeometry { label: "Top-left", from_deg: 202.5, to_deg: 247.5 },
-    SlotGeometry { label: "Top", from_deg: 247.5, to_deg: 292.5 },
-    SlotGeometry { label: "Top-right", from_deg: 292.5, to_deg: 337.5 },
+    SlotGeometry {
+        label: "Right",
+        from_deg: -22.5,
+        to_deg: 22.5,
+    },
+    SlotGeometry {
+        label: "Bottom-right",
+        from_deg: 22.5,
+        to_deg: 67.5,
+    },
+    SlotGeometry {
+        label: "Bottom",
+        from_deg: 67.5,
+        to_deg: 112.5,
+    },
+    SlotGeometry {
+        label: "Bottom-left",
+        from_deg: 112.5,
+        to_deg: 157.5,
+    },
+    SlotGeometry {
+        label: "Left",
+        from_deg: 157.5,
+        to_deg: 202.5,
+    },
+    SlotGeometry {
+        label: "Top-left",
+        from_deg: 202.5,
+        to_deg: 247.5,
+    },
+    SlotGeometry {
+        label: "Top",
+        from_deg: 247.5,
+        to_deg: 292.5,
+    },
+    SlotGeometry {
+        label: "Top-right",
+        from_deg: 292.5,
+        to_deg: 337.5,
+    },
 ];
 
 /// Default actions per wedge (kept for compat/tests).

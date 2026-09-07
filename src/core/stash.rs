@@ -51,7 +51,12 @@ pub struct StashRect {
 
 impl From<Rect> for StashRect {
     fn from(r: Rect) -> Self {
-        Self { left: r.left, top: r.top, right: r.right, bottom: r.bottom }
+        Self {
+            left: r.left,
+            top: r.top,
+            right: r.right,
+            bottom: r.bottom,
+        }
     }
 }
 
@@ -86,7 +91,12 @@ impl Default for StashPlacement {
             show_command: 0,
             min_position: StashPoint { x: 0, y: 0 },
             max_position: StashPoint { x: 0, y: 0 },
-            normal_position: StashRect { left: 0, top: 0, right: 0, bottom: 0 },
+            normal_position: StashRect {
+                left: 0,
+                top: 0,
+                right: 0,
+                bottom: 0,
+            },
         }
     }
 }
@@ -111,8 +121,18 @@ fn default_dpi() -> f64 {
 impl Default for StashMonitor {
     fn default() -> Self {
         Self {
-            monitor: StashRect { left: 0, top: 0, right: 0, bottom: 0 },
-            work: StashRect { left: 0, top: 0, right: 0, bottom: 0 },
+            monitor: StashRect {
+                left: 0,
+                top: 0,
+                right: 0,
+                bottom: 0,
+            },
+            work: StashRect {
+                left: 0,
+                top: 0,
+                right: 0,
+                bottom: 0,
+            },
             dpi_x: 96.0,
             dpi_y: 96.0,
         }
@@ -215,7 +235,10 @@ mod tests {
     fn stash_frames_keep_visible_peek() {
         let work = Rect::new(0, 0, 1000, 800);
         let window = Rect::new(100, 120, 500, 520);
-        assert_eq!(nearest_edge(work, Rect::new(-2, 120, 398, 520)), StashEdge::Left);
+        assert_eq!(
+            nearest_edge(work, Rect::new(-2, 120, 398, 520)),
+            StashEdge::Left
+        );
         assert_eq!(
             calculate_stashed_frame(work, window, StashEdge::Left, 8),
             Rect::new(-392, 120, 8, 520)

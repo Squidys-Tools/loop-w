@@ -7,20 +7,20 @@
 
 use std::sync::{Mutex, OnceLock};
 
-use iced::widget::{button, column, container, row, scrollable, text};
-use iced::{Element, Length, Subscription, Task, Theme, window};
 use iced::keyboard;
+use iced::widget::{button, column, container, row, scrollable, text};
+use iced::{window, Element, Length, Subscription, Task, Theme};
 
 use crate::core::actions::WindowAction;
 use crate::core::cycle::CycleState;
-use crate::core::hotkey::TriggerModifierSide;
+use crate::core::hotkey::{hotkey_name, TriggerModifierSide};
 use crate::core::monitor::MonitorMoveSizePolicy;
-use crate::core::radial::{GEOMETRY, angle_of, index_at};
-use crate::core::radial_targets::{RadialTarget, ResolvedKeybind, resolve_slot};
+use crate::core::radial::{angle_of, index_at, GEOMETRY};
+use crate::core::radial_targets::{resolve_slot, RadialTarget, ResolvedKeybind};
 use crate::core::rect::{Point, Rect};
-use crate::settings::AppSettings;
 use crate::settings::persistence;
-use crate::win::events::{RuntimeEvent, drain};
+use crate::settings::AppSettings;
+use crate::win::events::{drain, RuntimeEvent};
 use crate::win::{self, native};
 
 /// Left-nav sections (General-first hierarchy from the spec).
@@ -126,6 +126,7 @@ struct RadialSession {
     inner: f64,
     hovered: Option<usize>,
     targets: Vec<RadialTarget>,
+    center_target: RadialTarget,
     patch_tries: u8,
 }
 
@@ -163,17 +164,27 @@ struct BootArgs {
 static BOOT_ARGS: OnceLock<Mutex<Option<BootArgs>>> = OnceLock::new();
 
 /// Boot the resident daemon. `instance` is held for process lifetime.
-pub fn run(startup_command: Option<String>, instance: win::instance::InstanceGuard) -> iced::Result {
-    *BOOT_ARGS.get_or_init(|| Mutex::new(None)).lock().expect("boot args poisoned") =
-        Some(BootArgs { startup: startup_command, instance: Some(instance) });
+pub fn run(
+    startup_command: Option<String>,
+    instance: win::instance::InstanceGuard,
+) -> iced::Result {
+    *BOOT_ARGS
+        .get_or_init(|| Mutex::new(None))
+        .lock()
+        .expect("boot args poisoned") = Some(BootArgs {
+        startup: startup_command,
+        instance: Some(instance),
+    });
     iced::daemon(State::boot, update, view)
-        .title(|state: &State| format!("LoopW Settings — {}", state.section.label()))
-        .theme(|state: &State| {
-            if state.settings.is_light() {
+        .title(|state: &State, _window: window::Id| {
+            format!("LoopW Settings — {}", state.section.label())
+        })
+        .theme(|state: &State, _window: window::Id| {
+            Some(if state.settings.is_light() {
                 Theme::Light
             } else {
                 Theme::Dark
-            }
+            })
         })
         .subscription(subscription)
         .run()
@@ -443,7 +454,10 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
             Task::none()
         }
         Message::AddKeybind => {
-            state.settings.keybinds.push(crate::settings::Keybind::default());
+            state
+                .settings
+                .keybinds
+                .push(crate::settings::Keybind::default());
             commit_settings(state, "Saved");
             Task::none()
         }
@@ -462,8 +476,7 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
             Task::none()
         }
         Message::NudgeGlobalPadding(delta) => {
-            state.settings.global_padding =
-                (state.settings.global_padding + delta).clamp(0, 128);
+            state.settings.global_padding = (state.settings.global_padding + delta).clamp(0, 128);
             commit_settings(state, "Saved");
             Task::none()
         }
@@ -670,9 +683,7 @@ fn frame_tick(state: &mut State) -> Task<Message> {
         }
     }
     if let Some(session) = state.preview.as_mut() {
-        if session.patch_tries < 12
-            && win::overlay::patch_click_through(session.frame)
-        {
+        if session.patch_tries < 12 && win::overlay::patch_click_through(session.frame) {
             session.patch_tries = 12;
         } else if session.patch_tries < 12 {
             session.patch_tries += 1;
@@ -724,7 +735,11 @@ fn handle_runtime(state: &mut State, tasks: &mut Vec<Task<Message>>, event: Runt
             close_overlays(state, tasks);
             state.status = "Trigger cancelled".to_string();
         }
-        RuntimeEvent::KeybindFired { action, cycle_enabled, bypass_trigger } => {
+        RuntimeEvent::KeybindFired {
+            action,
+            cycle_enabled,
+            bypass_trigger,
+        } => {
             // Dismiss any overlay first so a later release cannot double-commit.
             close_overlays(state, tasks);
             let target = if bypass_trigger {
@@ -757,28 +772,28 @@ fn handle_runtime(state: &mut State, tasks: &mut Vec<Task<Message>>, event: Runt
             close_overlays(state, tasks);
             state.status = win::stash_service::reveal_next().unwrap_or_else(|error| error);
         }
-        RuntimeEvent::CaptureUpdate { modifiers, vk, keybind } => {
-            match keybind {
-                Some(id) => {
-                    if let Some(bind) =
-                        state.settings.keybinds.iter_mut().find(|k| k.id == id)
-                    {
-                        bind.modifiers = modifiers;
-                        bind.vk = vk;
-                    }
-                    state.capturing_keybind = None;
-                    state.capturing_trigger = false;
-                    commit_settings(state, "Keybind updated");
+        RuntimeEvent::CaptureUpdate {
+            modifiers,
+            vk,
+            keybind,
+        } => match keybind {
+            Some(id) => {
+                if let Some(bind) = state.settings.keybinds.iter_mut().find(|k| k.id == id) {
+                    bind.modifiers = modifiers;
+                    bind.vk = vk;
                 }
-                None => {
-                    state.settings.trigger_modifiers = modifiers;
-                    state.settings.trigger_vk = vk;
-                    state.capturing_trigger = false;
-                    state.capturing_keybind = None;
-                    commit_settings(state, "Trigger updated");
-                }
+                state.capturing_keybind = None;
+                state.capturing_trigger = false;
+                commit_settings(state, "Keybind updated");
             }
-        }
+            None => {
+                state.settings.trigger_modifiers = modifiers;
+                state.settings.trigger_vk = vk;
+                state.capturing_trigger = false;
+                state.capturing_keybind = None;
+                commit_settings(state, "Trigger updated");
+            }
+        },
         RuntimeEvent::CaptureCancelled => {
             state.capturing_trigger = false;
             state.capturing_keybind = None;
@@ -845,13 +860,13 @@ fn apply_snap_finish(
     close_preview(state, tasks);
     state.status = match finish {
         win::snap_service::SnapFinish::Nothing => return,
-        win::snap_service::SnapFinish::Apply { window, action, frame } => {
-            win::actions_runtime::apply_snap(window, action, frame)
-                .unwrap_or_else(|error| error)
-        }
+        win::snap_service::SnapFinish::Apply {
+            window,
+            action,
+            frame,
+        } => win::actions_runtime::apply_snap(window, action, frame).unwrap_or_else(|error| error),
         win::snap_service::SnapFinish::Restore { window, frame } => {
-            win::actions_runtime::restore_frame(window, frame)
-                .unwrap_or_else(|error| error)
+            win::actions_runtime::restore_frame(window, frame).unwrap_or_else(|error| error)
         }
     };
 }
@@ -871,11 +886,7 @@ fn open_radial(state: &mut State, tasks: &mut Vec<Task<Message>>, target_hwnd: u
         .map(|bind| ResolvedKeybind {
             id: bind.id.clone(),
             action: bind.action,
-            label: hotkey_name(
-                bind.modifiers,
-                bind.vk,
-                TriggerModifierSide::Any,
-            ),
+            label: hotkey_name(bind.modifiers, bind.vk, TriggerModifierSide::Any),
         })
         .collect();
     let targets = settings
@@ -897,7 +908,6 @@ fn open_radial(state: &mut State, tasks: &mut Vec<Task<Message>>, target_hwnd: u
         center_target,
         patch_tries: 0,
     });
-    let _ = center_target;
     tasks.push(task.map(Message::RadialOpened));
 }
 
@@ -945,7 +955,9 @@ fn refresh_preview_for_hover(state: &mut State, tasks: &mut Vec<Task<Message>>) 
         return;
     }
     let frame = state.radial.as_ref().and_then(|session| {
-        let target = session.hovered.and_then(|index| session.targets.get(index))?;
+        let target = session
+            .hovered
+            .and_then(|index| session.targets.get(index))?;
         let action = target.action()?;
         win::target_frame::target_frame(session.target_hwnd, action).ok()
     });
@@ -978,7 +990,11 @@ fn ensure_preview(state: &mut State, tasks: &mut Vec<Task<Message>>, frame: Rect
         return;
     }
     let (id, task) = window::open(preview_window_settings(frame));
-    state.preview = Some(PreviewSession { id, frame, patch_tries: 0 });
+    state.preview = Some(PreviewSession {
+        id,
+        frame,
+        patch_tries: 0,
+    });
     tasks.push(task.map(Message::PreviewOpened));
 }
 
@@ -1001,16 +1017,31 @@ fn commit_radial(state: &mut State, tasks: &mut Vec<Task<Message>>) {
     };
     tasks.push(window::close(session.id));
     close_preview(state, tasks);
-    let target = session.hovered.and_then(|index| session.targets.get(index).cloned());
+    let target = session
+        .hovered
+        .and_then(|index| session.targets.get(index).cloned());
     match target {
         Some(RadialTarget::BuiltIn { action, cycle })
         | Some(RadialTarget::Keybind { action, cycle, .. }) => {
             state.status = commit_action(state, session.target_hwnd, action, cycle);
+            return;
         }
-        _ => {
-            state.status = "Cancelled".to_string();
+        _ => {}
+    }
+    // No wedge hovered: release inside the center hole commits the configured
+    // center action; anywhere else cancels without touching the window.
+    if let Some(action) = session.center_target.action() {
+        if let Some(cursor) = native::cursor_pos() {
+            let dx = cursor.x as f64 - session.center.x as f64;
+            let dy = cursor.y as f64 - session.center.y as f64;
+            if dx * dx + dy * dy < session.inner * session.inner {
+                let cycle = session.center_target.cycle_enabled();
+                state.status = commit_action(state, session.target_hwnd, action, cycle);
+                return;
+            }
         }
     }
+    state.status = "Cancelled".to_string();
 }
 
 fn overlay_key_pressed(state: &mut State, tasks: &mut Vec<Task<Message>>, key: keyboard::Key) {
@@ -1044,11 +1075,7 @@ fn select_wedge(state: &mut State, tasks: &mut Vec<Task<Message>>, index: usize)
 
 // --- command execution (IPC + startup command) ---
 
-fn execute_command(
-    state: &mut State,
-    tasks: &mut Vec<Task<Message>>,
-    command: &str,
-) -> String {
+fn execute_command(state: &mut State, tasks: &mut Vec<Task<Message>>, command: &str) -> String {
     match crate::core::commands::parse_command(command) {
         Err(error) => format!("ERROR: {error}"),
         Ok(cmd) => match cmd {
@@ -1164,10 +1191,7 @@ fn radial_window_settings(bounds: Rect) -> window::Settings {
 fn preview_window_settings(frame: Rect) -> window::Settings {
     window::Settings {
         size: iced::Size::new(frame.width() as f32, frame.height() as f32),
-        position: window::Position::Specific(iced::Point::new(
-            frame.left as f32,
-            frame.top as f32,
-        )),
+        position: window::Position::Specific(iced::Point::new(frame.left as f32, frame.top as f32)),
         resizable: false,
         decorations: false,
         transparent: true,
@@ -1248,7 +1272,9 @@ fn settings_view(state: &State) -> Element<'_, Message> {
 
     let layout = row![
         container(sidebar.spacing(6).padding(16)).width(Length::Fixed(240.0)),
-        container(scrollable(content)).width(Length::Fill).height(Length::Fill),
+        container(scrollable(content))
+            .width(Length::Fill)
+            .height(Length::Fill),
     ];
 
     container(layout)

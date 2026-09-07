@@ -38,7 +38,11 @@ pub fn view(state: &State) -> Element<'_, Message> {
         ]
         .spacing(12),
         row![
-            text(format!("Activation delay: {} ms", settings.trigger_delay_ms)).size(14),
+            text(format!(
+                "Activation delay: {} ms",
+                settings.trigger_delay_ms
+            ))
+            .size(14),
             button("-").on_press(Message::NudgeDelay(-50)),
             button("+").on_press(Message::NudgeDelay(50)),
         ]
@@ -59,19 +63,15 @@ pub fn view(state: &State) -> Element<'_, Message> {
         .spacing(8),
         row![
             text("Double-click to trigger").size(14),
-            toggler(settings.double_click_to_trigger)
-                .on_toggle(Message::SetDoubleClick),
+            toggler(settings.double_click_to_trigger).on_toggle(Message::SetDoubleClick),
         ]
         .spacing(12),
         row![
             text("Middle-mouse to trigger").size(14),
-            toggler(settings.middle_click_to_trigger)
-                .on_toggle(Message::SetMiddleClick),
+            toggler(settings.middle_click_to_trigger).on_toggle(Message::SetMiddleClick),
         ]
         .spacing(12),
-        row![
-            button("Reset section").on_press(Message::ResetSection(Section::General)),
-        ],
+        row![button("Reset section").on_press(Message::ResetSection(Section::General)),],
         text(&state.status).size(12),
     ]
     .spacing(12)

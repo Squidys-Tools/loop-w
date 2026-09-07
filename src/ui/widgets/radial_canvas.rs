@@ -28,9 +28,12 @@ impl RadialCanvas {
             outer_radius: settings.radial_outer_radius as f32,
             inner_radius: settings.radial_inner_radius as f32,
             hovered: None,
-            ring: to_iced(&settings.radial_ring_fill).unwrap_or(Color::from_rgba(0.1, 0.13, 0.17, 0.71)),
-            sector_fill: to_iced(&settings.radial_sector_fill).unwrap_or(Color::from_rgba(0.24, 0.61, 1.0, 0.48)),
-            sector_stroke: to_iced(&settings.radial_sector_stroke).unwrap_or(Color::from_rgba(0.24, 0.61, 1.0, 0.94)),
+            ring: to_iced(&settings.radial_ring_fill)
+                .unwrap_or(Color::from_rgba(0.1, 0.13, 0.17, 0.71)),
+            sector_fill: to_iced(&settings.radial_sector_fill)
+                .unwrap_or(Color::from_rgba(0.24, 0.61, 1.0, 0.48)),
+            sector_stroke: to_iced(&settings.radial_sector_stroke)
+                .unwrap_or(Color::from_rgba(0.24, 0.61, 1.0, 0.94)),
         }
     }
 }
@@ -62,14 +65,8 @@ impl<Message> canvas::Program<Message> for RadialCanvas {
         // Wedge separators (quiet lines).
         for slot in GEOMETRY {
             let a = (slot.center_deg()).to_radians() as f32;
-            let p1 = Point::new(
-                center.x + inner * a.cos(),
-                center.y + inner * a.sin(),
-            );
-            let p2 = Point::new(
-                center.x + outer * a.cos(),
-                center.y + outer * a.sin(),
-            );
+            let p1 = Point::new(center.x + inner * a.cos(), center.y + inner * a.sin());
+            let p2 = Point::new(center.x + outer * a.cos(), center.y + outer * a.sin());
             let line = Path::line(p1, p2);
             frame.stroke(
                 &line,
@@ -85,7 +82,9 @@ impl<Message> canvas::Program<Message> for RadialCanvas {
                 frame.fill(&wedge, self.sector_fill);
                 frame.stroke(
                     &wedge,
-                    Stroke::default().with_width(2.0).with_color(self.sector_stroke),
+                    Stroke::default()
+                        .with_width(2.0)
+                        .with_color(self.sector_stroke),
                 );
             }
         }

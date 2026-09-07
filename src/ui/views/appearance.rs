@@ -4,7 +4,7 @@ use iced::widget::{button, column, container, pick_list, row, text, text_input};
 use iced::{Element, Length};
 
 use crate::ui::app::{Message, Section, State};
-use crate::ui::theme::{PRESETS, matching_preset};
+use crate::ui::theme::{matching_preset, PRESETS};
 
 pub fn view(state: &State) -> Element<'_, Message> {
     let settings = &state.settings;
@@ -42,13 +42,21 @@ pub fn view(state: &State) -> Element<'_, Message> {
         ]
         .spacing(12),
         color_row("Accent", &settings.accent_color, Message::EditAccent),
-        color_row("Sector fill", &settings.radial_sector_fill, Message::EditSectorFill),
+        color_row(
+            "Sector fill",
+            &settings.radial_sector_fill,
+            Message::EditSectorFill
+        ),
         color_row(
             "Sector stroke",
             &settings.radial_sector_stroke,
             Message::EditSectorStroke
         ),
-        color_row("Ring fill", &settings.radial_ring_fill, Message::EditRingFill),
+        color_row(
+            "Ring fill",
+            &settings.radial_ring_fill,
+            Message::EditRingFill
+        ),
         color_row(
             "Preview border",
             &settings.preview_border_color,
@@ -59,15 +67,16 @@ pub fn view(state: &State) -> Element<'_, Message> {
         } else {
             text("Colors accept #RRGGBB or #AARRGGBB.").size(12)
         },
-        row![
-            button("Reset section").on_press(Message::ResetSection(Section::Appearance)),
-        ],
+        row![button("Reset section").on_press(Message::ResetSection(Section::Appearance)),],
         text(&state.status).size(12),
     ]
     .spacing(10)
     .padding(16);
 
-    container(content).width(Length::Fill).height(Length::Fill).into()
+    container(content)
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .into()
 }
 
 fn color_row<'a>(
@@ -77,7 +86,12 @@ fn color_row<'a>(
 ) -> Element<'a, Message> {
     use crate::settings::color::to_iced;
     let swatch = match to_iced(value) {
-        Some(c) => format!("■ {:02X}{:02X}{:02X}", (c.r * 255.0) as u8, (c.g * 255.0) as u8, (c.b * 255.0) as u8),
+        Some(c) => format!(
+            "■ {:02X}{:02X}{:02X}",
+            (c.r * 255.0) as u8,
+            (c.g * 255.0) as u8,
+            (c.b * 255.0) as u8
+        ),
         None => "■ invalid".to_string(),
     };
     iced::widget::row![

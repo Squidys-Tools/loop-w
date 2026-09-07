@@ -110,7 +110,12 @@ mod tests {
     }
 
     fn snapshot(monitor: Rect, work: Rect, dpi: f64) -> MonitorSnapshot {
-        MonitorSnapshot { monitor, work, dpi_x: dpi, dpi_y: dpi }
+        MonitorSnapshot {
+            monitor,
+            work,
+            dpi_x: dpi,
+            dpi_y: dpi,
+        }
     }
 
     #[test]

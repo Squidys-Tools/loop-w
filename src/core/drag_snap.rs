@@ -94,9 +94,6 @@ mod tests {
     fn ignores_monitor_interior() {
         let monitor = Rect::new(0, 0, 1920, 1080);
         let work = Rect::new(0, 0, 1920, 1040);
-        assert_eq!(
-            try_resolve(monitor, work, Point::new(960, 500), 24),
-            None
-        );
+        assert_eq!(try_resolve(monitor, work, Point::new(960, 500), 24), None);
     }
 }

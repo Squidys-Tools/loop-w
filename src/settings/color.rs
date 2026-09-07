@@ -6,9 +6,8 @@
 
 /// Normalize a color string, returning `fallback` when invalid.
 pub fn normalize_color(value: &str, fallback: &str) -> String {
-    parse_color(value).unwrap_or_else(|| {
-        parse_color(fallback).unwrap_or_else(|| "#FF007AFF".to_string())
-    })
+    parse_color(value)
+        .unwrap_or_else(|| parse_color(fallback).unwrap_or_else(|| "#FF007AFF".to_string()))
 }
 
 fn parse_color(value: &str) -> Option<String> {

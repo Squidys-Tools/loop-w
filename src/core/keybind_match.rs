@@ -36,9 +36,21 @@ mod tests {
 
     fn entries() -> Vec<MatchEntry> {
         vec![
-            MatchEntry { vk: 0x41, modifiers: 0x0002, bypass_trigger: false },
-            MatchEntry { vk: 0x41, modifiers: 0x0006, bypass_trigger: false },
-            MatchEntry { vk: 0x42, modifiers: 0, bypass_trigger: true },
+            MatchEntry {
+                vk: 0x41,
+                modifiers: 0x0002,
+                bypass_trigger: false,
+            },
+            MatchEntry {
+                vk: 0x41,
+                modifiers: 0x0006,
+                bypass_trigger: false,
+            },
+            MatchEntry {
+                vk: 0x42,
+                modifiers: 0,
+                bypass_trigger: true,
+            },
         ]
     }
 
