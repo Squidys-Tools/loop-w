@@ -26,7 +26,7 @@ pub fn match_keybind(
         entry.vk == vk
             && entry.vk != trigger_vk
             && entry.modifiers == modifiers
-            && entry.bypass_trigger == !trigger_held
+            && entry.bypass_trigger != trigger_held
     })
 }
 

@@ -111,8 +111,9 @@ LoopW is ready for a broader release when:
 5. Unsupported windows fail safely and tell the user what happened.
 
 Packaging is a separate decision after this gate. The current GitHub Actions
-workflow runs `cargo test` + `cargo clippy`, builds the release EXE for `v*`
-tags, renames it to `LoopW.exe`, and stores the ZIP archive and checksum for
+workflows run `cargo fmt --check`, `cargo test`, and warning-denied
+`cargo clippy` on every PR; the publish workflow additionally builds the
+release EXE for `v*` tags and stores the ZIP archive and checksum for
 manual workflow runs.
 
 ## Development commands
@@ -127,4 +128,4 @@ cargo run
 cargo build --release
 ```
 
-The release binary is `target\release\loopw.exe` (`LoopW.exe` when packaged).
+The release binary is `target\release\LoopW.exe`.

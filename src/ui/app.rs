@@ -153,6 +153,9 @@ pub struct State {
     preview: Option<PreviewSession>,
     tray: Option<win::tray::Tray>,
     cycle: CycleState,
+    // Held for process lifetime: dropping it would release the instance
+    // mutex and admit a second resident.
+    #[allow(dead_code)]
     instance: Option<win::instance::InstanceGuard>,
     startup_command: Option<String>,
     pending_target: Option<u64>,
@@ -265,6 +268,19 @@ fn subscription(_state: &State) -> Subscription<Message> {
 // --- settings persistence (mirror -> shared -> disk -> services) ---
 
 fn commit_settings(state: &mut State, status: &str) {
+    // Reset an in-flight press only when trigger binding or behavior
+    // changed (C# resets in SetBinding/SetTriggerBehavior, never in
+    // SetKeybinds): dragging a slider must not cancel a held trigger.
+    let trigger_changed = {
+        let current = win::shared::snapshot();
+        state.settings.trigger_vk != current.trigger_vk
+            || state.settings.trigger_modifiers != current.trigger_modifiers
+            || state.settings.trigger_modifier_side != current.trigger_modifier_side
+            || state.settings.trigger_delay_ms != current.trigger_delay_ms
+            || state.settings.trigger_timeout_ms != current.trigger_timeout_ms
+            || state.settings.double_click_to_trigger != current.double_click_to_trigger
+            || state.settings.middle_click_to_trigger != current.middle_click_to_trigger
+    };
     state.settings.normalize();
     win::shared::replace(state.settings.clone());
     if win::shared::save_now() {
@@ -272,7 +288,11 @@ fn commit_settings(state: &mut State, status: &str) {
     } else {
         state.status = "Could not save".to_string();
     }
-    win::hooks::notify_settings_changed();
+    if trigger_changed {
+        win::hooks::notify_settings_changed();
+    } else {
+        win::hooks::refresh_config();
+    }
     win::monitor_service::invalidate();
     win::stash_service::handle_settings_changed();
 }
@@ -947,7 +967,6 @@ fn apply_snap_finish(
 ) {
     close_preview(state, tasks);
     state.status = match finish {
-        win::snap_service::SnapFinish::Nothing => return,
         win::snap_service::SnapFinish::Apply {
             window,
             action,

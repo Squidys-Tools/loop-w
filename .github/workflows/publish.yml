@@ -19,12 +19,17 @@ jobs:
 
       - name: Set up Rust stable
         uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Check formatting
+        run: cargo fmt -- --check
 
       - name: Run automated tests
         run: cargo test --locked
 
       - name: Lint
-        run: cargo clippy --all-targets --locked
+        run: cargo clippy --all-targets --locked -- -D warnings
 
       - name: Build release executable
         run: cargo build --release --locked
@@ -44,8 +49,7 @@ jobs:
           }
 
           New-Item -ItemType Directory -Force -Path 'publish\LoopW' | Out-Null
-          # Public binary name is LoopW.exe; cargo builds loopw.exe.
-          Copy-Item 'target\release\loopw.exe' 'publish\LoopW\LoopW.exe'
+          Copy-Item 'target\release\LoopW.exe' 'publish\LoopW\LoopW.exe'
 
           $archive = "publish\LoopW-$label.zip"
           Compress-Archive -Path 'publish\LoopW\*' -DestinationPath $archive

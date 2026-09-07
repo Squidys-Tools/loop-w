@@ -6,7 +6,7 @@ description = "LoopW — radial window manager for Windows (Rust + iced port)"
 license = "MIT"
 
 [[bin]]
-name = "loopw"
+name = "LoopW"
 path = "src/main.rs"
 
 [dependencies]

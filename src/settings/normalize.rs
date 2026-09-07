@@ -95,7 +95,7 @@ fn clamp_finite(value: f64, min: f64, max: f64, fallback: f64) -> f64 {
     }
 }
 
-fn normalize_keybinds(keybinds: &mut Vec<Keybind>) {
+fn normalize_keybinds(keybinds: &mut [Keybind]) {
     let mut ids: HashSet<String> = HashSet::new();
     for bind in keybinds.iter_mut() {
         if bind.id.trim().is_empty() || !ids.insert(bind.id.clone()) {
@@ -147,9 +147,13 @@ fn normalize_exclusions(executables: &mut Vec<String>, processes: &mut Vec<Strin
             .iter()
             .map(|s| {
                 let trimmed = s.trim();
-                // Match C#: strip directory + extension (`app.exe` -> `app`).
+                // Match C# GetFileNameWithoutExtension: strip directory +
+                // final extension only (`my.app.exe` -> `my.app`).
                 let file = trimmed.rsplit(['/', '\\']).next().unwrap_or(trimmed);
-                file.rsplit('.').last().unwrap_or(file).to_string()
+                file.rsplit_once('.')
+                    .map(|(stem, _)| stem)
+                    .unwrap_or(file)
+                    .to_string()
             })
             .filter(|s| !s.is_empty()),
     );

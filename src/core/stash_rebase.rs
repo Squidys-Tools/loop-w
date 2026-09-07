@@ -10,13 +10,13 @@ use super::stash::StashMonitor;
 
 /// Rebase a saved frame from the recorded monitor onto the current one.
 pub fn rebase_rect(frame: Rect, original: &StashMonitor, target: &StashMonitor) -> Rect {
-    let orig_work: Rect = original.work.clone().into();
-    let target_work: Rect = target.work.clone().into();
+    let orig_work: Rect = original.work.into();
+    let target_work: Rect = target.work.into();
     if !is_usable(orig_work) || !is_usable(target_work) {
         return frame;
     }
-    let orig_monitor: Rect = original.monitor.clone().into();
-    let target_monitor: Rect = target.monitor.clone().into();
+    let orig_monitor: Rect = original.monitor.into();
+    let target_monitor: Rect = target.monitor.into();
     if orig_monitor == target_monitor && orig_work == target_work {
         // Same monitor, same work area: WINDOWPLACEMENT coords are physical
         // and Windows already adjusted them on a DPI-only change.
@@ -46,13 +46,13 @@ pub fn rebase_rect(frame: Rect, original: &StashMonitor, target: &StashMonitor) 
 }
 
 /// Pick the monitor to restore onto: exact full-or-work match wins,
-/// otherwise the nearest usable monitor by Manhattan center distance.
+/// otherwise the nearest monitor by Manhattan center distance.
 pub fn find_restore_monitor<'a>(
     original: &StashMonitor,
     current: &'a [MonitorSnapshot],
 ) -> Option<&'a MonitorSnapshot> {
-    let orig_monitor: Rect = original.monitor.clone().into();
-    let orig_work: Rect = original.work.clone().into();
+    let orig_monitor: Rect = original.monitor.into();
+    let orig_work: Rect = original.work.into();
     for snapshot in current {
         if snapshot.monitor == orig_monitor || snapshot.work == orig_work {
             return Some(snapshot);

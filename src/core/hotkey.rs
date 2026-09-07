@@ -5,18 +5,13 @@
 use serde_repr::{Deserialize_repr, Serialize_repr};
 
 /// Which physical side of a modifier activates the trigger.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize_repr, Deserialize_repr)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize_repr, Deserialize_repr)]
 #[repr(u8)]
 pub enum TriggerModifierSide {
+    #[default]
     Any = 0,
     Left = 1,
     Right = 2,
-}
-
-impl Default for TriggerModifierSide {
-    fn default() -> Self {
-        TriggerModifierSide::Any
-    }
 }
 
 /// All valid modifier-side values (for normalization).

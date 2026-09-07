@@ -100,8 +100,10 @@ mod tests {
         let dir =
             std::env::temp_dir().join(format!("loopw-test-{}", uuid::Uuid::new_v4().simple()));
         let path = dir.join("settings.json");
-        let mut settings = AppSettings::default();
-        settings.trigger_vk = 0x41;
+        let mut settings = AppSettings {
+            trigger_vk: 0x41,
+            ..AppSettings::default()
+        };
         assert!(save_to(&mut settings, &path));
         let loaded = load_from(&path);
         assert_eq!(loaded.trigger_vk, 0x41);

@@ -29,9 +29,10 @@ pub enum SnapTrack {
 }
 
 /// How a finished gesture resolves (applied by the UI thread).
+/// `None` (no variant) means the gesture evaporates: plain click or
+/// interior-only drag with no zone contact and no restore warranted.
 #[derive(Debug, Clone)]
 pub enum SnapFinish {
-    Nothing,
     Apply {
         window: u64,
         action: WindowAction,
@@ -131,13 +132,7 @@ pub fn track(cursor: Point) -> (SnapTrack, Option<SnapFinish>) {
             None
         };
         *slot = None;
-        let preview = match &finished {
-            Some(SnapFinish::Restore { .. })
-            | Some(SnapFinish::Apply { .. })
-            | Some(SnapFinish::Nothing)
-            | None => SnapTrack::Hide,
-        };
-        return (preview, finished);
+        return (SnapTrack::Hide, finished);
     }
     let dx = cursor.x - drag.start_point.x;
     let dy = cursor.y - drag.start_point.y;

@@ -173,9 +173,8 @@ pub fn manipulate_frame(work: Rect, action: WindowAction, current: Rect, dpi_sca
         | WindowAction::Smaller
         | WindowAction::ScaleUp
         | WindowAction::ScaleDown => {
-            let (step_w, step_h) = (width.max(32) / 10.max(32), height.max(32) / 10.max(32));
-            // Note: mirrors C# `Math.Max(32, dim / 10)`.
-            let (step_w, step_h) = (step_w.max(32), step_h.max(32));
+            // C# `Math.Max(32, dim / 10)` per axis (truncation matches).
+            let (step_w, step_h) = ((width / 10).max(32), (height / 10).max(32));
             match action {
                 WindowAction::ScaleUp | WindowAction::ScaleDown => {
                     let scale = if action == WindowAction::ScaleUp {
@@ -551,5 +550,21 @@ mod tests {
         let fitted = fit_frame(bounds, WindowAction::RightHalf, frame, limits);
         assert_eq!(fitted.right, bounds.right);
         assert!(fitted.width() <= bounds.width());
+    }
+
+    #[test]
+    fn larger_steps_by_tenth_clamped_to_32() {
+        // C# Math.Max(32, dim / 10): a 400px window grows by 40px per side
+        // pair, centered; small windows use the 32px floor.
+        let work = Rect::new(0, 0, 1920, 1080);
+        let grown = manipulate_frame(
+            work,
+            WindowAction::Larger,
+            Rect::new(100, 100, 500, 400),
+            1.0,
+        );
+        assert_eq!((grown.width(), grown.height()), (440, 332));
+        let small = manipulate_frame(work, WindowAction::Larger, Rect::new(0, 0, 100, 100), 1.0);
+        assert_eq!((small.width(), small.height()), (132, 132));
     }
 }

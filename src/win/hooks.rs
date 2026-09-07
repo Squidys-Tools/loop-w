@@ -195,11 +195,22 @@ pub fn stop() {
 }
 
 /// Refresh config from shared settings; aborts any in-flight press.
+/// Use only when trigger binding or behavior changed.
 pub fn notify_settings_changed() {
     let config = config_from_shared();
     if let Ok(mut guard) = state().lock() {
         guard.config = config;
         reset_input_locked(&mut guard, true);
+    }
+}
+
+/// Refresh config without disturbing an in-flight press (keybind edits,
+/// cosmetic changes). Matches C# SetKeybinds, which deliberately skips
+/// the input reset.
+pub fn refresh_config() {
+    let config = config_from_shared();
+    if let Ok(mut guard) = state().lock() {
+        guard.config = config;
     }
 }
 

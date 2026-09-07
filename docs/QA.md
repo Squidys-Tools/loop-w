@@ -9,7 +9,7 @@ Status: `[ ]` not run, `[x]` passed, `[!]` blocked or not supported on this
 Windows configuration.
 
 The current automated baseline is a warning-free `cargo build` and the
-`cargo test` unit suite (44 tests). Live named-pipe responses and desktop
+`cargo test` unit suite (47 tests). Live named-pipe responses and desktop
 actions still require the manual checks below. Re-run the automated baseline
 after every action-model change.
 
@@ -181,7 +181,8 @@ does not target its own settings, radial, preview, or tray surfaces.
 
 ## 11. Final gate
 
-- [ ] Run `cargo build`, `cargo test`, and `cargo clippy --all-targets` clean.
+- [ ] Run `cargo fmt --check`, `cargo build`, `cargo test`, and
+  `cargo clippy --all-targets -- -D warnings` clean.
 - [ ] Complete sections 1 through 10 on at least one local multi-monitor setup.
 - [ ] Complete mixed-DPI, RDP, elevated-app, and taskbar-layout checks or record
   explicit product limitations.

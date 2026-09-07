@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  push:
+    branches-ignore:
+      - 't3code/**'
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: blacksmith-4vcpu-windows-2025
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Set up Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      # Mirrors the lefthook gates (fmt pre-commit; test + clippy pre-push).
+      - name: Check formatting
+        run: cargo fmt -- --check
+
+      - name: Run automated tests
+        run: cargo test --locked
+
+      - name: Lint
+        run: cargo clippy --all-targets --locked -- -D warnings

@@ -75,7 +75,7 @@ Ship a self-contained release binary with:
 cargo build --release
 ```
 
-The EXE at `target\release\loopw.exe` (`LoopW.exe` when packaged) needs no
+The EXE at `target\release\LoopW.exe` needs no
 separate runtime.
 
 ## Configuration

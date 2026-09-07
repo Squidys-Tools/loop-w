@@ -6,9 +6,10 @@ use serde_repr::{Deserialize_repr, Serialize_repr};
 use super::rect::{Point, Rect};
 
 /// Edge a window is stashed against.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize_repr, Deserialize_repr)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize_repr, Deserialize_repr)]
 #[repr(u8)]
 pub enum StashEdge {
+    #[default]
     Left = 0,
     Right = 1,
     Top = 2,
@@ -163,12 +164,6 @@ pub struct StashRecord {
     pub stashed_frame: StashRect,
 }
 
-impl Default for StashEdge {
-    fn default() -> Self {
-        StashEdge::Left
-    }
-}
-
 /// Edge of the work area a window is nearest to. Strict `<` scan in
 /// Left, Right, Top, Bottom order, so ties break toward Left.
 pub fn nearest_edge(work: Rect, window: Rect) -> StashEdge {
@@ -188,7 +183,6 @@ pub fn nearest_edge(work: Rect, window: Rect) -> StashEdge {
     }
     if bottom < best {
         edge = StashEdge::Bottom;
-        best = bottom;
     }
     edge
 }
