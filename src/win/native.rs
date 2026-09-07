@@ -335,6 +335,20 @@ pub fn dpi_scale_for_window(hwnd: HWND) -> f64 {
     }
 }
 
+/// DPI scale at a physical screen point (for overlay placement).
+pub fn dpi_scale_at_point(point: Point) -> f64 {
+    super::monitor_service::for_point(point)
+        .map(|snapshot| {
+            let dpi = snapshot.dpi_x;
+            if dpi.is_finite() && dpi > 0.0 {
+                dpi / 96.0
+            } else {
+                1.0
+            }
+        })
+        .unwrap_or(1.0)
+}
+
 /// Make an overlay window click-through + tool (no taskbar/Alt+Tab).
 pub fn make_overlay_click_through(hwnd: HWND) {
     unsafe {

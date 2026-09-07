@@ -24,6 +24,24 @@ pub fn radial_bounds(cursor: crate::core::rect::Point, outer_radius: f64) -> Rec
     )
 }
 
+/// Physical pixels -> logical `(x, y, w, h)` for iced window sizing and
+/// positioning. iced speaks logical coordinates; cursors, `GetWindowRect`,
+/// and hover math are physical. Every overlay crosses this boundary once,
+/// here, so the two systems can never drift apart on scaled displays.
+pub fn to_logical(frame: Rect, scale: f64) -> (f32, f32, f32, f32) {
+    let scale = if scale.is_finite() && scale > 0.0 {
+        scale as f32
+    } else {
+        1.0
+    };
+    (
+        frame.left as f32 / scale,
+        frame.top as f32 / scale,
+        frame.width() as f32 / scale,
+        frame.height() as f32 / scale,
+    )
+}
+
 /// Apply click-through (+ tool-window) style to an overlay by title.
 /// Retried by the caller for a short window after `window::open`.
 pub fn make_click_through_by_title(title: &str) -> bool {

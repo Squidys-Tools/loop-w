@@ -119,7 +119,9 @@ pub enum Message {
     RunStartupCommand,
 }
 
-/// Open radial overlay session.
+/// Open radial overlay session. Geometry is physical pixels (cursor,
+/// hover math, HWND matching); `window_*` fields are the logical values
+/// handed to iced for sizing/positioning on scaled displays.
 struct RadialSession {
     id: window::Id,
     target_hwnd: u64,
@@ -130,13 +132,17 @@ struct RadialSession {
     targets: Vec<RadialTarget>,
     center_target: RadialTarget,
     patch_tries: u8,
+    window_size: (f32, f32),
+    /// DPI scale at open: converts physical geometry to logical for iced.
+    scale: f64,
 }
 
-/// Open preview overlay session.
+/// Open preview overlay session (`frame` physical, `window_size` logical).
 struct PreviewSession {
     id: window::Id,
     frame: Rect,
     patch_tries: u8,
+    window_size: (f32, f32),
 }
 
 /// Mutable UI + runtime state.
@@ -1003,7 +1009,10 @@ fn open_radial(state: &mut State, tasks: &mut Vec<Task<Message>>, target_hwnd: u
         .collect();
     let center_target = resolve_slot(&settings.center_target, &keybinds);
     let bounds = win::overlay::radial_bounds(cursor, outer);
-    let (id, task) = window::open(radial_window_settings(bounds));
+    // iced positions/sizes in logical pixels: convert once at open.
+    let scale = native::dpi_scale_at_point(cursor);
+    let (lx, ly, lw, lh) = win::overlay::to_logical(bounds, scale);
+    let (id, task) = window::open(radial_window_settings(lx, ly, lw, lh));
     state.radial = Some(RadialSession {
         id,
         target_hwnd,
@@ -1014,6 +1023,8 @@ fn open_radial(state: &mut State, tasks: &mut Vec<Task<Message>>, target_hwnd: u
         targets,
         center_target,
         patch_tries: 0,
+        window_size: (lw, lh),
+        scale,
     });
     tasks.push(task.map(Message::RadialOpened));
 }
@@ -1078,24 +1089,25 @@ fn ensure_preview(state: &mut State, tasks: &mut Vec<Task<Message>>, frame: Rect
             return;
         }
         let id = session.id;
+        // Preview frames are physical; the window lives in logical pixels.
+        let scale = native::dpi_scale_at_point(Point::new(frame.left, frame.top));
+        let (lx, ly, lw, lh) = win::overlay::to_logical(frame, scale);
         if let Some(session) = state.preview.as_mut() {
             session.frame = frame;
+            session.window_size = (lw, lh);
         }
-        tasks.push(window::resize(
-            id,
-            iced::Size::new(frame.width() as f32, frame.height() as f32),
-        ));
-        tasks.push(window::move_to(
-            id,
-            iced::Point::new(frame.left as f32, frame.top as f32),
-        ));
+        tasks.push(window::resize(id, iced::Size::new(lw, lh)));
+        tasks.push(window::move_to(id, iced::Point::new(lx, ly)));
         return;
     }
-    let (id, task) = window::open(preview_window_settings(frame));
+    let scale = native::dpi_scale_at_point(Point::new(frame.left, frame.top));
+    let (lx, ly, lw, lh) = win::overlay::to_logical(frame, scale);
+    let (id, task) = window::open(preview_window_settings(lx, ly, lw, lh));
     state.preview = Some(PreviewSession {
         id,
         frame,
         patch_tries: 0,
+        window_size: (lw, lh),
     });
     tasks.push(task.map(Message::PreviewOpened));
 }
@@ -1287,13 +1299,10 @@ fn main_window_settings() -> window::Settings {
     }
 }
 
-fn radial_window_settings(bounds: Rect) -> window::Settings {
+fn radial_window_settings(x: f32, y: f32, w: f32, h: f32) -> window::Settings {
     window::Settings {
-        size: iced::Size::new(bounds.width() as f32, bounds.height() as f32),
-        position: window::Position::Specific(iced::Point::new(
-            bounds.left as f32,
-            bounds.top as f32,
-        )),
+        size: iced::Size::new(w, h),
+        position: window::Position::Specific(iced::Point::new(x, y)),
         resizable: false,
         decorations: false,
         transparent: true,
@@ -1303,10 +1312,10 @@ fn radial_window_settings(bounds: Rect) -> window::Settings {
     }
 }
 
-fn preview_window_settings(frame: Rect) -> window::Settings {
+fn preview_window_settings(x: f32, y: f32, w: f32, h: f32) -> window::Settings {
     window::Settings {
-        size: iced::Size::new(frame.width() as f32, frame.height() as f32),
-        position: window::Position::Specific(iced::Point::new(frame.left as f32, frame.top as f32)),
+        size: iced::Size::new(w, h),
+        position: window::Position::Specific(iced::Point::new(x, y)),
         resizable: false,
         decorations: false,
         transparent: true,
@@ -1337,11 +1346,12 @@ fn view(state: &State, window: window::Id) -> Element<'_, Message> {
         if session.id == window {
             let mut canvas =
                 crate::ui::widgets::radial_canvas::RadialCanvas::from_settings(&state.settings);
-            canvas.outer_radius = session.outer as f32;
-            canvas.inner_radius = session.inner as f32;
+            // Canvas shares the window's logical space, not physical pixels.
+            let scale = session.scale as f32;
+            canvas.outer_radius = session.outer as f32 / scale;
+            canvas.inner_radius = session.inner as f32 / scale;
             canvas.hovered = session.hovered;
-            let edge = (session.outer + 16.0) as f32 * 2.0;
-            return super::views::overlay::radial(canvas, edge);
+            return super::views::overlay::radial(canvas, session.window_size.0);
         }
     }
     if let Some(session) = &state.preview {
@@ -1350,8 +1360,8 @@ fn view(state: &State, window: window::Id) -> Element<'_, Message> {
                 crate::ui::widgets::preview_canvas::PreviewCanvas::from_settings(&state.settings);
             return super::views::overlay::preview(
                 canvas,
-                session.frame.width() as f32,
-                session.frame.height() as f32,
+                session.window_size.0,
+                session.window_size.1,
             );
         }
     }
