@@ -118,6 +118,8 @@ Use `list/actions` to see the action names supported by the current build.
 - [`docs/ROADMAP.md`](docs/ROADMAP.md) tracks what is implemented and what is
   next.
 - [`docs/QA.md`](docs/QA.md) contains the manual Windows test checklist.
+- [`docs/BUGS.md`](docs/BUGS.md) records deferred minor issues with revisit
+  triggers, so they are tracked without blocking the release gate.
 - [`specs/settings-ui-redesign-spec.md`](specs/settings-ui-redesign-spec.md)
   records the settings UI requirements and acceptance scenarios.
 
