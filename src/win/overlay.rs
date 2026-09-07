@@ -43,12 +43,8 @@ pub fn patch_tool_window(expected: Rect) -> bool {
         Some(hwnd) => {
             use windows::Win32::UI::WindowsAndMessaging::*;
             unsafe {
-                let style = GetWindowLongPtrW(Some(hwnd), GWL_EXSTYLE);
-                SetWindowLongPtrW(
-                    Some(hwnd),
-                    GWL_EXSTYLE,
-                    style | WS_EX_TOOLWINDOW.0 as isize,
-                );
+                let style = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
+                SetWindowLongPtrW(hwnd, GWL_EXSTYLE, style | WS_EX_TOOLWINDOW.0 as isize);
             }
             true
         }
@@ -69,6 +65,7 @@ pub fn patch_click_through(expected: Rect) -> bool {
 }
 
 fn find_own_window(expected: Rect) -> Option<windows::Win32::Foundation::HWND> {
+    use windows::core::BOOL;
     use windows::Win32::Foundation::*;
     use windows::Win32::UI::WindowsAndMessaging::*;
     struct Pack {
@@ -79,12 +76,12 @@ fn find_own_window(expected: Rect) -> Option<windows::Win32::Foundation::HWND> {
     unsafe extern "system" fn proc(hwnd: HWND, lparam: LPARAM) -> BOOL {
         let pack = &mut *(lparam.0 as *mut Pack);
         let mut pid = 0u32;
-        GetWindowThreadProcessId(Some(hwnd), Some(&mut pid));
+        GetWindowThreadProcessId(hwnd, Some(&mut pid));
         if pid != pack.own_pid {
             return BOOL::from(true);
         }
         let mut rect = RECT::default();
-        if GetWindowRect(Some(hwnd), &mut rect).is_err() {
+        if GetWindowRect(hwnd, &mut rect).is_err() {
             return BOOL::from(true);
         }
         let frame = native::rect_from_native(rect);

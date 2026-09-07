@@ -11,8 +11,8 @@ use super::placement;
 use super::policy;
 use super::target_frame;
 use crate::core::actions::WindowAction;
-use crate::core::frame_math::{MinMaxLimits, fit_frame};
-use crate::core::nav::{NavDir, find_directional, find_next_in_stack};
+use crate::core::frame_math::{fit_frame, MinMaxLimits};
+use crate::core::nav::{find_directional, find_next_in_stack, NavDir};
 use crate::core::rect::Rect;
 
 /// Apply an action. `Ok(message)` describes what happened.
@@ -30,9 +30,10 @@ pub fn apply(hwnd: u64, action: WindowAction) -> Result<String, String> {
         WindowAction::Minimize => show_and_report(hwnd, SW_MINIMIZE, "Minimize"),
         WindowAction::Hide => show_and_report(hwnd, SW_HIDE, "Hide"),
         WindowAction::MinimizeOthers => minimize_others(hwnd),
-        WindowAction::FocusUp | WindowAction::FocusDown | WindowAction::FocusLeft | WindowAction::FocusRight => {
-            focus_directional(hwnd, action)
-        }
+        WindowAction::FocusUp
+        | WindowAction::FocusDown
+        | WindowAction::FocusLeft
+        | WindowAction::FocusRight => focus_directional(hwnd, action),
         WindowAction::FocusNextInStack => focus_next(hwnd),
         WindowAction::Stash => super::stash_service::stash(hwnd),
         WindowAction::RestoreInitialFrame => placement::restore_initial_frame(hwnd),
@@ -47,7 +48,11 @@ fn apply_geometry_here(hwnd: u64, action: WindowAction) -> Result<String, String
 }
 
 /// Geometry path with a precomputed ideal frame (snap commit).
-pub fn apply_geometry(hwnd: u64, action: WindowAction, ideal: Option<Rect>) -> Result<String, String> {
+pub fn apply_geometry(
+    hwnd: u64,
+    action: WindowAction,
+    ideal: Option<Rect>,
+) -> Result<String, String> {
     let ideal = match ideal {
         Some(frame) => frame,
         None => target_frame::target_frame(hwnd, action)?,
@@ -76,7 +81,12 @@ pub fn apply_geometry(hwnd: u64, action: WindowAction, ideal: Option<Rect>) -> R
             bounds,
             action,
             actual,
-            MinMaxLimits { min_w: 0, min_h: 0, max_w: 0, max_h: 0 },
+            MinMaxLimits {
+                min_w: 0,
+                min_h: 0,
+                max_w: 0,
+                max_h: 0,
+            },
         );
         if !placement::rects_equal(reanchored, frame) {
             let _ = placement::place_window(hwnd, reanchored);
@@ -235,6 +245,5 @@ fn min_max_limits(hwnd: u64) -> MinMaxLimits {
 }
 
 fn sizes_equal(first: Rect, second: Rect) -> bool {
-    (first.width() - second.width()).abs() <= 2
-        && (first.height() - second.height()).abs() <= 2
+    (first.width() - second.width()).abs() <= 2 && (first.height() - second.height()).abs() <= 2
 }

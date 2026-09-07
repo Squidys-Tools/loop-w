@@ -3,9 +3,9 @@
 //! Ports `StartupManager`: quoted exe path, missing-value delete is fine,
 //! open failure is false, all errors collapse to false.
 
+use windows::core::PCWSTR;
 use windows::Win32::Foundation::*;
 use windows::Win32::System::Registry::*;
-use windows::core::PCWSTR;
 
 /// Registry value name shared with the C# `StartupManager`.
 pub const RUN_VALUE_NAME: &str = "LoopW";
@@ -34,16 +34,14 @@ pub fn set_launch_at_login(enabled: bool) -> Result<(), String> {
             let value_name = wide_null(RUN_VALUE_NAME);
             let quoted = format!("\"{exe}\"");
             let data: Vec<u16> = quoted.encode_utf16().chain(core::iter::once(0)).collect();
-            let bytes = unsafe {
-                core::slice::from_raw_parts(
-                    data.as_ptr() as *const u8,
-                    data.len() * core::mem::size_of::<u16>(),
-                )
-            };
+            let bytes = core::slice::from_raw_parts(
+                data.as_ptr() as *const u8,
+                data.len() * core::mem::size_of::<u16>(),
+            );
             RegSetValueExW(
                 key,
                 PCWSTR(value_name.as_ptr()),
-                0,
+                Some(0),
                 REG_SZ,
                 Some(bytes),
             )

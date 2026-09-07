@@ -8,7 +8,7 @@ use super::native;
 use super::policy;
 use crate::core::actions::WindowAction;
 use crate::core::frame_math;
-use crate::core::monitor::{MonitorMoveSizePolicy, MonitorSnapshot, translate_frame};
+use crate::core::monitor::{translate_frame, MonitorMoveSizePolicy, MonitorSnapshot};
 use crate::core::rect::Rect;
 
 /// Ideal (pre-clamp) frame for `action` on `hwnd`.
@@ -19,29 +19,26 @@ pub fn target_frame(hwnd: u64, action: WindowAction) -> Result<Rect, String> {
     if let Err(diagnostic) = policy::try_authorize_action(hwnd, action) {
         return Err(diagnostic.to_string());
     }
-    let snapshot = monitor_service::for_window(hwnd).ok_or_else(|| {
-        "Could not determine the target monitor.".to_string()
-    })?;
+    let snapshot = monitor_service::for_window(hwnd)
+        .ok_or_else(|| "Could not determine the target monitor.".to_string())?;
     let work = snapshot.work;
     let monitor_rect = snapshot.monitor;
-    let current = native::window_rect(native::from_raw(hwnd as isize)).unwrap_or(Rect::new(0, 0, 0, 0));
+    let current =
+        native::window_rect(native::from_raw(hwnd as isize)).unwrap_or(Rect::new(0, 0, 0, 0));
 
     match action {
         WindowAction::Maximize => Ok(work),
         WindowAction::Fullscreen => Ok(monitor_rect),
-        WindowAction::MaximizeHeight => {
-            Ok(frame_math::maximize_height_frame(work, current))
-        }
-        WindowAction::MaximizeWidth => {
-            Ok(frame_math::maximize_width_frame(work, current))
-        }
+        WindowAction::MaximizeHeight => Ok(frame_math::maximize_height_frame(work, current)),
+        WindowAction::MaximizeWidth => Ok(frame_math::maximize_width_frame(work, current)),
         WindowAction::FillAvailableSpace => {
             let obstacles = super::query::layout_frames(hwnd);
             Ok(frame_math::fill_available_frame(work, current, &obstacles))
         }
         WindowAction::Center => Ok(frame_math::center_frame(work, current)),
         WindowAction::AlmostMaximize => {
-            let margin = (12.0 * native::dpi_scale_for_window(native::from_raw(hwnd as isize))).round() as i32;
+            let margin = (12.0 * native::dpi_scale_for_window(native::from_raw(hwnd as isize)))
+                .round() as i32;
             Ok(Rect::new(
                 work.left + margin,
                 work.top + margin,
@@ -55,7 +52,7 @@ pub fn target_frame(hwnd: u64, action: WindowAction) -> Result<Rect, String> {
         WindowAction::LeftScreen
         | WindowAction::RightScreen
         | WindowAction::TopScreen
-        | WindowAction::BottomScreen => directional_screen_frame(hwnd, action, snapshot, current),
+        | WindowAction::BottomScreen => directional_screen_frame(action, snapshot, current),
         WindowAction::Larger
         | WindowAction::Smaller
         | WindowAction::ScaleUp
@@ -146,7 +143,6 @@ fn screen_frame(
 }
 
 fn directional_screen_frame(
-    hwnd: u64,
     action: WindowAction,
     current_snapshot: MonitorSnapshot,
     current: Rect,
@@ -170,8 +166,8 @@ fn directional_screen_frame(
         }
         let cand_cx = snapshot.work.left + snapshot.work.width() / 2;
         let cand_cy = snapshot.work.top + snapshot.work.height() / 2;
-        let score = (cand_cx as i64 - cur_cx as i64) * dir_x
-            + (cand_cy as i64 - cur_cy as i64) * dir_y;
+        let score =
+            (cand_cx as i64 - cur_cx as i64) * dir_x + (cand_cy as i64 - cur_cy as i64) * dir_y;
         if score > 0 && score > best_score {
             best_score = score;
             best = Some(snapshot);
@@ -180,7 +176,12 @@ fn directional_screen_frame(
     let Some(target) = best else {
         return Err("No monitor in that direction.".to_string());
     };
-    Ok(translate_frame(current, current_snapshot, *target, policy()))
+    Ok(translate_frame(
+        current,
+        current_snapshot,
+        *target,
+        policy(),
+    ))
 }
 
 fn rects_close(first: Rect, second: Rect) -> bool {

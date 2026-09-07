@@ -15,11 +15,12 @@ use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 
 use windows::Win32::Foundation::*;
+use windows::Win32::System::Threading::GetCurrentThreadId;
 use windows::Win32::UI::WindowsAndMessaging::*;
 
-use super::events::{RuntimeEvent, push};
-use crate::core::hotkey::{MOD_ALT, MOD_CONTROL, MOD_SHIFT, MOD_WIN, TriggerModifierSide};
-use crate::core::keybind_match::{MatchEntry, match_keybind};
+use super::events::{push, RuntimeEvent};
+use crate::core::hotkey::{TriggerModifierSide, MOD_ALT, MOD_CONTROL, MOD_SHIFT, MOD_WIN};
+use crate::core::keybind_match::{match_keybind, MatchEntry};
 
 const WH_KEYBOARD_LL: i32 = 13;
 const WH_MOUSE_LL: i32 = 14;
@@ -90,6 +91,10 @@ struct Handles {
     running: bool,
 }
 
+// HHOOK/HANDLE values are process-wide opaque handles; sharing them through
+// the mutex to install/remove hooks from different threads is safe.
+unsafe impl Send for Handles {}
+
 static STATE: OnceLock<Mutex<HookState>> = OnceLock::new();
 static HANDLES: OnceLock<Mutex<Handles>> = OnceLock::new();
 
@@ -146,7 +151,9 @@ fn config_from_shared() -> Config {
 
 /// Install hooks on a dedicated thread. Returns true when active.
 pub fn start() -> bool {
-    let mut guards = handles().lock().expect("hook handles poisoned");
+    let Ok(mut guards) = handles().lock() else {
+        return false;
+    };
     if guards.running {
         return !guards.keyboard.is_invalid();
     }
@@ -210,19 +217,15 @@ pub fn cancel_capture() {
 }
 
 pub fn is_capturing() -> bool {
-    state().lock().map(|g| g.capturing.is_some()).unwrap_or(false)
+    state()
+        .lock()
+        .map(|g| g.capturing.is_some())
+        .unwrap_or(false)
 }
 
 fn hook_thread() {
-    unsafe extern "system" fn keyboard_proc(
-        code: i32,
-        wparam: WPARAM,
-        lparam: LPARAM,
-    ) -> LRESULT {
-        let handle = handles()
-            .lock()
-            .map(|g| g.keyboard)
-            .unwrap_or_default();
+    unsafe extern "system" fn keyboard_proc(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+        let handle = handles().lock().map(|g| g.keyboard).unwrap_or_default();
         if code < 0 {
             return CallNextHookEx(Some(handle), code, wparam, lparam);
         }
@@ -250,11 +253,7 @@ fn hook_thread() {
         }
     }
 
-    unsafe extern "system" fn mouse_proc(
-        code: i32,
-        wparam: WPARAM,
-        lparam: LPARAM,
-    ) -> LRESULT {
+    unsafe extern "system" fn mouse_proc(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
         let handle = handles().lock().map(|g| g.mouse).unwrap_or_default();
         if code < 0 {
             return CallNextHookEx(Some(handle), code, wparam, lparam);
@@ -284,9 +283,8 @@ fn hook_thread() {
             0,
         )
         .unwrap_or_default();
-        let mouse =
-            SetWindowsHookExW(WINDOWS_HOOK_ID(WH_MOUSE_LL), Some(mouse_proc), None, 0)
-                .unwrap_or_default();
+        let mouse = SetWindowsHookExW(WINDOWS_HOOK_ID(WH_MOUSE_LL), Some(mouse_proc), None, 0)
+            .unwrap_or_default();
         if let Ok(mut guards) = handles().lock() {
             guards.keyboard = keyboard;
             guards.mouse = mouse;
@@ -354,9 +352,21 @@ fn handle_key_down_locked(guard: &mut HookState, vk: u32) -> bool {
         })
         .collect();
     let matched = if held && !guard.timed_out {
-        match_keybind(&entries, vk, current_modifiers(TriggerModifierSide::Any), guard.config.trigger_vk, true)
+        match_keybind(
+            &entries,
+            vk,
+            current_modifiers(TriggerModifierSide::Any),
+            guard.config.trigger_vk,
+            true,
+        )
     } else if !held {
-        match_keybind(&entries, vk, current_modifiers(TriggerModifierSide::Any), guard.config.trigger_vk, false)
+        match_keybind(
+            &entries,
+            vk,
+            current_modifiers(TriggerModifierSide::Any),
+            guard.config.trigger_vk,
+            false,
+        )
     } else {
         None
     };
@@ -529,8 +539,17 @@ fn handle_capture_locked(guard: &mut HookState, vk: u32) -> bool {
 fn is_modifier_vk(vk: u32) -> bool {
     matches!(
         vk as i32,
-        VK_SHIFT | VK_CONTROL | VK_MENU | VK_LWIN | VK_RWIN | VK_LSHIFT | VK_RSHIFT | VK_LCONTROL
-            | VK_RCONTROL | VK_LMENU | VK_RMENU
+        VK_SHIFT
+            | VK_CONTROL
+            | VK_MENU
+            | VK_LWIN
+            | VK_RWIN
+            | VK_LSHIFT
+            | VK_RSHIFT
+            | VK_LCONTROL
+            | VK_RCONTROL
+            | VK_LMENU
+            | VK_RMENU
     )
 }
 

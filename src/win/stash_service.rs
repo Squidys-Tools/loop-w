@@ -14,8 +14,8 @@ use windows::Win32::UI::WindowsAndMessaging::*;
 use super::native;
 use crate::core::rect::{Point, Rect};
 use crate::core::stash::{
-    StashEdge, StashMonitor, StashPlacement, StashPoint, StashRecord, StashRect,
-    calculate_stashed_frame, nearest_edge,
+    calculate_stashed_frame, nearest_edge, StashEdge, StashMonitor, StashPlacement, StashPoint,
+    StashRecord, StashRect,
 };
 use crate::core::stash_rebase::{find_restore_monitor, rebase_rect};
 
@@ -25,7 +25,6 @@ struct LiveRecord {
     edge: StashEdge,
     placement: WINDOWPLACEMENT,
     monitor: StashMonitor,
-    frame: Rect,
     identity: crate::core::identity::WindowIdentity,
     persisted_id: String,
 }
@@ -56,13 +55,13 @@ pub fn stash(hwnd: u64) -> Result<String, String> {
     if hwnd == 0 || !native::is_window(native::from_raw(hwnd as isize)) {
         return Err("The target window is no longer available.".to_string());
     }
-    if let Err(diagnostic) =
-        super::policy::try_authorize_action(hwnd, WindowAction::Stash)
-    {
+    if let Err(diagnostic) = super::policy::try_authorize_action(hwnd, WindowAction::Stash) {
         return Err(diagnostic.to_string());
     }
     {
-        let guard = live().lock().expect("stash poisoned");
+        let guard = live()
+            .lock()
+            .map_err(|_| "Internal state is unavailable.".to_string())?;
         if guard.by_hwnd.contains_key(&hwnd) {
             return Err("The target window is already stashed.".to_string());
         }
@@ -76,8 +75,8 @@ pub fn stash(hwnd: u64) -> Result<String, String> {
         .ok_or_else(|| "Could not identify the target window.".to_string())?;
     // Collapse maximized/minimized so geometry is measurable.
     native::show_window(native_hwnd, SW_RESTORE);
-    let current =
-        native::window_rect(native_hwnd).ok_or_else(|| "Could not identify the target window.".to_string())?;
+    let current = native::window_rect(native_hwnd)
+        .ok_or_else(|| "Could not identify the target window.".to_string())?;
     let snapshot = super::monitor_service::for_rect(current)
         .ok_or_else(|| "Could not determine the target monitor.".to_string())?;
     let settings = super::shared::snapshot();
@@ -105,14 +104,15 @@ pub fn stash(hwnd: u64) -> Result<String, String> {
         dpi_y: snapshot.dpi_y,
     };
     {
-        let mut guard = live().lock().expect("stash poisoned");
+        let mut guard = live()
+            .lock()
+            .map_err(|_| "Internal state is unavailable.".to_string())?;
         guard.by_hwnd.insert(
             hwnd,
             LiveRecord {
                 edge,
                 placement: original,
                 monitor,
-                frame,
                 identity: identity.clone(),
                 persisted_id: persisted_id.clone(),
             },
@@ -133,7 +133,10 @@ pub fn stash(hwnd: u64) -> Result<String, String> {
             stashed_frame: StashRect::from(frame),
         });
     }
-    Ok(format!("Stashed the window at the {} edge", edge_name(edge)))
+    Ok(format!(
+        "Stashed the window at the {} edge",
+        edge_name(edge)
+    ))
 }
 
 /// Reveal the first stashed window in FIFO order (hotkey/command path).
@@ -178,7 +181,7 @@ pub fn reveal_at_cursor(cursor: Point) -> Option<String> {
             .iter()
             .filter_map(|hwnd| {
                 let record = guard.by_hwnd.get(hwnd)?;
-                let work: Rect = record.monitor.work.clone().into();
+                let work: Rect = record.monitor.work.into();
                 Some((*hwnd, record.edge, work))
             })
             .collect()
@@ -220,9 +223,7 @@ fn reveal(hwnd: u64) -> Result<String, String> {
         .and_then(|guard| guard.by_hwnd.get(&hwnd).map(clone_live))
         .ok_or_else(|| "The target window is not stashed.".to_string())?;
     if !super::policy::is_eligible_for_enumeration(hwnd as isize, 0) {
-        return Err(
-            "The stashed window is excluded or no longer an eligible target.".to_string(),
-        );
+        return Err("The stashed window is excluded or no longer an eligible target.".to_string());
     }
     let monitors = super::monitor_service::all();
     let mut placement = record.placement;
@@ -376,7 +377,7 @@ fn reveal_quiet(hwnd: u64) -> bool {
 
 /// Re-stash persisted records whose live window matches unambiguously.
 pub fn restore_persisted() {
-    use crate::core::identity::{WindowIdentity, find_unambiguous_match};
+    use crate::core::identity::{find_unambiguous_match, WindowIdentity};
     if !super::shared::snapshot().stash_persistence_enabled {
         return;
     }
@@ -390,9 +391,7 @@ pub fn restore_persisted() {
             .into_iter()
             .filter(|candidate| !claimed.contains(&candidate.hwnd))
             .filter_map(|candidate| {
-                let identity = native::window_identity(native::from_raw(
-                    candidate.hwnd as isize,
-                ))?;
+                let identity = native::window_identity(native::from_raw(candidate.hwnd as isize))?;
                 Some((candidate.hwnd, identity))
             })
             .collect();
@@ -420,7 +419,7 @@ fn restash_persisted(hwnd: u64, record: &StashRecord) {
         }
     };
     let settings = super::shared::snapshot();
-    let frame_rect: Rect = record.stashed_frame.clone().into();
+    let frame_rect: Rect = record.stashed_frame.into();
     let usable = frame_rect.right > frame_rect.left && frame_rect.bottom > frame_rect.top;
     let frame = if usable {
         let target_monitor = StashMonitor {
@@ -450,14 +449,15 @@ fn restash_persisted(hwnd: u64, record: &StashRecord) {
         dpi_y: snapshot.dpi_y,
     };
     {
-        let mut guard = live().lock().expect("stash poisoned");
+        let Ok(mut guard) = live().lock() else {
+            return;
+        };
         guard.by_hwnd.insert(
             hwnd,
             LiveRecord {
                 edge: record.edge,
                 placement: placement_from_stash(&record.original_placement),
                 monitor,
-                frame,
                 identity: identity.clone(),
                 persisted_id: record.id.clone(),
             },
@@ -478,7 +478,11 @@ fn restash_persisted(hwnd: u64, record: &StashRecord) {
 
 fn persist_upsert(record: &StashRecord) {
     super::shared::update(|settings| {
-        if let Some(slot) = settings.stash_records.iter_mut().find(|r| r.id == record.id) {
+        if let Some(slot) = settings
+            .stash_records
+            .iter_mut()
+            .find(|r| r.id == record.id)
+        {
             *slot = record.clone();
         } else {
             settings.stash_records.push(record.clone());
@@ -494,13 +498,7 @@ fn persist_remove(id: &str) {
     super::shared::save_now();
 }
 
-fn persist_refresh_identity(
-    id: &str,
-    exe: &str,
-    pid: u32,
-    class: &str,
-    title: &str,
-) {
+fn persist_refresh_identity(id: &str, exe: &str, pid: u32, class: &str, title: &str) {
     super::shared::update(|settings| {
         if let Some(slot) = settings.stash_records.iter_mut().find(|r| r.id == id) {
             slot.executable_path = exe.to_string();
@@ -532,16 +530,28 @@ fn edge_name(edge: StashEdge) -> &'static str {
 fn in_hit_zone(cursor: Point, edge: StashEdge, work: Rect, zone: i32) -> bool {
     match edge {
         StashEdge::Left => {
-            cursor.x >= work.left && cursor.x <= work.left + zone && cursor.y >= work.top && cursor.y <= work.bottom
+            cursor.x >= work.left
+                && cursor.x <= work.left + zone
+                && cursor.y >= work.top
+                && cursor.y <= work.bottom
         }
         StashEdge::Right => {
-            cursor.x >= work.right - zone && cursor.x <= work.right && cursor.y >= work.top && cursor.y <= work.bottom
+            cursor.x >= work.right - zone
+                && cursor.x <= work.right
+                && cursor.y >= work.top
+                && cursor.y <= work.bottom
         }
         StashEdge::Top => {
-            cursor.y >= work.top && cursor.y <= work.top + zone && cursor.x >= work.left && cursor.x <= work.right
+            cursor.y >= work.top
+                && cursor.y <= work.top + zone
+                && cursor.x >= work.left
+                && cursor.x <= work.right
         }
         StashEdge::Bottom => {
-            cursor.y >= work.bottom - zone && cursor.y <= work.bottom && cursor.x >= work.left && cursor.x <= work.right
+            cursor.y >= work.bottom - zone
+                && cursor.y <= work.bottom
+                && cursor.x >= work.left
+                && cursor.x <= work.right
         }
     }
 }
@@ -549,7 +559,7 @@ fn in_hit_zone(cursor: Point, edge: StashEdge, work: Rect, zone: i32) -> bool {
 fn placement_to_stash(placement: &WINDOWPLACEMENT) -> StashPlacement {
     StashPlacement {
         length: placement.length as i32,
-        flags: placement.flags,
+        flags: placement.flags.0,
         show_command: placement.showCmd,
         min_position: StashPoint {
             x: placement.ptMinPosition.x,
@@ -564,19 +574,19 @@ fn placement_to_stash(placement: &WINDOWPLACEMENT) -> StashPlacement {
 }
 
 fn placement_from_stash(placement: &StashPlacement) -> WINDOWPLACEMENT {
-    let mut native_placement = WINDOWPLACEMENT::default();
-    native_placement.length = core::mem::size_of::<WINDOWPLACEMENT>() as u32;
-    native_placement.flags = placement.flags;
-    native_placement.showCmd = placement.show_command;
-    native_placement.ptMinPosition = windows::Win32::Foundation::POINT {
-        x: placement.min_position.x,
-        y: placement.min_position.y,
-    };
-    native_placement.ptMaxPosition = windows::Win32::Foundation::POINT {
-        x: placement.max_position.x,
-        y: placement.max_position.y,
-    };
-    let normal: Rect = placement.normal_position.clone().into();
-    native_placement.rcNormalPosition = native::rect_to_native(normal);
-    native_placement
+    let normal: Rect = placement.normal_position.into();
+    WINDOWPLACEMENT {
+        length: core::mem::size_of::<WINDOWPLACEMENT>() as u32,
+        flags: WINDOWPLACEMENT_FLAGS(placement.flags),
+        showCmd: placement.show_command,
+        ptMinPosition: windows::Win32::Foundation::POINT {
+            x: placement.min_position.x,
+            y: placement.min_position.y,
+        },
+        ptMaxPosition: windows::Win32::Foundation::POINT {
+            x: placement.max_position.x,
+            y: placement.max_position.y,
+        },
+        rcNormalPosition: native::rect_to_native(normal),
+    }
 }

@@ -7,7 +7,7 @@
 
 use tray_icon::menu::{Menu, MenuEvent, MenuId, MenuItem, PredefinedMenuItem};
 
-use super::events::{RuntimeEvent, push};
+use super::events::{push, RuntimeEvent};
 
 pub struct Tray {
     _icon: tray_icon::TrayIcon,
@@ -29,13 +29,8 @@ pub fn build() -> Result<Tray, String> {
     let open = MenuItem::new("Open LoopW", true, None);
     let settings = MenuItem::new("Open settings", true, None);
     let quit = MenuItem::new("Quit", true, None);
-    menu.append_items(&[
-        &open,
-        &settings,
-        &PredefinedMenuItem::separator(),
-        &quit,
-    ])
-    .map_err(|error| format!("Could not build the tray menu: {error}"))?;
+    menu.append_items(&[&open, &settings, &PredefinedMenuItem::separator(), &quit])
+        .map_err(|error| format!("Could not build the tray menu: {error}"))?;
     let icon = tray_icon::TrayIconBuilder::new()
         .with_menu_on_left_click(false)
         .with_tooltip("LoopW")
@@ -57,7 +52,10 @@ pub fn poll(tray: &Tray) {
     use tray_icon::{MouseButton, MouseButtonState, TrayIconEvent};
     while let Ok(event) = TrayIconEvent::receiver().try_recv() {
         match event {
-            TrayIconEvent::DoubleClick { button: MouseButton::Left, .. } => {
+            TrayIconEvent::DoubleClick {
+                button: MouseButton::Left,
+                ..
+            } => {
                 push(RuntimeEvent::TrayShowSettings);
             }
             TrayIconEvent::Click { .. } => {

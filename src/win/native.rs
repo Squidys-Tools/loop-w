@@ -3,10 +3,12 @@
 //! All functions are small, total-failure-safe (bool/Option/empty defaults),
 //! and physical-pixel based. UI code never touches raw Win32 directly.
 
-use windows::Win32::Foundation::*;
-use windows::Win32::UI::HiDpi::*;
-use windows::Win32::UI::WindowsAndMessaging::*;
 use windows::core::PCWSTR;
+use windows::Win32::Foundation::*;
+use windows::Win32::System::SystemInformation::GetTickCount64;
+use windows::Win32::UI::HiDpi::*;
+use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, GetDoubleClickTime};
+use windows::Win32::UI::WindowsAndMessaging::*;
 
 use crate::core::identity::WindowIdentity;
 use crate::core::rect::{Point, Rect};
@@ -28,7 +30,12 @@ pub fn rect_from_native(r: RECT) -> Rect {
 }
 
 pub fn rect_to_native(r: Rect) -> RECT {
-    RECT { left: r.left, top: r.top, right: r.right, bottom: r.bottom }
+    RECT {
+        left: r.left,
+        top: r.top,
+        right: r.right,
+        bottom: r.bottom,
+    }
 }
 
 pub fn is_window(hwnd: HWND) -> bool {
@@ -36,15 +43,15 @@ pub fn is_window(hwnd: HWND) -> bool {
 }
 
 pub fn is_visible(hwnd: HWND) -> bool {
-    unsafe { IsWindowVisible(Some(hwnd)).as_bool() }
+    unsafe { IsWindowVisible(hwnd).as_bool() }
 }
 
 pub fn is_iconic(hwnd: HWND) -> bool {
-    unsafe { IsIconic(Some(hwnd)).as_bool() }
+    unsafe { IsIconic(hwnd).as_bool() }
 }
 
 pub fn is_zoomed(hwnd: HWND) -> bool {
-    unsafe { IsZoomed(Some(hwnd)).as_bool() }
+    unsafe { IsZoomed(hwnd).as_bool() }
 }
 
 pub fn foreground_window() -> HWND {
@@ -54,28 +61,30 @@ pub fn foreground_window() -> HWND {
 pub fn window_rect(hwnd: HWND) -> Option<Rect> {
     unsafe {
         let mut rect = RECT::default();
-        GetWindowRect(Some(hwnd), &mut rect).ok()?;
+        GetWindowRect(hwnd, &mut rect).ok()?;
         Some(rect_from_native(rect))
     }
 }
 
 pub fn window_placement(hwnd: HWND) -> Option<WINDOWPLACEMENT> {
     unsafe {
-        let mut placement = WINDOWPLACEMENT::default();
-        placement.length = core::mem::size_of::<WINDOWPLACEMENT>() as u32;
-        GetWindowPlacement(Some(hwnd), &mut placement).ok()?;
+        let mut placement = WINDOWPLACEMENT {
+            length: core::mem::size_of::<WINDOWPLACEMENT>() as u32,
+            ..Default::default()
+        };
+        GetWindowPlacement(hwnd, &mut placement).ok()?;
         Some(placement)
     }
 }
 
 pub fn set_placement(hwnd: HWND, placement: &WINDOWPLACEMENT) -> bool {
-    unsafe { SetWindowPlacement(Some(hwnd), placement).is_ok() }
+    unsafe { SetWindowPlacement(hwnd, placement).is_ok() }
 }
 
 pub fn set_pos(hwnd: HWND, frame: Rect) -> bool {
     unsafe {
         SetWindowPos(
-            Some(hwnd),
+            hwnd,
             None,
             frame.left,
             frame.top,
@@ -88,37 +97,37 @@ pub fn set_pos(hwnd: HWND, frame: Rect) -> bool {
 }
 
 pub fn show_window(hwnd: HWND, cmd: SHOW_WINDOW_CMD) -> bool {
-    unsafe { ShowWindow(Some(hwnd), cmd).as_bool() }
+    unsafe { ShowWindow(hwnd, cmd).as_bool() }
 }
 
 pub fn set_foreground(hwnd: HWND) -> bool {
-    unsafe { SetForegroundWindow(Some(hwnd)).as_bool() }
+    unsafe { SetForegroundWindow(hwnd).as_bool() }
 }
 
 pub fn process_id(hwnd: HWND) -> u32 {
     unsafe {
         let mut pid = 0u32;
-        GetWindowThreadProcessId(Some(hwnd), Some(&mut pid));
+        GetWindowThreadProcessId(hwnd, Some(&mut pid));
         pid
     }
 }
 
 pub fn window_style(hwnd: HWND) -> isize {
-    unsafe { GetWindowLongPtrW(Some(hwnd), GWL_STYLE) }
+    unsafe { GetWindowLongPtrW(hwnd, GWL_STYLE) }
 }
 
 pub fn window_ex_style(hwnd: HWND) -> isize {
-    unsafe { GetWindowLongPtrW(Some(hwnd), GWL_EXSTYLE) }
+    unsafe { GetWindowLongPtrW(hwnd, GWL_EXSTYLE) }
 }
 
 pub fn window_owner(hwnd: HWND) -> HWND {
-    unsafe { GetWindow(Some(hwnd), GW_OWNER).unwrap_or(HWND::default()) }
+    unsafe { GetWindow(hwnd, GW_OWNER).unwrap_or_default() }
 }
 
 pub fn window_class(hwnd: HWND) -> String {
     unsafe {
         let mut buffer = [0u16; 256];
-        let length = GetClassNameW(Some(hwnd), &mut buffer);
+        let length = GetClassNameW(hwnd, &mut buffer);
         String::from_utf16_lossy(&buffer[..length.max(0) as usize])
     }
 }
@@ -126,7 +135,7 @@ pub fn window_class(hwnd: HWND) -> String {
 pub fn window_title(hwnd: HWND) -> String {
     unsafe {
         let mut buffer = [0u16; 512];
-        let length = GetWindowTextW(Some(hwnd), &mut buffer);
+        let length = GetWindowTextW(hwnd, &mut buffer);
         String::from_utf16_lossy(&buffer[..length.max(0) as usize])
     }
 }
@@ -178,7 +187,7 @@ pub fn process_name(pid: u32) -> String {
         .map(|_| {
             let full = String::from_utf16_lossy(&buffer[..size as usize]);
             let file = full.rsplit(['/', '\\']).next().unwrap_or(&full);
-            file.rsplit('.').last().unwrap_or(file).to_string()
+            file.split('.').next().unwrap_or(file).to_string()
         })
         .unwrap_or_default();
         let _ = CloseHandle(handle);
@@ -214,7 +223,7 @@ pub fn min_max_info(hwnd: HWND) -> MINMAXINFO {
         let mut info = MINMAXINFO::default();
         let mut result = 0usize;
         let sent = SendMessageTimeoutW(
-            Some(hwnd),
+            hwnd,
             WM_GETMINMAXINFO,
             WPARAM(0),
             LPARAM(&mut info as *mut MINMAXINFO as isize),
@@ -235,7 +244,7 @@ pub fn nc_hit_test(hwnd: HWND, point: Point) -> Option<usize> {
         let packed = (point.x as u32 as isize) | ((point.y as u32 as isize) << 32);
         let mut result = 0usize;
         let sent = SendMessageTimeoutW(
-            Some(hwnd),
+            hwnd,
             WM_NCHITTEST,
             WPARAM(0),
             LPARAM(packed),
@@ -252,13 +261,23 @@ pub fn nc_hit_test(hwnd: HWND, point: Point) -> Option<usize> {
 
 pub fn window_from_point(point: Point) -> HWND {
     unsafe {
-        let native = POINT { x: point.x, y: point.y };
+        let native = POINT {
+            x: point.x,
+            y: point.y,
+        };
         WindowFromPoint(native)
     }
 }
 
 pub fn ancestor_root(hwnd: HWND) -> HWND {
-    unsafe { GetAncestor(Some(hwnd), GA_ROOT).unwrap_or(hwnd) }
+    unsafe {
+        let root = GetAncestor(hwnd, GA_ROOT);
+        if root.is_invalid() {
+            hwnd
+        } else {
+            root
+        }
+    }
 }
 
 pub fn cursor_pos() -> Option<Point> {
@@ -274,7 +293,6 @@ pub fn async_key_down(vk: i32) -> bool {
 }
 
 pub fn tick_count() -> u64 {
-    use windows::Win32::System::Threading::GetTickCount64;
     unsafe { GetTickCount64() }
 }
 
@@ -284,22 +302,30 @@ pub fn double_click_time() -> u32 {
 
 pub fn dpi_for_window(hwnd: HWND) -> u32 {
     unsafe {
-        let dpi = GetDpiForWindow(Some(hwnd));
-        if dpi > 0 { dpi } else { 96 }
+        let dpi = GetDpiForWindow(hwnd);
+        if dpi > 0 {
+            dpi
+        } else {
+            96
+        }
     }
 }
 
 pub fn dpi_scale_for_window(hwnd: HWND) -> f64 {
     let dpi = dpi_for_window(hwnd);
-    if dpi > 0 { dpi as f64 / 96.0 } else { 1.0 }
+    if dpi > 0 {
+        dpi as f64 / 96.0
+    } else {
+        1.0
+    }
 }
 
 /// Make an overlay window click-through + tool (no taskbar/Alt+Tab).
 pub fn make_overlay_click_through(hwnd: HWND) {
     unsafe {
-        let style = GetWindowLongPtrW(Some(hwnd), GWL_EXSTYLE);
+        let style = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
         SetWindowLongPtrW(
-            Some(hwnd),
+            hwnd,
             GWL_EXSTYLE,
             style | WS_EX_TRANSPARENT.0 as isize | WS_EX_TOOLWINDOW.0 as isize,
         );
@@ -309,7 +335,7 @@ pub fn make_overlay_click_through(hwnd: HWND) {
 pub fn find_window_by_title(title: &str) -> Option<HWND> {
     let wide: Vec<u16> = title.encode_utf16().chain(core::iter::once(0)).collect();
     unsafe {
-        FindWindowW(None, PCWSTR(wide.as_ptr()))
+        FindWindowW(PCWSTR::null(), PCWSTR(wide.as_ptr()))
             .ok()
             .filter(|hwnd| !hwnd.is_invalid())
     }

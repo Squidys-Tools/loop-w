@@ -5,13 +5,11 @@
 //! is invalidated, snap targets re-resolve, and stale previews hide —
 //! without aborting any in-flight gesture.
 
+use windows::core::w;
 use windows::Win32::Foundation::*;
 use windows::Win32::UI::WindowsAndMessaging::*;
-use windows::core::w;
 
-use super::events::{RuntimeEvent, push};
-
-const CLASS_NAME: &str = "LoopWDisplayWatcher";
+use super::events::{push, RuntimeEvent};
 
 unsafe extern "system" fn wnd_proc(
     hwnd: HWND,
@@ -24,7 +22,7 @@ unsafe extern "system" fn wnd_proc(
             push(RuntimeEvent::DisplaysChanged);
             LRESULT(0)
         }
-        _ => DefWindowProcW(Some(hwnd), message, wparam, lparam),
+        _ => DefWindowProcW(hwnd, message, wparam, lparam),
     }
 }
 
@@ -38,13 +36,13 @@ pub fn start() {
                 let class = WNDCLASSW {
                     lpfnWndProc: Some(wnd_proc),
                     hInstance: HINSTANCE::default(),
-                    lpszClassName: w!(CLASS_NAME),
+                    lpszClassName: w!("LoopWDisplayWatcher"),
                     ..WNDCLASSW::default()
                 };
                 RegisterClassW(&class);
                 let hwnd = CreateWindowExW(
                     WINDOW_EX_STYLE::default(),
-                    w!(CLASS_NAME),
+                    w!("LoopWDisplayWatcher"),
                     w!("LoopW display watcher"),
                     WINDOW_STYLE::default(),
                     0,

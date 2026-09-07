@@ -4,11 +4,11 @@
 //! first instance; the loser forwards `activate` (or its own command) and
 //! exits. The winner watches `Local\LoopW.Activate` for raw wake-ups.
 
+use windows::core::PCWSTR;
 use windows::Win32::Foundation::*;
 use windows::Win32::System::Threading::*;
-use windows::core::PCWSTR;
 
-use super::events::{RuntimeEvent, push};
+use super::events::{push, RuntimeEvent};
 
 pub const MUTEX_NAME: &str = r"Local\LoopW.Instance";
 pub const EVENT_NAME: &str = r"Local\LoopW.Activate";
@@ -20,6 +20,10 @@ fn wide_null(text: &str) -> Vec<u16> {
 pub struct InstanceGuard {
     _mutex: HANDLE,
 }
+
+// The mutex handle is process-wide and held for the process lifetime;
+// moving the guard into the daemon state is safe.
+unsafe impl Send for InstanceGuard {}
 
 /// Try to become the resident instance.
 /// - `Ok(Some(guard))`: we are first; keep `guard` alive for process life.
@@ -67,15 +71,12 @@ fn start_event_watcher() {
             .name("loopw-activate".to_string())
             .spawn(|| {
                 let name = wide_null(EVENT_NAME);
-                let event = unsafe {
-                    CreateEventW(None, false, false, PCWSTR(name.as_ptr())).ok()
-                };
+                let event = unsafe { CreateEventW(None, false, false, PCWSTR(name.as_ptr())).ok() };
                 let Some(event) = event else {
                     return;
                 };
                 loop {
-                    let waited =
-                        unsafe { WaitForSingleObject(event, INFINITE) };
+                    let waited = unsafe { WaitForSingleObject(event, INFINITE) };
                     if waited == WAIT_OBJECT_0 {
                         push(RuntimeEvent::ShowSettings);
                     } else {

@@ -102,11 +102,13 @@ pub fn place_window(hwnd: u64, frame: Rect) -> bool {
             None => return false,
         }
     }
-    let mut next = WINDOWPLACEMENT::default();
-    next.length = core::mem::size_of::<WINDOWPLACEMENT>() as u32;
-    next.showCmd = SW_RESTORE.0 as u32;
-    next.flags = WPF_ASYNCWINDOWPLACEMENT;
-    next.rcNormalPosition = native::rect_to_native(frame);
+    let next = WINDOWPLACEMENT {
+        length: core::mem::size_of::<WINDOWPLACEMENT>() as u32,
+        showCmd: SW_RESTORE.0 as u32,
+        flags: WPF_ASYNCWINDOWPLACEMENT,
+        rcNormalPosition: native::rect_to_native(frame),
+        ..Default::default()
+    };
     // Double-SetWindowPlacement: the FancyZones DPI-reliability pattern.
     if !native::set_placement(native_hwnd, &next) {
         return false;
@@ -131,8 +133,8 @@ fn wait_for_placement(hwnd: u64, frame: Rect) -> bool {
         let Some(placement) = native::window_placement(native_hwnd) else {
             return false;
         };
-        let maximized = placement.showCmd == SW_SHOWMAXIMIZED.0 as u32
-            || native::is_zoomed(native_hwnd);
+        let maximized =
+            placement.showCmd == SW_SHOWMAXIMIZED.0 as u32 || native::is_zoomed(native_hwnd);
         if !maximized {
             if let Some(actual) = native::window_rect(native_hwnd) {
                 if rects_equal(actual, frame) {

@@ -3,6 +3,7 @@
 //! Ports `WindowQuery`: `EnumWindows` in z-order, iconic/zero-area filtering,
 //! policy eligibility, and the focusable/minimizable/layout projections.
 
+use windows::core::BOOL;
 use windows::Win32::Foundation::*;
 use windows::Win32::UI::WindowsAndMessaging::*;
 
@@ -43,17 +44,20 @@ pub fn enumerate_excluding(excluded: u64) -> Vec<WindowCandidate> {
         }
         if let Some(frame) = native::window_rect(hwnd) {
             if frame.width() > 0 && frame.height() > 0 {
-                pack.out.push(WindowCandidate { hwnd: raw as u64, frame });
+                pack.out.push(WindowCandidate {
+                    hwnd: raw as u64,
+                    frame,
+                });
             }
         }
         BOOL::from(true)
     }
-    let mut pack = Pack { excluded, out: Vec::new() };
+    let mut pack = Pack {
+        excluded,
+        out: Vec::new(),
+    };
     unsafe {
-        let _ = EnumWindows(
-            Some(packed_proc),
-            LPARAM(&mut pack as *mut Pack as isize),
-        );
+        let _ = EnumWindows(Some(packed_proc), LPARAM(&mut pack as *mut Pack as isize));
     }
     pack.out
 }

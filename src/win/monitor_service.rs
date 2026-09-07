@@ -7,12 +7,13 @@
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
 
+use windows::core::BOOL;
 use windows::Win32::Foundation::*;
+use windows::Win32::Graphics::Gdi::*;
 use windows::Win32::UI::HiDpi::*;
-use windows::Win32::UI::WindowsAndMessaging::*;
 
 use super::native;
-use crate::core::monitor::{MonitorMoveSizePolicy, MonitorSnapshot, apply_padding};
+use crate::core::monitor::{apply_padding, MonitorMoveSizePolicy, MonitorSnapshot};
 
 struct Cache {
     generation: u64,
@@ -51,15 +52,15 @@ pub fn invalidate() {
 
 /// Snapshot for the monitor containing a window (raw HWND as u64).
 pub fn for_window(hwnd: u64) -> Option<MonitorSnapshot> {
-    let monitor = unsafe { MonitorFromWindow(native::from_raw(hwnd as isize), MONITOR_DEFAULTTONEAREST) };
+    let monitor =
+        unsafe { MonitorFromWindow(native::from_raw(hwnd as isize), MONITOR_DEFAULTTONEAREST) };
     read(monitor)
 }
 
 /// Snapshot for the monitor containing a rect.
 pub fn for_rect(rect: crate::core::rect::Rect) -> Option<MonitorSnapshot> {
-    let mut native_rect = native::rect_to_native(rect);
-    let monitor =
-        unsafe { MonitorFromRect(&mut native_rect as *mut RECT, MONITOR_DEFAULTTONEAREST) };
+    let native_rect = native::rect_to_native(rect);
+    let monitor = unsafe { MonitorFromRect(&native_rect as *const RECT, MONITOR_DEFAULTTONEAREST) };
     read(monitor)
 }
 
@@ -67,7 +68,10 @@ pub fn for_rect(rect: crate::core::rect::Rect) -> Option<MonitorSnapshot> {
 pub fn for_point(point: crate::core::rect::Point) -> Option<MonitorSnapshot> {
     let monitor = unsafe {
         MonitorFromPoint(
-            windows::Win32::Foundation::POINT { x: point.x, y: point.y },
+            windows::Win32::Foundation::POINT {
+                x: point.x,
+                y: point.y,
+            },
             MONITOR_DEFAULTTONEAREST,
         )
     };
@@ -81,7 +85,7 @@ pub fn all() -> Vec<MonitorSnapshot> {
             return all;
         }
     }
-    let mut monitors = Vec::new();
+    let mut monitors: Vec<MonitorSnapshot> = Vec::new();
     unsafe extern "system" fn enum_proc(
         monitor: HMONITOR,
         _hdc: HDC,
@@ -119,8 +123,10 @@ fn read(monitor: HMONITOR) -> Option<MonitorSnapshot> {
             return Some(*snapshot);
         }
     }
-    let mut info = MONITORINFO::default();
-    info.cbSize = core::mem::size_of::<MONITORINFO>() as u32;
+    let mut info = MONITORINFO {
+        cbSize: core::mem::size_of::<MONITORINFO>() as u32,
+        ..Default::default()
+    };
     unsafe {
         if GetMonitorInfoW(monitor, &mut info).as_bool() {
             let (dpi_x, dpi_y) = monitor_dpi(monitor);

@@ -55,10 +55,7 @@ pub fn evaluate(hwnd: u64) -> Decision {
     }
     let pid = native::process_id(hwnd_native);
     if pid == 0 || pid == native::own_process_id() {
-        return denied(
-            Restriction::LoopW,
-            "LoopW windows are not action targets.",
-        );
+        return denied(Restriction::LoopW, "LoopW windows are not action targets.");
     }
     let style = native::window_style(hwnd_native);
     let ex_style = native::window_ex_style(hwnd_native);
@@ -204,7 +201,7 @@ fn is_excluded_by_settings(pid: u32) -> bool {
 
 fn is_borderless_fullscreen(hwnd: windows::Win32::Foundation::HWND, style: isize) -> bool {
     use windows::Win32::Foundation::RECT;
-    use windows::Win32::Graphics::Dwm::{DWMWA_EXTENDED_FRAME_BOUNDS, DwmGetWindowAttribute};
+    use windows::Win32::Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_EXTENDED_FRAME_BOUNDS};
     if (style as u32 & WS_CAPTION.0) != 0 {
         return false;
     }

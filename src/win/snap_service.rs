@@ -32,8 +32,15 @@ pub enum SnapTrack {
 #[derive(Debug, Clone)]
 pub enum SnapFinish {
     Nothing,
-    Apply { window: u64, action: WindowAction, frame: Rect },
-    Restore { window: u64, frame: Rect },
+    Apply {
+        window: u64,
+        action: WindowAction,
+        frame: Rect,
+    },
+    Restore {
+        window: u64,
+        frame: Rect,
+    },
 }
 
 struct SnapState {
@@ -91,21 +98,25 @@ pub fn begin_at_cursor(cursor: Point) {
     let Some(frame) = native::window_rect(hwnd) else {
         return;
     };
-    *state().lock().expect("snap state poisoned") = Some(SnapState {
-        window: raw,
-        original_frame: frame,
-        start_point: cursor,
-        dragging: false,
-        target: None,
-        had_candidate: false,
-    });
+    if let Ok(mut slot) = state().lock() {
+        *slot = Some(SnapState {
+            window: raw,
+            original_frame: frame,
+            start_point: cursor,
+            dragging: false,
+            target: None,
+            had_candidate: false,
+        });
+    }
 }
 
 /// Per-frame tracking. Returns preview action + optional finished gesture.
 /// The watchdog is folded in: a physically-released button or a dead window
 /// resolves here as a cancel when no SnapEnd event arrives first.
 pub fn track(cursor: Point) -> (SnapTrack, Option<SnapFinish>) {
-    let mut slot = state().lock().expect("snap state poisoned");
+    let Ok(mut slot) = state().lock() else {
+        return (SnapTrack::Idle, None);
+    };
     let Some(drag) = slot.as_mut() else {
         return (SnapTrack::Idle, None);
     };
@@ -115,8 +126,10 @@ pub fn track(cursor: Point) -> (SnapTrack, Option<SnapFinish>) {
         let finished = finish_gesture(drag, false);
         *slot = None;
         let preview = match &finished {
-            Some(SnapFinish::Restore { .. }) | Some(SnapFinish::Apply { .. }) => SnapTrack::Hide,
-            None => SnapTrack::Hide,
+            Some(SnapFinish::Restore { .. })
+            | Some(SnapFinish::Apply { .. })
+            | Some(SnapFinish::Nothing)
+            | None => SnapTrack::Hide,
         };
         return (preview, finished);
     }
@@ -161,10 +174,8 @@ pub fn track(cursor: Point) -> (SnapTrack, Option<SnapFinish>) {
 
 /// Button-up resolution from a SnapEnd event.
 pub fn end_released() -> Option<SnapFinish> {
-    let mut slot = state().lock().expect("snap state poisoned");
-    let Some(drag) = slot.take() else {
-        return None;
-    };
+    let mut slot = state().lock().ok()?;
+    let drag = slot.take()?;
     if !drag.dragging || !drag.had_candidate {
         return None;
     }
@@ -194,10 +205,15 @@ fn finish_gesture(drag: &SnapState, released: bool) -> Option<SnapFinish> {
 
 /// Current live target for preview refresh (display-change path).
 pub fn current_target() -> Option<(WindowAction, Rect)> {
-    state().lock().ok().and_then(|s| s.as_ref().and_then(|d| d.target))
+    state()
+        .lock()
+        .ok()
+        .and_then(|s| s.as_ref().and_then(|d| d.target))
 }
 
 /// Abort any in-flight gesture (feature disabled mid-drag).
 pub fn abort() {
-    *state().lock().expect("snap state poisoned") = None;
+    if let Ok(mut slot) = state().lock() {
+        *slot = None;
+    }
 }

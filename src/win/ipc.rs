@@ -9,13 +9,17 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
+use windows::core::{BOOL, PCWSTR};
 use windows::Win32::Foundation::*;
+use windows::Win32::Security::Authorization::{
+    ConvertSidToStringSidW, ConvertStringSecurityDescriptorToSecurityDescriptorW, SDDL_REVISION_1,
+};
 use windows::Win32::Security::*;
 use windows::Win32::Storage::FileSystem::*;
 use windows::Win32::System::Pipes::*;
-use windows::core::PCWSTR;
+use windows::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
 
-use super::events::{RuntimeEvent, push};
+use super::events::{push, RuntimeEvent};
 
 pub const PIPE_NAME: &str = r"\\.\pipe\LoopW-Commands";
 const MAX_COMMAND_CHARS: usize = 256;
@@ -63,17 +67,11 @@ fn pipe_name_wide() -> Vec<u16> {
 
 /// SECURITY_ATTRIBUTES restricting the pipe to System + current user,
 /// mirroring `PipeOptions.CurrentUserOnly`.
-fn current_user_sa() -> Option<(SECURITY_ATTRIBUTES, Vec<u8>) {
+fn current_user_sa() -> Option<(SECURITY_ATTRIBUTES, Vec<u8>)> {
     unsafe {
         // Current user SID -> string -> SDDL "D:P(A;;GA;;;SY)(A;;GA;;;sid)".
         let mut token = HANDLE::default();
-        if OpenProcessToken(
-            GetCurrentProcess(),
-            TOKEN_QUERY,
-            &mut token,
-        )
-        .is_err()
-        {
+        if OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut token).is_err() {
             return None;
         }
         let mut needed = 0u32;
@@ -98,7 +96,7 @@ fn current_user_sa() -> Option<(SECURITY_ATTRIBUTES, Vec<u8>) {
             return None;
         }
         let sid = sid_string.to_string().unwrap_or_default();
-        LocalFree(sid_string.0 as isize).ok();
+        let _ = LocalFree(Some(HLOCAL(sid_string.0 as *mut core::ffi::c_void)));
         if sid.is_empty() {
             return None;
         }
@@ -118,7 +116,7 @@ fn current_user_sa() -> Option<(SECURITY_ATTRIBUTES, Vec<u8>) {
         }
         let sa = SECURITY_ATTRIBUTES {
             nLength: core::mem::size_of::<SECURITY_ATTRIBUTES>() as u32,
-            lpSecurityDescriptor: descriptor.0 as *mut core::ffi::c_void,
+            lpSecurityDescriptor: descriptor.0,
             bInheritHandle: BOOL(0),
         };
         // NOTE: descriptor intentionally leaks for process lifetime; the
@@ -130,8 +128,7 @@ fn current_user_sa() -> Option<(SECURITY_ATTRIBUTES, Vec<u8>) {
 fn server_loop() {
     let name = pipe_name_wide();
     // Leak the SA pair once; reused for every accepted instance.
-    let sa_box: Option<Box<(SECURITY_ATTRIBUTES, Vec<u8>)>> =
-        current_user_sa().map(Box::new);
+    let sa_box: Option<Box<(SECURITY_ATTRIBUTES, Vec<u8>)>> = current_user_sa().map(Box::new);
     let sa_ptr = sa_box
         .as_ref()
         .map(|pair| &pair.0 as *const SECURITY_ATTRIBUTES);
@@ -147,13 +144,13 @@ fn server_loop() {
                 4096,
                 4096,
                 0,
-                sa_ptr.map(|p| p as *const SECURITY_ATTRIBUTES),
+                sa_ptr,
             )
         };
-        let Ok(pipe) = pipe else {
+        if pipe.is_invalid() {
             std::thread::sleep(Duration::from_millis(500));
             continue;
-        };
+        }
         let connected = unsafe { ConnectNamedPipe(pipe, None) };
         if let Err(error) = connected {
             // ERROR_PIPE_CONNECTED: client connected between create + listen.
@@ -200,11 +197,19 @@ fn read_command(pipe: HANDLE) -> Option<String> {
             return None;
         }
         let mut read = 0u32;
-        if unsafe { ReadFile(pipe, Some(&mut chunk), Some(&mut read), None) }.is_err() {
-            return if bytes.is_empty() { None } else { Some(decode(&bytes)) };
+        if unsafe { ReadFile(pipe, Some(&mut chunk[..]), Some(&mut read), None) }.is_err() {
+            return if bytes.is_empty() {
+                None
+            } else {
+                Some(decode(&bytes))
+            };
         }
         if read == 0 {
-            return if bytes.is_empty() { None } else { Some(decode(&bytes)) };
+            return if bytes.is_empty() {
+                None
+            } else {
+                Some(decode(&bytes))
+            };
         }
         if chunk[0] == b'\n' {
             return Some(decode(&bytes));
@@ -227,7 +232,7 @@ fn write_line(pipe: HANDLE, reply: &str) {
     let bytes = core::mem::take(&mut text).into_bytes();
     let mut written = 0u32;
     unsafe {
-        let _ = WriteFile(pipe, Some(&bytes), Some(&mut written), None);
+        let _ = WriteFile(pipe, Some(&bytes[..]), Some(&mut written), None);
         let _ = FlushFileBuffers(pipe);
     }
 }
@@ -238,7 +243,7 @@ pub fn try_forward_to_running(command: &str) -> Option<String> {
     let name = pipe_name_wide();
     for attempt in 0..3 {
         unsafe {
-            if WaitNamedPipeW(PCWSTR(name.as_ptr()), 250).is_err() {
+            if !WaitNamedPipeW(PCWSTR(name.as_ptr()), 250).as_bool() {
                 if attempt < 2 {
                     std::thread::sleep(Duration::from_millis(50));
                     continue;
@@ -264,7 +269,7 @@ pub fn try_forward_to_running(command: &str) -> Option<String> {
             };
             let line = format!("{command}\n").into_bytes();
             let mut written = 0u32;
-            if WriteFile(pipe, Some(&line), Some(&mut written), None).is_err() {
+            if WriteFile(pipe, Some(&line[..]), Some(&mut written), None).is_err() {
                 let _ = CloseHandle(pipe);
                 if attempt < 2 {
                     std::thread::sleep(Duration::from_millis(50));
@@ -295,8 +300,14 @@ fn read_reply_line(pipe: HANDLE) -> Option<String> {
             return None;
         }
         let mut read = 0u32;
-        if unsafe { ReadFile(pipe, Some(&mut chunk), Some(&mut read), None) }.is_err() || read == 0 {
-            return if bytes.is_empty() { None } else { Some(decode(&bytes)) };
+        if unsafe { ReadFile(pipe, Some(&mut chunk[..]), Some(&mut read), None) }.is_err()
+            || read == 0
+        {
+            return if bytes.is_empty() {
+                None
+            } else {
+                Some(decode(&bytes))
+            };
         }
         if chunk[0] == b'\n' {
             return Some(decode(&bytes));
@@ -312,7 +323,3 @@ pub fn reply_for(command: &str) -> String {
         Err(error) => format!("ERROR: {error}"),
     }
 }
-
-// Re-export for callers that need raw process/token access in tests.
-use windows::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
-use windows::Win32::System::Threading::{GetTokenInformation, TOKEN_QUERY, TokenUser, TOKEN_USER};
