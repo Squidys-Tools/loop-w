@@ -6,6 +6,7 @@
 //! the app stays hidden until tray, `activate`, or a second process.
 
 use std::sync::{Mutex, OnceLock};
+use std::time::Duration;
 
 use iced::keyboard;
 use iced::widget::{button, column, container, row, scrollable, text};
@@ -244,6 +245,10 @@ impl State {
 fn subscription(_state: &State) -> Subscription<Message> {
     Subscription::batch([
         window::frames().map(|_| Message::FrameTick),
+        // Steady pump independent of windows: with no window open (tray-only)
+        // iced emits no frame events, which would starve tray polling, event
+        // draining, and snap/stash tracking. Match the ~60 Hz frame cadence.
+        iced::time::every(Duration::from_millis(16)).map(|_| Message::FrameTick),
         window::close_requests().map(Message::WindowClosed),
         iced::event::listen().map(|event| match event {
             iced::Event::Keyboard(keyboard::Event::KeyPressed { key, .. }) => {
