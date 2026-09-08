@@ -197,7 +197,8 @@ pub fn run(
                 Theme::Dark
             })
         })
-        .subscription(subscription)
+        // TEMP-PROBE: subscription disabled to isolate blank-canvas bug.
+        // .subscription(subscription)
         .run()
 }
 
@@ -205,12 +206,15 @@ impl State {
     fn boot() -> (State, Task<Message>) {
         let settings = persistence::load();
         win::shared::init(settings.clone());
-        let tray = win::tray::build().ok();
-        win::hooks::start();
-        let hooks_ok = win::hooks::is_active();
-        win::display::start();
-        win::ipc::start_server();
-        win::stash_service::restore_persisted();
+        // TEMP-PROBE: skip all runtime init to isolate blank-canvas bug.
+        // let tray = win::tray::build().ok();
+        // win::hooks::start();
+        // let hooks_ok = win::hooks::is_active();
+        // win::display::start();
+        // win::ipc::start_server();
+        // win::stash_service::restore_persisted();
+        let tray = None;
+        let hooks_ok = true;
         let args = BOOT_ARGS
             .get()
             .and_then(|slot| slot.lock().ok())
@@ -307,6 +311,34 @@ fn commit_settings(state: &mut State, status: &str) {
 
 #[allow(clippy::too_many_lines)]
 fn update(state: &mut State, message: Message) -> Task<Message> {
+    // TEMP-DEBUG input probe (remove after): log every message received.
+    if std::env::var("LOOPW_MSGS").is_ok() {
+        use std::io::Write;
+        static TICKED: std::sync::atomic::AtomicBool =
+            std::sync::atomic::AtomicBool::new(false);
+        let interesting = !matches!(message, Message::FrameTick)
+            || !TICKED.swap(true, std::sync::atomic::Ordering::Relaxed);
+        if interesting {
+            let path =
+                std::env::temp_dir().join(format!("loopw-msgs-{}.log", std::process::id()));
+            if let Ok(mut file) = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(path)
+            {
+                let name = match &message {
+                    Message::Noop => "Noop",
+                    Message::SelectSection(_) => "SelectSection",
+                    Message::FrameTick => "FrameTick(first)",
+                    Message::WindowClosed(_) => "WindowClosed",
+                    Message::OverlayKey(_) => "OverlayKey",
+                    Message::OverlayCommit => "OverlayCommit",
+                    _ => "other",
+                };
+                let _ = writeln!(file, "{name} section={:?}", state.section);
+            }
+        }
+    }
     match message {
         Message::Noop => Task::none(),
         Message::SelectSection(section) => {
@@ -1397,7 +1429,8 @@ fn settings_view(state: &State) -> Element<'_, Message> {
 
     let layout = row![
         container(sidebar.spacing(6).padding(16)).width(Length::Fixed(240.0)),
-        container(scrollable(content))
+        // TEMP-PROBE: scrollable removed to isolate blank-canvas bug.
+        container(content)
             .width(Length::Fill)
             .height(Length::Fill),
     ];

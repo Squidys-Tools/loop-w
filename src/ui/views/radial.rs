@@ -1,11 +1,13 @@
 //! Radial section: text-free surface first, geometry + assignments below.
 
+use iced::widget::canvas::Canvas;
 use iced::widget::{button, column, container, row, slider, text, toggler};
 use iced::{Element, Length};
 
 use crate::core::radial::GEOMETRY;
 use crate::ui::app::{Message, Section, State};
 use crate::ui::widgets::radial_canvas::{self, RadialCanvas};
+use crate::ui::widgets::radial_canvas::ProbeSquare;
 
 pub fn view(state: &State) -> Element<'_, Message> {
     let settings = &state.settings;
@@ -40,7 +42,10 @@ pub fn view(state: &State) -> Element<'_, Message> {
     let content = column![
         text("Radial menu").size(20),
         text("The overlay itself never shows text — labels here are settings-only.").size(13),
-        radial_canvas::view(canvas, 260.0),
+        // TEMP-PROBE: unit program instead of RadialCanvas.
+        Canvas::new(ProbeSquare)
+            .width(Length::Fixed(260.0))
+            .height(Length::Fixed(260.0)),
         row![
             text("Enabled").size(14),
             toggler(settings.radial_enabled).on_toggle(Message::SetRadialEnabled),

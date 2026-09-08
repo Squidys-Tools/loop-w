@@ -22,6 +22,32 @@ pub struct RadialCanvas {
     pub sector_stroke: Color,
 }
 
+/// TEMP-PROBE: minimal unit program. If THIS renders red where RadialCanvas
+/// does not, the program type/registration is the culprit.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ProbeSquare;
+
+impl<Message> canvas::Program<Message> for ProbeSquare {
+    type State = ();
+
+    fn draw(
+        &self,
+        _state: &Self::State,
+        renderer: &Renderer,
+        _theme: &Theme,
+        bounds: Rectangle,
+        _cursor: mouse::Cursor,
+    ) -> Vec<Geometry> {
+        let mut frame = Frame::new(renderer, bounds.size());
+        let full = Path::rectangle(
+            Point::new(0.0, 0.0),
+            iced::Size::new(bounds.width, bounds.height),
+        );
+        frame.fill(&full, Color::from_rgb(1.0, 0.0, 0.0));
+        vec![frame.into_geometry()]
+    }
+}
+
 impl RadialCanvas {
     pub fn from_settings(settings: &crate::settings::AppSettings) -> Self {
         Self {
@@ -54,49 +80,32 @@ impl<Message> canvas::Program<Message> for RadialCanvas {
         bounds: Rectangle,
         _cursor: mouse::Cursor,
     ) -> Vec<Geometry> {
-        let mut frame = Frame::new(renderer, bounds.size());
-        let center = Point::new(bounds.width / 2.0, bounds.height / 2.0);
-        let outer = self.outer_radius.min(bounds.width / 2.0 - 4.0);
-        let inner = self.inner_radius.min(outer - 8.0);
-
-        // Ring backdrop: outer disc + punched center via even-odd-ish layering.
-        let ring_path = Path::circle(center, outer);
-        frame.fill(&ring_path, self.ring);
-        // Wedge separators (quiet lines).
-        for slot in GEOMETRY {
-            let a = (slot.center_deg()).to_radians() as f32;
-            let p1 = Point::new(center.x + inner * a.cos(), center.y + inner * a.sin());
-            let p2 = Point::new(center.x + outer * a.cos(), center.y + outer * a.sin());
-            let line = Path::line(p1, p2);
-            frame.stroke(
-                &line,
-                Stroke::default()
-                    .with_width(1.0)
-                    .with_color(Color::from_rgba(1.0, 1.0, 1.0, 0.08)),
-            );
-        }
-        // Hovered wedge highlight only.
-        if let Some(index) = self.hovered {
-            if let Some(slot) = GEOMETRY.get(index) {
-                let wedge = wedge_path(center, outer, inner, slot.from_deg, slot.to_deg);
-                frame.fill(&wedge, self.sector_fill);
-                frame.stroke(
-                    &wedge,
-                    Stroke::default()
-                        .with_width(2.0)
-                        .with_color(self.sector_stroke),
+        // TEMP-PROBE: log draw inputs once.
+        if std::env::var("LOOPW_DRAWLOG").is_ok() {
+            use std::io::Write;
+            let path =
+                std::env::temp_dir().join(format!("loopw-draw-{}.log", std::process::id()));
+            if let Ok(mut file) = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(path)
+            {
+                let _ = writeln!(
+                    file,
+                    "draw bounds={:?} outer={} inner={} ring={:?}",
+                    bounds, self.outer_radius, self.inner_radius, self.ring,
                 );
             }
         }
-        // Inner hole outline.
-        let hole = Path::circle(center, inner);
-        frame.stroke(
-            &hole,
-            Stroke::default()
-                .with_width(1.5)
-                .with_color(Color::from_rgba(1.0, 1.0, 1.0, 0.14)),
+        // TEMP-PROBE: solid red full-bounds fill. If this shows, draw()
+        // executes and the bug is in the geometry below; if not, draw()
+        // never runs or bounds are degenerate.
+        let mut frame = Frame::new(renderer, bounds.size());
+        let full = Path::rectangle(
+            Point::new(0.0, 0.0),
+            iced::Size::new(bounds.width, bounds.height),
         );
-
+        frame.fill(&full, Color::from_rgb(1.0, 0.0, 0.0));
         vec![frame.into_geometry()]
     }
 }

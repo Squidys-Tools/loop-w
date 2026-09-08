@@ -19,6 +19,13 @@ fn main() -> iced::Result {
     // Per-monitor V2 awareness so every rect stays in physical pixels.
     // (Replaces the C# app.manifest; falls back gracefully on Win7.)
     enable_dpi_awareness();
+    // Prefer the DX11 backend: default DX12 presents a blank window on
+    // some Intel D3D12 drivers (verified on Iris Xe: DX11 renders, DX12 +
+    // every present mode stays white). A 2D utility cannot tell the two
+    // apart, so reliability wins. Explicit user override always respected.
+    if std::env::var_os("WGPU_BACKEND").is_none() {
+        std::env::set_var("WGPU_BACKEND", "dx11");
+    }
     cli::run()
 }
 
