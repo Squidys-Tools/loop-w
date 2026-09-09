@@ -1,11 +1,12 @@
 //! Text-free radial menu renderer (iced canvas).
 //!
-//! Draws the annulus + eight wedge separators with no labels — the overlay
-//! invariant. Only the hovered wedge gets the sector fill/stroke; at rest
-//! the ring stays quiet.
+//! Draws a clean donut — an annulus with a punched, see-through center
+//! and no markings at rest. The only visible structure is the hovered
+//! wedge's sector fill/stroke, so users perceive the divisions purely
+//! through the highlight.
 
 use iced::mouse;
-use iced::widget::canvas::{self, Canvas, Frame, Geometry, Path, Stroke};
+use iced::widget::canvas::{self, Canvas, Fill, Frame, Geometry, Path, Stroke};
 use iced::{Color, Element, Length, Point, Rectangle, Renderer, Theme};
 
 use crate::core::radial::GEOMETRY;
@@ -20,32 +21,6 @@ pub struct RadialCanvas {
     pub ring: Color,
     pub sector_fill: Color,
     pub sector_stroke: Color,
-}
-
-/// TEMP-PROBE: minimal unit program. If THIS renders red where RadialCanvas
-/// does not, the program type/registration is the culprit.
-#[derive(Debug, Clone, Copy, Default)]
-pub struct ProbeSquare;
-
-impl<Message> canvas::Program<Message> for ProbeSquare {
-    type State = ();
-
-    fn draw(
-        &self,
-        _state: &Self::State,
-        renderer: &Renderer,
-        _theme: &Theme,
-        bounds: Rectangle,
-        _cursor: mouse::Cursor,
-    ) -> Vec<Geometry> {
-        let mut frame = Frame::new(renderer, bounds.size());
-        let full = Path::rectangle(
-            Point::new(0.0, 0.0),
-            iced::Size::new(bounds.width, bounds.height),
-        );
-        frame.fill(&full, Color::from_rgb(1.0, 0.0, 0.0));
-        vec![frame.into_geometry()]
-    }
 }
 
 impl RadialCanvas {
@@ -80,32 +55,41 @@ impl<Message> canvas::Program<Message> for RadialCanvas {
         bounds: Rectangle,
         _cursor: mouse::Cursor,
     ) -> Vec<Geometry> {
-        // TEMP-PROBE: log draw inputs once.
-        if std::env::var("LOOPW_DRAWLOG").is_ok() {
-            use std::io::Write;
-            let path =
-                std::env::temp_dir().join(format!("loopw-draw-{}.log", std::process::id()));
-            if let Ok(mut file) = std::fs::OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(path)
-            {
-                let _ = writeln!(
-                    file,
-                    "draw bounds={:?} outer={} inner={} ring={:?}",
-                    bounds, self.outer_radius, self.inner_radius, self.ring,
+        let mut frame = Frame::new(renderer, bounds.size());
+        let center = Point::new(bounds.width / 2.0, bounds.height / 2.0);
+        let outer = self.outer_radius.min(bounds.width / 2.0 - 4.0);
+        let inner = self.inner_radius.min(outer - 8.0);
+
+        // Donut backdrop: outer disc with the center punched out
+        // (even-odd fill), so the hole shows whatever is behind the
+        // overlay. The hole stays a live commit target (release inside it
+        // commits the center action) — only its visuals are cut out.
+        let ring = Path::new(|p| {
+            p.circle(center, outer);
+            p.circle(center, inner);
+        });
+        frame.fill(
+            &ring,
+            Fill {
+                rule: canvas::fill::Rule::EvenOdd,
+                ..Fill::from(self.ring)
+            },
+        );
+        // Hovered wedge highlight only — this is the single visual that
+        // reveals the wedge divisions.
+        if let Some(index) = self.hovered {
+            if let Some(slot) = GEOMETRY.get(index) {
+                let wedge = wedge_path(center, outer, inner, slot.from_deg, slot.to_deg);
+                frame.fill(&wedge, self.sector_fill);
+                frame.stroke(
+                    &wedge,
+                    Stroke::default()
+                        .with_width(2.0)
+                        .with_color(self.sector_stroke),
                 );
             }
         }
-        // TEMP-PROBE: solid red full-bounds fill. If this shows, draw()
-        // executes and the bug is in the geometry below; if not, draw()
-        // never runs or bounds are degenerate.
-        let mut frame = Frame::new(renderer, bounds.size());
-        let full = Path::rectangle(
-            Point::new(0.0, 0.0),
-            iced::Size::new(bounds.width, bounds.height),
-        );
-        frame.fill(&full, Color::from_rgb(1.0, 0.0, 0.0));
+
         vec![frame.into_geometry()]
     }
 }

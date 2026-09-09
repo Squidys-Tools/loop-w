@@ -77,6 +77,16 @@ pub const DEFAULT_ACTIONS: [WindowAction; 8] = [
 
 pub const SLOT_COUNT: usize = 8;
 
+/// Angular position (degrees) of a wedge boundary ray.
+///
+/// Separator lines belong on boundaries, not wedge centers: the highlight
+/// for slot `i` fills `from_deg..to_deg`, so its edges sit exactly on
+/// `boundary_deg(i)` and `boundary_deg(i + 1)`. Hit-testing
+/// ([`index_at`]) switches wedges on these same rays.
+pub fn boundary_deg(index: usize) -> f64 {
+    GEOMETRY[index % GEOMETRY.len()].from_deg
+}
+
 /// Map a cursor angle (degrees, 0 = right, clockwise positive) to a wedge.
 pub fn index_at(angle_deg: f64) -> usize {
     let normalized = (angle_deg + 360.0) % 360.0;
@@ -116,5 +126,29 @@ mod tests {
         distinct.sort_by_key(|a| *a as u8);
         distinct.dedup();
         assert_eq!(distinct.len(), 8);
+    }
+
+    #[test]
+    fn wedge_spans_tile_without_gaps() {
+        let pairs = GEOMETRY
+            .iter()
+            .zip(GEOMETRY.iter().cycle().skip(1))
+            .take(GEOMETRY.len());
+        for (slot, next) in pairs {
+            let gap = (slot.to_deg - next.from_deg).rem_euclid(360.0);
+            assert!(gap < 1e-9, "gap of {gap}° after {}", slot.label);
+        }
+    }
+
+    #[test]
+    fn boundaries_match_hit_testing() {
+        // Each boundary ray is exactly where `index_at` switches wedges,
+        // so separator lines drawn on boundaries stay inline with the
+        // committed sections.
+        for (i, _) in GEOMETRY.iter().enumerate() {
+            let b = boundary_deg(i);
+            assert_eq!(index_at(b - 0.1), (i + GEOMETRY.len() - 1) % GEOMETRY.len());
+            assert_eq!(index_at(b + 0.1), i % GEOMETRY.len());
+        }
     }
 }
