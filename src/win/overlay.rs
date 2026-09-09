@@ -29,17 +29,33 @@ pub fn radial_bounds(cursor: crate::core::rect::Point, outer_radius: f64) -> Rec
 /// and hover math are physical. Every overlay crosses this boundary once,
 /// here, so the two systems can never drift apart on scaled displays.
 pub fn to_logical(frame: Rect, scale: f64) -> (f32, f32, f32, f32) {
-    let scale = if scale.is_finite() && scale > 0.0 {
-        scale as f32
-    } else {
-        1.0
-    };
+    let scale = valid_scale(scale);
     (
         frame.left as f32 / scale,
         frame.top as f32 / scale,
         frame.width() as f32 / scale,
         frame.height() as f32 / scale,
     )
+}
+
+/// Convert a physical target frame into logical coordinates relative to a
+/// fixed physical overlay frame.
+pub fn to_local_logical(target: Rect, overlay: Rect, scale: f64) -> (f32, f32, f32, f32) {
+    let scale = valid_scale(scale);
+    (
+        (target.left - overlay.left) as f32 / scale,
+        (target.top - overlay.top) as f32 / scale,
+        target.width() as f32 / scale,
+        target.height() as f32 / scale,
+    )
+}
+
+fn valid_scale(scale: f64) -> f32 {
+    if scale.is_finite() && scale > 0.0 {
+        scale as f32
+    } else {
+        1.0
+    }
 }
 
 /// Apply click-through (+ tool-window) style to an overlay by title.
@@ -201,5 +217,31 @@ mod tests {
         let frame = Rect::new(0, 0, 100, 100);
         assert_eq!(to_logical(frame, 0.0), (0.0, 0.0, 100.0, 100.0));
         assert_eq!(to_logical(frame, f64::NAN), (0.0, 0.0, 100.0, 100.0));
+    }
+
+    #[test]
+    fn target_zone_stays_inside_fixed_overlay_after_transition() {
+        let overlay = Rect::new(0, 0, 1920, 1080);
+        let quarter = Rect::new(0, 0, 960, 540);
+        let half = Rect::new(0, 0, 1920, 540);
+        assert_eq!(
+            to_local_logical(quarter, overlay, 1.0),
+            (0.0, 0.0, 960.0, 540.0)
+        );
+        assert_eq!(
+            to_local_logical(half, overlay, 1.0),
+            (0.0, 0.0, 1920.0, 540.0)
+        );
+        assert!(half.right <= overlay.right && half.bottom <= overlay.bottom);
+    }
+
+    #[test]
+    fn local_target_translation_handles_dpi() {
+        let overlay = Rect::new(1920, 0, 3840, 1080);
+        let target = Rect::new(2880, 540, 3840, 1080);
+        assert_eq!(
+            to_local_logical(target, overlay, 2.0),
+            (480.0, 270.0, 480.0, 270.0)
+        );
     }
 }

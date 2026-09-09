@@ -11,7 +11,7 @@ use std::time::Duration;
 use iced::keyboard;
 use iced::theme::Base;
 use iced::widget::{button, column, container, row, scrollable, text};
-use iced::{window, Color, Element, Length, Subscription, Task, Theme};
+use iced::{window, Color, Element, Length, Rectangle, Subscription, Task, Theme};
 
 use crate::core::actions::WindowAction;
 use crate::core::cycle::CycleState;
@@ -138,10 +138,15 @@ struct RadialSession {
     scale: f64,
 }
 
-/// Open preview overlay session (`frame` physical, `window_size` logical).
+/// Open preview overlay session.
+///
+/// `frame` is the target rectangle in physical screen pixels. The preview
+/// HWND is deliberately kept at `overlay_frame` for the lifetime of the
+/// session; only the target rectangle drawn inside it changes on hover.
 struct PreviewSession {
     id: window::Id,
     frame: Rect,
+    overlay_frame: Rect,
     patch_tries: u8,
     window_size: (f32, f32),
     /// DPI scale at the frame origin: converts physical geometry to the
@@ -799,7 +804,7 @@ fn frame_tick(state: &mut State) -> Task<Message> {
         }
     }
     if let Some(session) = state.preview.as_mut() {
-        if session.patch_tries < 12 && win::overlay::patch_click_through(session.frame) {
+        if session.patch_tries < 12 && win::overlay::patch_click_through(session.overlay_frame) {
             session.patch_tries = 12;
         } else if session.patch_tries < 12 {
             session.patch_tries += 1;
@@ -810,7 +815,7 @@ fn frame_tick(state: &mut State) -> Task<Message> {
     // preview back below the radial (no activation, no focus steal); this
     // retries through the async open/move window like the patching above.
     if let (Some(radial), Some(preview)) = (state.radial.as_ref(), state.preview.as_ref()) {
-        win::overlay::order_preview_below_radial(preview.frame, radial_expected(radial));
+        win::overlay::order_preview_below_radial(preview.overlay_frame, radial_expected(radial));
     }
     Task::batch(tasks)
 }
@@ -1118,26 +1123,35 @@ fn ensure_preview(state: &mut State, tasks: &mut Vec<Task<Message>>, frame: Rect
     if frame.width() <= 0 || frame.height() <= 0 {
         return;
     }
+    let overlay_frame = preview_overlay_frame(frame);
     if let Some(session) = state.preview.as_ref() {
         if session.frame == frame {
             return;
         }
+        // Most hover transitions stay on one monitor. Keep the HWND and its
+        // iced surface stable in that case; the canvas will redraw the new
+        // target rectangle without any native move/resize race.
+        if session.overlay_frame == overlay_frame {
+            if let Some(session) = state.preview.as_mut() {
+                session.frame = frame;
+            }
+            return;
+        }
+
         let id = session.id;
-        // Preview frames are physical; the window lives in logical pixels.
-        let scale = native::dpi_scale_at_point(Point::new(frame.left, frame.top));
-        let (lx, ly, lw, lh) = win::overlay::to_logical(frame, scale);
+        // A monitor transition is uncommon and changes the fixed surface's
+        // bounds. Update that surface only for the transition itself.
+        let scale = native::dpi_scale_at_point(Point::new(overlay_frame.left, overlay_frame.top));
+        let (lx, ly, lw, lh) = win::overlay::to_logical(overlay_frame, scale);
         if let Some(session) = state.preview.as_mut() {
             session.frame = frame;
+            session.overlay_frame = overlay_frame;
             session.window_size = (lw, lh);
             session.scale = scale;
         }
-        // Once the window exists, keep its native frame in physical pixels.
-        // Sending move and resize as separate logical iced effects can race
-        // during a quadrant/half transition: the compositor may paint the
-        // old canvas into the new, smaller/larger surface for a frame and
-        // leave one section clipped. SetWindowPos updates both dimensions
-        // atomically in the same coordinate space used by target_frame.
-        if !win::overlay::set_preview_frame(frame) {
+        // This path is only for a monitor change. Keep the native fallback,
+        // but never use it for ordinary quadrant/half transitions.
+        if !win::overlay::set_preview_frame(overlay_frame) {
             // The HWND can briefly be unavailable while an open/close is
             // settling. Keep the logical fallback for that short window.
             tasks.push(window::move_to(id, iced::Point::new(lx, ly)));
@@ -1145,17 +1159,31 @@ fn ensure_preview(state: &mut State, tasks: &mut Vec<Task<Message>>, frame: Rect
         }
         return;
     }
-    let scale = native::dpi_scale_at_point(Point::new(frame.left, frame.top));
-    let (lx, ly, lw, lh) = win::overlay::to_logical(frame, scale);
+    let scale = native::dpi_scale_at_point(Point::new(overlay_frame.left, overlay_frame.top));
+    let (lx, ly, lw, lh) = win::overlay::to_logical(overlay_frame, scale);
     let (id, task) = window::open(preview_window_settings(lx, ly, lw, lh));
     state.preview = Some(PreviewSession {
         id,
         frame,
+        overlay_frame,
         patch_tries: 0,
         window_size: (lw, lh),
         scale,
     });
     tasks.push(task.map(Message::PreviewOpened));
+}
+
+/// Keep the preview surface large and stable while the target changes.
+///
+/// A target zone is always on one monitor, so the monitor frame is sufficient
+/// to contain every half/quarter rectangle on that monitor. Using the full
+/// monitor (rather than the target frame) means iced never has to resize its
+/// canvas during radial hover transitions.
+fn preview_overlay_frame(frame: Rect) -> Rect {
+    win::monitor_service::for_rect(frame)
+        .map(|monitor| monitor.monitor)
+        .filter(|monitor| !monitor.is_empty())
+        .unwrap_or(frame)
 }
 
 fn close_preview(state: &mut State, tasks: &mut Vec<Task<Message>>) {
@@ -1413,6 +1441,14 @@ fn view(state: &State, window: window::Id) -> Element<'_, Message> {
                 canvas.corner_radius /= scale;
                 canvas.border_width /= scale;
             }
+            let (x, y, width, height) =
+                win::overlay::to_local_logical(session.frame, session.overlay_frame, session.scale);
+            canvas.target = Some(Rectangle {
+                x,
+                y,
+                width,
+                height,
+            });
             return super::views::overlay::preview(
                 canvas,
                 session.window_size.0,
