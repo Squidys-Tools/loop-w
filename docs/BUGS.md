@@ -102,3 +102,39 @@ gates (`cargo fmt --check`, `cargo test --locked`,
   freeing it would require reference counting for zero benefit.
 - **Revisit if:** never — only noted so it isn't "fixed" into a
   use-after-free.
+
+## 9. Canvas geometry collapses in the settings window — under investigation
+
+- **Where:** `src/ui/widgets/radial_canvas.rs` /
+  `src/ui/widgets/preview_canvas.rs` as hosted by the settings window
+  (`src/ui/views/radial.rs`, `src/ui/views/preview.rs` inside the
+  `scrollable` in `src/ui/app.rs` `settings_view`).
+- **What:** canvas geometry rasterizes as a thin vertical sliver instead of
+  the drawn shapes. Measured on 1166x809 @ scale 1.0: a full-bounds
+  260x260 probe rect at layout `(256, 82.9)` appears as pixels
+  `x 512-515, y 196-322` — stable across frames, PIDs, and runs
+  (pixel-scanned, not eyeballed). Same program code renders correctly in
+  the small transparent overlay windows, so the live radial menu and
+  target preview are unaffected; only the settings-page previews are
+  blank. `draw()` itself runs every frame with correct bounds, radii,
+  and colors (verified with temporary file logging, since removed).
+- **Why deferred:** the product surfaces (overlays) work; only the
+  settings-page preview copies are blank. Bisected out: daemon clear
+  color (identical sliver with opaque and transparent clear), the
+  settings root-container background quad, separator geometry, and all
+  app-side layout inputs. The sliver's x sits at exactly 2x the canvas
+  origin (256 -> 512), which smells like a doubled translation in the
+  canvas-geometry clip/transform path, but every shared input in that
+  path (layout bounds, layer transform stack, scissor, projection) was
+  traced through iced 0.14 / iced_wgpu source and reads correct — quads
+  and text in the same window render perfectly, so only the triangle
+  (lyon-tessellated geometry) pipeline is affected, in one window.
+- **Revisit if:** a second machine/driver reproduces it (points at iced
+  + scrollable + large-surface interaction, file upstream with the
+  pixel measurements above), or it reproduces nowhere else (points at
+  this machine's DX11 driver state — try `WGPU_BACKEND=vulkan`,
+  driver update, `ICED_BACKEND=tiny-skia` if wired). Fix direction:
+  RenderDoc/Pix capture of one settings frame to see the actual
+  viewport, scissor, and vertex data for the canvas draw call; do not
+  "fix" by reworking draw math — the math is proven correct by logs
+  and the working overlay.
