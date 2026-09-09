@@ -144,6 +144,9 @@ struct PreviewSession {
     frame: Rect,
     patch_tries: u8,
     window_size: (f32, f32),
+    /// DPI scale at the frame origin: converts physical geometry to the
+    /// logical values handed to iced (mirrors `RadialSession.scale`).
+    scale: f64,
 }
 
 /// Mutable UI + runtime state.
@@ -788,6 +791,13 @@ fn frame_tick(state: &mut State) -> Task<Message> {
             session.patch_tries += 1;
         }
     }
+    // The preview opens and moves after the radial, so it settles above it
+    // in the topmost band and hides the menu where they overlap. Pin the
+    // preview back below the radial (no activation, no focus steal); this
+    // retries through the async open/move window like the patching above.
+    if let (Some(radial), Some(preview)) = (state.radial.as_ref(), state.preview.as_ref()) {
+        win::overlay::order_preview_below_radial(preview.frame, radial_expected(radial));
+    }
     Task::batch(tasks)
 }
 
@@ -1105,9 +1115,14 @@ fn ensure_preview(state: &mut State, tasks: &mut Vec<Task<Message>>, frame: Rect
         if let Some(session) = state.preview.as_mut() {
             session.frame = frame;
             session.window_size = (lw, lh);
+            session.scale = scale;
         }
-        tasks.push(window::resize(id, iced::Size::new(lw, lh)));
+        // Move before resize: the logical size was computed for the new
+        // monitor's scale, so applying it while the window is still on the
+        // old monitor leaves a persistently wrong physical size (a clipped
+        // preview edge). Moving first lets the resize land on the right scale.
         tasks.push(window::move_to(id, iced::Point::new(lx, ly)));
+        tasks.push(window::resize(id, iced::Size::new(lw, lh)));
         return;
     }
     let scale = native::dpi_scale_at_point(Point::new(frame.left, frame.top));
@@ -1118,6 +1133,7 @@ fn ensure_preview(state: &mut State, tasks: &mut Vec<Task<Message>>, frame: Rect
         frame,
         patch_tries: 0,
         window_size: (lw, lh),
+        scale,
     });
     tasks.push(task.map(Message::PreviewOpened));
 }
@@ -1366,8 +1382,17 @@ fn view(state: &State, window: window::Id) -> Element<'_, Message> {
     }
     if let Some(session) = &state.preview {
         if session.id == window {
-            let canvas =
+            let mut canvas =
                 crate::ui::widgets::preview_canvas::PreviewCanvas::from_settings(&state.settings);
+            // Canvas shares the window's logical space, not physical pixels
+            // (same scaling as the radial overlay above): without this the
+            // padding, corner radius, and border grow with the DPI scale.
+            let scale = session.scale as f32;
+            if scale > 0.0 && scale.is_finite() {
+                canvas.padding /= scale;
+                canvas.corner_radius /= scale;
+                canvas.border_width /= scale;
+            }
             return super::views::overlay::preview(
                 canvas,
                 session.window_size.0,

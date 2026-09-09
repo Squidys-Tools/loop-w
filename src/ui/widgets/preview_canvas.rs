@@ -69,12 +69,18 @@ impl<Message> canvas::Program<Message> for PreviewCanvas {
 }
 
 /// View helper for the preview surface.
-pub fn view<Message>(canvas: PreviewCanvas, width: f32, height: f32) -> Element<'static, Message>
+///
+/// The canvas fills the window's actual client area instead of using a fixed
+/// size: `window::resize`/`move_to` apply asynchronously, so a fixed canvas
+/// sized from the latest session state can overflow the real window by a
+/// pixel after a move and get its edge clipped. `draw` already lays out from
+/// `bounds.size()`, so filling always fits with no cutoff.
+pub fn view<Message>(canvas: PreviewCanvas, _width: f32, _height: f32) -> Element<'static, Message>
 where
     Message: Clone + Send + 'static,
 {
     Canvas::new(canvas)
-        .width(Length::Fixed(width))
-        .height(Length::Fixed(height))
+        .width(Length::Fill)
+        .height(Length::Fill)
         .into()
 }
