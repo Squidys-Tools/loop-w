@@ -602,8 +602,12 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
         }
         Message::WindowClosed(id) => {
             if state.main_id == Some(id) {
-                // Hide to tray: the daemon keeps running.
+                // The settings window opts out of iced's automatic close so
+                // the daemon can remain resident. Explicitly close the
+                // native window here; clearing only the id leaves its last
+                // painted surface behind as a black/ghost window.
                 state.main_id = None;
+                return window::close(id);
             }
             if state.radial.as_ref().map(|s| s.id) == Some(id) {
                 state.radial = None;
@@ -1117,12 +1121,18 @@ fn ensure_preview(state: &mut State, tasks: &mut Vec<Task<Message>>, frame: Rect
             session.window_size = (lw, lh);
             session.scale = scale;
         }
-        // Move before resize: the logical size was computed for the new
-        // monitor's scale, so applying it while the window is still on the
-        // old monitor leaves a persistently wrong physical size (a clipped
-        // preview edge). Moving first lets the resize land on the right scale.
-        tasks.push(window::move_to(id, iced::Point::new(lx, ly)));
-        tasks.push(window::resize(id, iced::Size::new(lw, lh)));
+        // Once the window exists, keep its native frame in physical pixels.
+        // Sending move and resize as separate logical iced effects can race
+        // during a quadrant/half transition: the compositor may paint the
+        // old canvas into the new, smaller/larger surface for a frame and
+        // leave one section clipped. SetWindowPos updates both dimensions
+        // atomically in the same coordinate space used by target_frame.
+        if !win::overlay::set_preview_frame(frame) {
+            // The HWND can briefly be unavailable while an open/close is
+            // settling. Keep the logical fallback for that short window.
+            tasks.push(window::move_to(id, iced::Point::new(lx, ly)));
+            tasks.push(window::resize(id, iced::Size::new(lw, lh)));
+        }
         return;
     }
     let scale = native::dpi_scale_at_point(Point::new(frame.left, frame.top));

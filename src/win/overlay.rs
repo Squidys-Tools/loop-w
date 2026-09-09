@@ -115,6 +115,18 @@ pub fn patch_click_through(expected: Rect) -> bool {
     }
 }
 
+/// Move and resize the live preview in its physical coordinate space.
+///
+/// Preview frames come from Win32 monitor/window geometry, while iced's
+/// window effects use logical coordinates. Updating both through one native
+/// `SetWindowPos` call prevents a resize and move from landing in different
+/// compositor passes when the hover changes between differently sized zones.
+pub fn set_preview_frame(frame: Rect) -> bool {
+    native::find_window_by_title(PREVIEW_TITLE)
+        .map(|hwnd| native::set_pos(hwnd, frame))
+        .unwrap_or(false)
+}
+
 fn find_own_window(expected: Rect) -> Option<windows::Win32::Foundation::HWND> {
     use windows::core::BOOL;
     use windows::Win32::Foundation::*;
