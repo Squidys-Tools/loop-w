@@ -191,8 +191,18 @@ pub fn run(
         instance: Some(instance),
     });
     iced::daemon(State::boot, update, view)
-        .title(|state: &State, _window: window::Id| {
-            format!("LoopW Settings — {}", state.section.label())
+        .title(|state: &State, id: window::Id| {
+            // Overlay HWNDs are located by these stable titles when their
+            // physical frame changes. Keep them distinct from the settings
+            // window so preview updates do not fall back to separate iced
+            // move/resize effects.
+            if state.radial.as_ref().map(|session| session.id) == Some(id) {
+                "LoopW Radial".to_string()
+            } else if state.preview.as_ref().map(|session| session.id) == Some(id) {
+                "LoopW Preview".to_string()
+            } else {
+                format!("LoopW Settings — {}", state.section.label())
+            }
         })
         .theme(|state: &State, _window: window::Id| {
             Some(if state.settings.is_light() {
