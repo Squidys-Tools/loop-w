@@ -109,6 +109,7 @@ pub enum Message {
     ConfirmResetAll,
     CancelResetAll,
     ResetAll,
+    ClearDiagnostics,
     // Resident-runtime messages.
     FrameTick,
     MainOpened(window::Id),
@@ -160,6 +161,10 @@ pub struct State {
     pub section: Section,
     pub status: String,
     pub color_error: Option<String>,
+    /// Sticky save failure (cleared on the next successful save). The same
+    /// message is also copied into `status` so every existing section view
+    /// shows it without a new diagnostics surface.
+    pub save_error: Option<String>,
     pub confirming_reset_all: bool,
     pub capturing_trigger: bool,
     pub capturing_keybind: Option<String>,
@@ -231,8 +236,11 @@ pub fn run(
 
 impl State {
     fn boot() -> (State, Task<Message>) {
-        let settings = persistence::load();
-        win::shared::init(settings.clone());
+        // `load_detailed` keeps the tolerant fallback but reports *why*, so a
+        // corrupt or migrated file is visible instead of a silent "Saved".
+        let report = persistence::load_detailed();
+        win::shared::init(report.settings.clone());
+        let settings = report.settings;
         let tray = win::tray::build().ok();
         win::hooks::start();
         let hooks_ok = win::hooks::is_active();
@@ -247,13 +255,31 @@ impl State {
             Some(args) => (args.startup, args.instance),
             None => (None, None),
         };
-        let status = if !hooks_ok {
+        let mut status = if !hooks_ok {
             "Could not install the global keyboard hook".to_string()
         } else if tray.is_none() {
             "Tray icon unavailable — quit via Task Manager or pipe".to_string()
         } else {
             "Saved".to_string()
         };
+        // Surface load problems without hiding a hook/tray failure behind
+        // them: the load message wins only when the runtime itself is fine.
+        let mut save_error: Option<String> = None;
+        if report.outcome.is_fallback()
+            && !matches!(
+                report.outcome,
+                crate::settings::LoadOutcome::Fallback(crate::settings::FallbackReason::Missing)
+            )
+        {
+            let message = format!(
+                "Settings file {} — restored defaults.",
+                report.outcome.describe()
+            );
+            save_error = Some(message.clone());
+            if hooks_ok && tray.is_some() {
+                status = message;
+            }
+        }
         let task = if startup_command.is_some() {
             Task::done(Message::RunStartupCommand)
         } else {
@@ -265,6 +291,7 @@ impl State {
                 section: Section::General,
                 status,
                 color_error: None,
+                save_error,
                 confirming_reset_all: false,
                 capturing_trigger: false,
                 capturing_keybind: None,
@@ -299,30 +326,34 @@ fn subscription(_state: &State) -> Subscription<Message> {
     ])
 }
 
-// --- settings persistence (mirror -> shared -> disk -> services) ---
+// --- settings persistence (edit -> disk -> shared -> services) ---
+//
+// Revert-on-failure keeps the edited control and the saved value in sync:
+// the disk write is attempted *before* the shared mirror or services move.
+// On `false` the UI reverts to the last saved snapshot (explicit reload
+// strategy) so no unsaved edit lingers silently in the mirror; services keep
+// running on the last good config until the next successful save.
 
 fn commit_settings(state: &mut State, status: &str) {
     // Reset an in-flight press only when trigger binding or behavior
     // changed (C# resets in SetBinding/SetTriggerBehavior, never in
     // SetKeybinds): dragging a slider must not cancel a held trigger.
-    let trigger_changed = {
-        let current = win::shared::snapshot();
-        state.settings.trigger_vk != current.trigger_vk
-            || state.settings.trigger_modifiers != current.trigger_modifiers
-            || state.settings.trigger_modifier_side != current.trigger_modifier_side
-            || state.settings.trigger_delay_ms != current.trigger_delay_ms
-            || state.settings.trigger_timeout_ms != current.trigger_timeout_ms
-            || state.settings.double_click_to_trigger != current.double_click_to_trigger
-            || state.settings.middle_click_to_trigger != current.middle_click_to_trigger
-    };
-    state.settings.normalize();
-    win::shared::replace(state.settings.clone());
-    if win::shared::save_now() {
-        state.status = status.to_string();
-    } else {
-        state.status = "Could not save".to_string();
+    // `sync::commit` computes this comparison against the last saved value
+    // and reports it only on success (a failed save changes nothing).
+    let last_saved = win::shared::snapshot();
+    let candidate = state.settings.clone();
+    let report = crate::settings::sync::commit(candidate, last_saved, persistence::save, status);
+    state.settings = report.settings.clone();
+    state.save_error = report.save_error;
+    state.status = report.status;
+    if !report.succeeded {
+        win::diagnostics::report_settings(
+            "LoopW couldn't save settings.json — the change was reverted. Make the file writable, then try again.",
+        );
+        return;
     }
-    if trigger_changed {
+    win::shared::replace(report.settings);
+    if report.trigger_changed {
         win::hooks::notify_settings_changed();
     } else {
         win::hooks::refresh_config();
@@ -596,6 +627,11 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
             state.color_error = None;
             state.confirming_reset_all = false;
             commit_settings(state, "Reset complete");
+            Task::none()
+        }
+        Message::ClearDiagnostics => {
+            win::diagnostics::clear();
+            state.status = "Diagnostics cleared".to_string();
             Task::none()
         }
         Message::FrameTick => frame_tick(state),
@@ -985,6 +1021,12 @@ fn handle_runtime(state: &mut State, tasks: &mut Vec<Task<Message>>, event: Runt
             } else {
                 close_preview(state, tasks);
             }
+        }
+        RuntimeEvent::Diagnostic { message, .. } => {
+            // The entry is already in the diagnostics log (Advanced
+            // section); mirror the friendly message in the status line so
+            // background failures are visible without opening it.
+            state.status = message;
         }
     }
 }

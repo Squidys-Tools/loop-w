@@ -8,8 +8,11 @@
 //! existing user's trigger, keybinds, and radial layout for no runtime gain.
 
 use std::fs;
-use std::path::PathBuf;
+use std::io::ErrorKind;
+use std::path::{Path, PathBuf};
 
+use super::load_report::{fallback, outcome_for, reason_for_parse_error, FallbackReason};
+pub use super::load_report::{LoadOutcome, LoadReport};
 use super::model::AppSettings;
 
 /// Resolve `%LOCALAPPDATA%\LoopW\settings.json` (or test override).
@@ -25,26 +28,39 @@ pub fn settings_path() -> PathBuf {
 
 /// Load settings, falling back to normalized defaults on any failure.
 pub fn load() -> AppSettings {
-    load_from(&settings_path())
+    load_detailed().settings
 }
 
 pub fn load_from(path: &std::path::Path) -> AppSettings {
-    match fs::read_to_string(path) {
-        Ok(text) => match serde_json::from_str::<AppSettings>(&text) {
-            Ok(mut settings) => {
-                settings.normalize();
-                settings
+    load_detailed_from(path).settings
+}
+
+/// Load with the reason: clean, migrated/repaired, or which fallback applied.
+pub fn load_detailed() -> LoadReport {
+    load_detailed_from(&settings_path())
+}
+
+pub fn load_detailed_from(path: &Path) -> LoadReport {
+    let text = match fs::read_to_string(path) {
+        Ok(text) => text,
+        Err(error) if error.kind() == ErrorKind::NotFound => {
+            return fallback(FallbackReason::Missing, None);
+        }
+        Err(error) => return fallback(FallbackReason::Unreadable, Some(error.to_string())),
+    };
+    match serde_json::from_str::<AppSettings>(&text) {
+        Ok(parsed) => {
+            let mut normalized = parsed.clone();
+            normalized.normalize();
+            LoadReport {
+                settings: normalized.clone(),
+                outcome: outcome_for(&text, &parsed, &normalized),
+                detail: None,
             }
-            Err(_) => {
-                let mut defaults = AppSettings::default();
-                defaults.normalize();
-                defaults
-            }
-        },
-        Err(_) => {
-            let mut defaults = AppSettings::default();
-            defaults.normalize();
-            defaults
+        }
+        Err(error) => {
+            let reason = reason_for_parse_error(&error);
+            fallback(reason, Some(error.to_string()))
         }
     }
 }

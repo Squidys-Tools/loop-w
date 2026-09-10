@@ -89,6 +89,10 @@ pub fn undo(hwnd: u64) -> Result<String, String> {
 pub fn place_window(hwnd: u64, frame: Rect) -> bool {
     let native_hwnd = native::from_raw(hwnd as isize);
     let Some(mut current) = native::window_placement(native_hwnd) else {
+        super::diagnostics::report_placement(
+            hwnd,
+            "could not read the window's placement (it may have closed)",
+        );
         return false;
     };
     // Give a minimized window a moment to come back (up to 10 x 50 ms).
@@ -99,7 +103,13 @@ pub fn place_window(hwnd: u64, frame: Rect) -> bool {
         std::thread::sleep(core::time::Duration::from_millis(50));
         match native::window_placement(native_hwnd) {
             Some(updated) => current = updated,
-            None => return false,
+            None => {
+                super::diagnostics::report_placement(
+                    hwnd,
+                    "window closed while restoring from minimized",
+                );
+                return false;
+            }
         }
     }
     let next = WINDOWPLACEMENT {
@@ -111,6 +121,7 @@ pub fn place_window(hwnd: u64, frame: Rect) -> bool {
     };
     // Double-SetWindowPlacement: the FancyZones DPI-reliability pattern.
     if !native::set_placement(native_hwnd, &next) {
+        super::diagnostics::report_placement(hwnd, "SetWindowPlacement rejected the frame");
         return false;
     }
     let _ = native::set_placement(native_hwnd, &next);
@@ -120,9 +131,14 @@ pub fn place_window(hwnd: u64, frame: Rect) -> bool {
     // Fallback for apps that ignore placement.
     native::show_window(native_hwnd, SW_RESTORE);
     if !native::set_pos(native_hwnd, frame) {
+        super::diagnostics::report_placement(hwnd, "SetWindowPos fallback rejected the frame");
         return false;
     }
-    wait_for_placement(hwnd, frame)
+    let settled = wait_for_placement(hwnd, frame);
+    if !settled {
+        super::diagnostics::report_placement(hwnd, "window did not settle at the requested frame");
+    }
+    settled
 }
 
 fn wait_for_placement(hwnd: u64, frame: Rect) -> bool {

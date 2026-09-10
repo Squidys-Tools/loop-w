@@ -306,6 +306,13 @@ fn hook_thread() {
             guards.mouse = mouse;
             guards.thread_id = GetCurrentThreadId();
         }
+        if keyboard.is_invalid() {
+            super::diagnostics::report_hook_install("SetWindowsHookExW failed for WH_KEYBOARD_LL");
+        } else if mouse.is_invalid() {
+            super::diagnostics::report_hook_install(
+                "SetWindowsHookExW failed for WH_MOUSE_LL; middle-click trigger unavailable",
+            );
+        }
         let mut message = MSG::default();
         while GetMessageW(&mut message, None, 0, 0).as_bool() {
             let _ = TranslateMessage(&message);

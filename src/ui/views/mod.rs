@@ -2,6 +2,7 @@
 
 pub mod advanced;
 pub mod appearance;
+pub mod diagnostics;
 pub mod general;
 pub mod overlay;
 pub mod preview;

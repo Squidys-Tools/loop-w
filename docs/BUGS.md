@@ -138,3 +138,11 @@ gates (`cargo fmt --check`, `cargo test --locked`,
   viewport, scissor, and vertex data for the canvas draw call; do not
   "fix" by reworking draw math — the math is proven correct by logs
   and the working overlay.
+- **Update:** the `src/bin` canvas probes (`cprobe`, `dcanvas`, `ovprobe`)
+  were removed after this investigation (they were the only clippy/fmt
+  offenders). `preview_canvas::view` now takes a concrete `Fixed`
+  size instead of `Fill` — a `Fill` canvas inside the settings
+  `scrollable` is a second degenerate-sizing suspect and is now ruled
+  out. The radial settings preview (already `Fixed(260)`) still needs
+  the RenderDoc/Pix + second-machine check above before this entry
+  can close.

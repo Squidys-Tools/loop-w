@@ -178,6 +178,10 @@ fn server_loop() {
             )
         };
         if pipe.is_invalid() {
+            super::diagnostics::report_ipc(
+                "command pipe unavailable",
+                "CreateNamedPipeW failed; retrying",
+            );
             std::thread::sleep(Duration::from_millis(500));
             continue;
         }
@@ -185,6 +189,10 @@ fn server_loop() {
         if let Err(error) = connected {
             // ERROR_PIPE_CONNECTED: client connected between create + listen.
             if error.code() != ERROR_PIPE_CONNECTED.to_hresult() {
+                super::diagnostics::report_ipc(
+                    "client connect failed",
+                    "ConnectNamedPipe returned an unexpected error",
+                );
                 unsafe {
                     let _ = CloseHandle(pipe);
                 }
@@ -212,6 +220,10 @@ fn server_loop() {
                 // Reap the slot so a late reply cannot leak or surprise
                 // a future command reusing the id space.
                 take_reply(id);
+                super::diagnostics::report_ipc(
+                    "command reply timed out",
+                    "UI thread did not answer within 2 s",
+                );
             }
         }
         unsafe {

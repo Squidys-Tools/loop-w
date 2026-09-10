@@ -65,18 +65,21 @@ window action behaves correctly on every Windows setup.
   only after the write succeeds.
 - [x] Return save results to the settings UI instead of treating persistence as
   best-effort and silent.
-- [ ] Keep the edited control value and the saved value in sync when Windows or
-  the filesystem rejects a change.
-- [ ] Add tests for invalid JSON, partial writes, and settings migration.
+- [x] Keep the edited control value and the saved value in sync when Windows or
+  the filesystem rejects a change (revert-on-failure via `settings::sync`,
+  sticky `save_error` in the settings UI).
+- [x] Add tests for invalid JSON, partial writes, and settings migration
+  (`settings::load_report` + `settings::sync` suites).
 
 ### Add useful runtime diagnostics
 
-- [ ] Report hook installation failures, denied window access, failed frame
+- [x] Report hook installation failures, denied window access, failed frame
   changes, unavailable monitor data, and stale stash records in a user-visible
-  diagnostics view or log.
-- [ ] Explain safe no-ops for unsupported or excluded windows without exposing
-  native error codes as the only message.
-- [ ] Add a small diagnostic path for reproducing IPC and settings issues.
+  diagnostics view or log (`win::diagnostics` ring buffer, Advanced section).
+- [x] Explain safe no-ops for unsupported or excluded windows without exposing
+  native error codes as the only message (friendly text + technical detail).
+- [x] Add a small diagnostic path for reproducing IPC and settings issues
+  (repro hints in the Diagnostics view; pipe-command listing deferred).
 
 ### Close the remaining UI quality gaps
 

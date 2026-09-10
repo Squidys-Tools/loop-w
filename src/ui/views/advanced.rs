@@ -106,6 +106,7 @@ pub fn view(state: &State) -> Element<'_, Message> {
             button("Reset ALL settings…").on_press(Message::ConfirmResetAll),
         ]
         .spacing(12),
+        super::diagnostics::section(),
         if state.confirming_reset_all {
             row![
                 text("Reset everything to defaults?").size(13),

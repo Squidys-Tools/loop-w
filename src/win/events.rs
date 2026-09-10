@@ -69,6 +69,14 @@ pub enum RuntimeEvent {
     SnapEnd {
         released: bool,
     },
+    /// A background failure worth telling the user about. The entry is
+    /// already in the diagnostics log; this event lets the UI surface the
+    /// message in the status line. See `win::diagnostics`.
+    Diagnostic {
+        kind: String,
+        message: String,
+        detail: String,
+    },
 }
 
 #[cfg(test)]
@@ -84,5 +92,24 @@ mod tests {
         assert_eq!(events.len(), 2);
         assert!(matches!(events[0], RuntimeEvent::TriggerPressed));
         assert!(drain().is_empty());
+    }
+
+    #[test]
+    fn diagnostic_roundtrips_with_payload() {
+        drain();
+        push(RuntimeEvent::Diagnostic {
+            kind: "Placement".to_string(),
+            message: "LoopW couldn't move this window.".to_string(),
+            detail: "test".to_string(),
+        });
+        let events = drain();
+        assert_eq!(events.len(), 1);
+        match &events[0] {
+            RuntimeEvent::Diagnostic { kind, message, .. } => {
+                assert_eq!(kind, "Placement");
+                assert!(message.contains("couldn't move"));
+            }
+            other => panic!("expected Diagnostic, got {other:?}"),
+        }
     }
 }

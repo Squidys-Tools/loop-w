@@ -311,6 +311,7 @@ pub fn prune_stale() {
     if dead.is_empty() {
         return;
     }
+    super::diagnostics::report_stash_stale(dead.len());
     for hwnd in dead {
         remove_runtime(hwnd, true);
     }

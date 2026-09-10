@@ -9,7 +9,7 @@ Status: `[ ]` not run, `[x]` passed, `[!]` blocked or not supported on this
 Windows configuration.
 
 The current automated baseline is a warning-free `cargo build` and the
-`cargo test` unit suite (47 tests). Live named-pipe responses and desktop
+`cargo test` unit suite (67 tests). Live named-pipe responses and desktop
 actions still require the manual checks below. Re-run the automated baseline
 after every action-model change.
 

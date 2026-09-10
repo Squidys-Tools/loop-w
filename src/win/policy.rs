@@ -98,15 +98,19 @@ pub fn evaluate(hwnd: u64) -> Decision {
 pub fn try_authorize_action(hwnd: u64, action: WindowAction) -> Result<(), &'static str> {
     let decision = evaluate(hwnd);
     if !decision.allowed {
+        super::diagnostics::report_policy(decision.diagnostic, action);
         return Err(decision.diagnostic);
     }
     if decision.borderless_fullscreen && !allows_borderless_action(action) {
-        return Err(
-            "The target is borderless fullscreen. Exit fullscreen in the app before applying a layout.",
-        );
+        let diagnostic =
+            "The target is borderless fullscreen. Exit fullscreen in the app before applying a layout.";
+        super::diagnostics::report_policy(diagnostic, action);
+        return Err(diagnostic);
     }
     if !decision.resizable && requires_resize(action) {
-        return Err("The target window is non-resizable, so this layout action was skipped.");
+        let diagnostic = "The target window is non-resizable, so this layout action was skipped.";
+        super::diagnostics::report_policy(diagnostic, action);
+        return Err(diagnostic);
     }
     Ok(())
 }

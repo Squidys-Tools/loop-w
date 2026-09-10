@@ -5,6 +5,7 @@
 //! fully unit tested.
 
 pub mod actions_runtime;
+pub mod diagnostics;
 pub mod display;
 pub mod events;
 pub mod hooks;

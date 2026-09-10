@@ -115,6 +115,7 @@ pub fn all() -> Vec<MonitorSnapshot> {
 
 fn read(monitor: HMONITOR) -> Option<MonitorSnapshot> {
     if monitor.is_invalid() {
+        super::diagnostics::report_monitor("no monitor handle for this window or rect");
         return None;
     }
     let key = monitor.0 as isize;
@@ -151,6 +152,7 @@ fn read(monitor: HMONITOR) -> Option<MonitorSnapshot> {
             return Some(snapshot);
         }
     }
+    super::diagnostics::report_monitor("the system refused monitor details for a live handle");
     None
 }
 

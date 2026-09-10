@@ -84,14 +84,18 @@ impl<Message> canvas::Program<Message> for PreviewCanvas {
 
 /// View helper for the preview surface.
 ///
-/// The canvas fills the fixed overlay surface. The live target is a rectangle
-/// inside that surface, so hover changes never resize the native window.
-pub fn view<Message>(canvas: PreviewCanvas, _width: f32, _height: f32) -> Element<'static, Message>
+/// The canvas gets a concrete size: the settings page passes a fixed preview
+/// size (a `Fill` canvas inside the settings `scrollable` resolves to a
+/// degenerate height and rasterizes as a sliver — see BUGS.md #9), while the
+/// live overlay passes its exact window size so the fixed canvas still fills
+/// the surface. The live target stays a rectangle inside that surface, so
+/// hover changes never resize the native window.
+pub fn view<Message>(canvas: PreviewCanvas, width: f32, height: f32) -> Element<'static, Message>
 where
     Message: Clone + Send + 'static,
 {
     Canvas::new(canvas)
-        .width(Length::Fill)
-        .height(Length::Fill)
+        .width(Length::Fixed(width))
+        .height(Length::Fixed(height))
         .into()
 }
