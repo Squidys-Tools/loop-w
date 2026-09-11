@@ -6,8 +6,10 @@
 //! through the highlight.
 
 use iced::mouse;
-use iced::widget::canvas::{self, Canvas, Fill, Frame, Geometry, Path, Stroke};
+use iced::widget::canvas::{self, Canvas, Fill, Geometry, Path, Stroke};
 use iced::{Color, Element, Length, Point, Rectangle, Renderer, Theme};
+use std::cell::Cell;
+use std::sync::OnceLock;
 
 use crate::core::radial::GEOMETRY;
 use crate::settings::color::to_iced;
@@ -44,80 +46,151 @@ pub enum RadialCanvasMessage {
     Hover(Option<usize>),
 }
 
+/// Persistent canvas state retained by iced across parent view rebuilds.
+/// Frame ticks can therefore reuse the generated geometry until a visual
+/// input changes instead of rebuilding the donut every time.
+#[derive(Debug)]
+pub struct RadialCanvasState {
+    cache: canvas::Cache,
+    render_key: Cell<Option<RenderKey>>,
+}
+
+impl Default for RadialCanvasState {
+    fn default() -> Self {
+        Self {
+            cache: canvas::Cache::default(),
+            render_key: Cell::new(None),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct RenderKey {
+    outer_radius: u32,
+    inner_radius: u32,
+    hovered: Option<usize>,
+    ring: [u32; 4],
+    sector_fill: [u32; 4],
+    sector_stroke: [u32; 4],
+}
+
+impl RadialCanvas {
+    fn render_key(&self) -> RenderKey {
+        RenderKey {
+            outer_radius: self.outer_radius.to_bits(),
+            inner_radius: self.inner_radius.to_bits(),
+            hovered: self.hovered,
+            ring: color_key(self.ring),
+            sector_fill: color_key(self.sector_fill),
+            sector_stroke: color_key(self.sector_stroke),
+        }
+    }
+}
+
+fn color_key(color: Color) -> [u32; 4] {
+    [
+        color.r.to_bits(),
+        color.g.to_bits(),
+        color.b.to_bits(),
+        color.a.to_bits(),
+    ]
+}
+
 impl<Message> canvas::Program<Message> for RadialCanvas {
-    type State = ();
+    type State = RadialCanvasState;
 
     fn draw(
         &self,
-        _state: &Self::State,
+        state: &Self::State,
         renderer: &Renderer,
         _theme: &Theme,
         bounds: Rectangle,
         _cursor: mouse::Cursor,
     ) -> Vec<Geometry> {
-        let mut frame = Frame::new(renderer, bounds.size());
-        let center = Point::new(bounds.width / 2.0, bounds.height / 2.0);
-        let outer = self.outer_radius.min(bounds.width / 2.0 - 4.0);
-        let inner = self.inner_radius.min(outer - 8.0);
-
-        // Donut backdrop: outer disc with the center punched out
-        // (even-odd fill), so the hole shows whatever is behind the
-        // overlay. The hole stays a live commit target (release inside it
-        // commits the center action) — only its visuals are cut out.
-        let ring = Path::new(|p| {
-            p.circle(center, outer);
-            p.circle(center, inner);
-        });
-        frame.fill(
-            &ring,
-            Fill {
-                rule: canvas::fill::Rule::EvenOdd,
-                ..Fill::from(self.ring)
-            },
-        );
-        // Hovered wedge highlight only — this is the single visual that
-        // reveals the wedge divisions.
-        if let Some(index) = self.hovered {
-            if let Some(slot) = GEOMETRY.get(index) {
-                let wedge = wedge_path(center, outer, inner, slot.from_deg, slot.to_deg);
-                frame.fill(&wedge, self.sector_fill);
-                frame.stroke(
-                    &wedge,
-                    Stroke::default()
-                        .with_width(2.0)
-                        .with_color(self.sector_stroke),
-                );
-            }
+        let render_key = self.render_key();
+        if state.render_key.get() != Some(render_key) {
+            state.cache.clear();
+            state.render_key.set(Some(render_key));
         }
 
-        vec![frame.into_geometry()]
+        let geometry = state.cache.draw(renderer, bounds.size(), |frame| {
+            let center = Point::new(bounds.width / 2.0, bounds.height / 2.0);
+            let outer = self.outer_radius.min(bounds.width / 2.0 - 4.0);
+            let inner = self.inner_radius.min(outer - 8.0);
+
+            // Donut backdrop: outer disc with the center punched out
+            // (even-odd fill), so the hole shows whatever is behind the
+            // overlay. The hole stays a live commit target (release inside it
+            // commits the center action) — only its visuals are cut out.
+            let ring = Path::new(|p| {
+                p.circle(center, outer);
+                p.circle(center, inner);
+            });
+            frame.fill(
+                &ring,
+                Fill {
+                    rule: canvas::fill::Rule::EvenOdd,
+                    ..Fill::from(self.ring)
+                },
+            );
+            // Hovered wedge highlight only — this is the single visual that
+            // reveals the wedge divisions.
+            if let Some(index) = self.hovered {
+                if GEOMETRY.get(index).is_some() {
+                    let wedge = wedge_path(center, outer, inner, index);
+                    frame.fill(&wedge, self.sector_fill);
+                    frame.stroke(
+                        &wedge,
+                        Stroke::default()
+                            .with_width(2.0)
+                            .with_color(self.sector_stroke),
+                    );
+                }
+            }
+        });
+
+        vec![geometry]
     }
 }
 
-fn wedge_path(center: Point, outer: f32, inner: f32, from_deg: f64, to_deg: f64) -> Path {
-    use std::f64::consts::PI;
-    let steps = 24;
-    let from = from_deg * PI / 180.0;
-    let to = to_deg * PI / 180.0;
+const WEDGE_STEPS: usize = 24;
+const WEDGE_POINT_COUNT: usize = 2 * (WEDGE_STEPS + 1);
+
+type UnitWedge = [[f32; 2]; WEDGE_POINT_COUNT];
+
+static UNIT_WEDGES: OnceLock<[UnitWedge; GEOMETRY.len()]> = OnceLock::new();
+
+fn unit_wedges() -> &'static [UnitWedge; GEOMETRY.len()] {
+    UNIT_WEDGES.get_or_init(|| {
+        std::array::from_fn(|index| {
+            let slot = GEOMETRY[index];
+            let from = slot.from_deg.to_radians();
+            let to = slot.to_deg.to_radians();
+
+            std::array::from_fn(|point| {
+                let step = if point <= WEDGE_STEPS {
+                    point
+                } else {
+                    2 * WEDGE_STEPS + 1 - point
+                };
+                let t = from + (to - from) * (step as f64 / WEDGE_STEPS as f64);
+                [t.cos() as f32, t.sin() as f32]
+            })
+        })
+    })
+}
+
+fn wedge_path(center: Point, outer: f32, inner: f32, index: usize) -> Path {
+    let unit_points = &unit_wedges()[index];
     let mut builder = canvas::path::Builder::new();
-    for i in 0..=steps {
-        let t = from + (to - from) * (i as f64 / steps as f64);
-        let p = Point::new(
-            center.x + outer * t.cos() as f32,
-            center.y + outer * t.sin() as f32,
-        );
-        if i == 0 {
+    for (point, unit) in unit_points.iter().enumerate() {
+        let radius = if point <= WEDGE_STEPS { outer } else { inner };
+        let p = Point::new(center.x + radius * unit[0], center.y + radius * unit[1]);
+        if point == 0 {
             builder.move_to(p);
         } else {
             builder.line_to(p);
         }
-    }
-    for i in (0..=steps).rev() {
-        let t = from + (to - from) * (i as f64 / steps as f64);
-        builder.line_to(Point::new(
-            center.x + inner * t.cos() as f32,
-            center.y + inner * t.sin() as f32,
-        ));
     }
     builder.close();
     builder.build()

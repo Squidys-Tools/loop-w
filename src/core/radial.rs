@@ -89,8 +89,58 @@ pub fn boundary_deg(index: usize) -> f64 {
 
 /// Map a cursor angle (degrees, 0 = right, clockwise positive) to a wedge.
 pub fn index_at(angle_deg: f64) -> usize {
-    let normalized = (angle_deg + 360.0) % 360.0;
+    let normalized = angle_deg.rem_euclid(360.0);
     ((normalized + 22.5).div_euclid(45.0) as usize) % GEOMETRY.len()
+}
+
+/// Map a direction vector directly to a wedge without calculating an angle.
+///
+/// Runtime cursor handling can use this when it already has a vector from the
+/// menu center. It avoids both `atan2` and degree conversion while preserving
+/// the same boundary ownership as [`index_at`].
+pub fn index_at_vector(dx: f64, dy: f64) -> usize {
+    const TAN_22_5: f64 = 0.414_213_562_373_095_03;
+    const COT_22_5: f64 = 2.414_213_562_373_095;
+
+    if dx == 0.0 && dy == 0.0 {
+        return 0;
+    }
+
+    if dx >= 0.0 {
+        if dy >= 0.0 {
+            if dy < dx * TAN_22_5 {
+                0
+            } else if dy < dx * COT_22_5 {
+                1
+            } else {
+                2
+            }
+        } else if -dy < dx * TAN_22_5 {
+            0
+        } else if -dy < dx * COT_22_5 {
+            7
+        } else {
+            6
+        }
+    } else if dy >= 0.0 {
+        let left = -dx;
+        if dy < left * TAN_22_5 {
+            4
+        } else if dy < left * COT_22_5 {
+            3
+        } else {
+            2
+        }
+    } else {
+        let left = -dx;
+        if -dy < left * TAN_22_5 {
+            4
+        } else if -dy < left * COT_22_5 {
+            5
+        } else {
+            6
+        }
+    }
 }
 
 /// Default action for a cursor angle.
@@ -150,5 +200,31 @@ mod tests {
             assert_eq!(index_at(b - 0.1), (i + GEOMETRY.len() - 1) % GEOMETRY.len());
             assert_eq!(index_at(b + 0.1), i % GEOMETRY.len());
         }
+    }
+
+    #[test]
+    fn vector_hit_testing_matches_angle_hit_testing() {
+        let directions = [
+            (1.0, 0.0),
+            (1.0, 1.0),
+            (0.0, 1.0),
+            (-1.0, 1.0),
+            (-1.0, 0.0),
+            (-1.0, -1.0),
+            (0.0, -1.0),
+            (1.0, -1.0),
+        ];
+
+        for (index, (dx, dy)) in directions.into_iter().enumerate() {
+            assert_eq!(index_at_vector(dx, dy), index);
+            assert_eq!(index_at(angle_of(dx, dy)), index);
+        }
+    }
+
+    #[test]
+    fn normalizes_angles_without_overflowing_or_losing_negative_turns() {
+        assert_eq!(index_at(-360.0 * 1_000_000.0 + 10.0), 0);
+        assert_eq!(index_at(360.0 * 1_000_000.0 + 10.0), 0);
+        assert_eq!(index_at(-90.0), 6);
     }
 }
