@@ -3,12 +3,18 @@
 //! All functions are small, total-failure-safe (bool/Option/empty defaults),
 //! and physical-pixel based. UI code never touches raw Win32 directly.
 
-use windows::core::PCWSTR;
+use std::cell::{Cell, RefCell};
+
+use windows::core::{BOOL, GUID, PCWSTR};
 use windows::Win32::Foundation::*;
 use windows::Win32::Graphics::Gdi::{MonitorFromWindow, MONITOR_DEFAULTTONEAREST};
+use windows::Win32::System::Com::{
+    CoCreateInstance, CoInitializeEx, CLSCTX_INPROC_SERVER, COINIT_APARTMENTTHREADED,
+};
 use windows::Win32::System::SystemInformation::GetTickCount64;
 use windows::Win32::UI::HiDpi::*;
 use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, GetDoubleClickTime};
+use windows::Win32::UI::Shell::ITaskbarList;
 use windows::Win32::UI::WindowsAndMessaging::*;
 
 use crate::core::identity::WindowIdentity;
@@ -16,6 +22,15 @@ use crate::core::rect::{Point, Rect};
 
 /// Raw window handle as an integer (HWND.0), usable as a map key.
 pub type RawHwnd = isize;
+
+/// Winit's always-alive message target. It is visible by design so that
+/// Windows delivers paint messages, but it must never get a taskbar button.
+pub const WINIT_EVENT_TARGET_CLASS: &str = "Winit Thread Event Target";
+
+thread_local! {
+    static TASKBAR_COM_READY: Cell<Option<bool>> = const { Cell::new(None) };
+    static TASKBAR_LIST: RefCell<Option<ITaskbarList>> = const { RefCell::new(None) };
+}
 
 pub fn raw(hwnd: HWND) -> RawHwnd {
     hwnd.0 as RawHwnd
@@ -368,6 +383,101 @@ pub fn find_window_by_title(title: &str) -> Option<HWND> {
             .ok()
             .filter(|hwnd| !hwnd.is_invalid())
     }
+}
+
+pub fn find_window_by_class(class: &str) -> Option<HWND> {
+    struct Search {
+        pid: u32,
+        class: String,
+        found: Option<HWND>,
+    }
+
+    unsafe extern "system" fn callback(hwnd: HWND, lparam: LPARAM) -> BOOL {
+        let search = &mut *(lparam.0 as *mut Search);
+        if process_id(hwnd) != search.pid {
+            return TRUE;
+        }
+        let current = window_class(hwnd);
+        if current == search.class {
+            search.found = Some(hwnd);
+            return FALSE;
+        }
+        TRUE
+    }
+
+    let mut search = Search {
+        pid: own_process_id(),
+        class: class.to_string(),
+        found: None,
+    };
+    unsafe {
+        let _ = EnumWindows(Some(callback), LPARAM(&mut search as *mut Search as isize));
+    }
+    search.found
+}
+
+/// Remove a helper window from the shell taskbar without hiding it from
+/// Winit. Winit keeps its event-target window visible because that is needed
+/// for WM_PAINT delivery; changing its extended style and deleting any stale
+/// shell tab is the safe app-level correction.
+pub fn suppress_taskbar_window(hwnd: HWND) -> bool {
+    if !is_window(hwnd) || process_id(hwnd) != own_process_id() {
+        return false;
+    }
+
+    let current = window_ex_style(hwnd);
+    let desired = (current & !(WS_EX_APPWINDOW.0 as isize)) | WS_EX_TOOLWINDOW.0 as isize;
+    if desired != current {
+        unsafe {
+            SetWindowLongPtrW(hwnd, GWL_EXSTYLE, desired);
+            let _ = SetWindowPos(
+                hwnd,
+                None,
+                0,
+                0,
+                0,
+                0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED,
+            );
+        }
+    }
+
+    delete_taskbar_tab(hwnd)
+}
+
+fn delete_taskbar_tab(hwnd: HWND) -> bool {
+    TASKBAR_COM_READY.with(|ready| {
+        if ready.get().is_none() {
+            let initialized = unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED).is_ok() };
+            ready.set(Some(initialized));
+        }
+        if ready.get() != Some(true) {
+            return false;
+        }
+
+        TASKBAR_LIST.with(|slot| {
+            if slot.borrow().is_none() {
+                let clsid = GUID::from_values(
+                    0x56fdf344,
+                    0xfd6d,
+                    0x11d0,
+                    [0x95, 0x8a, 0x00, 0x60, 0x97, 0xc9, 0xa0, 0x90],
+                );
+                let Ok(taskbar) = (unsafe {
+                    CoCreateInstance::<_, ITaskbarList>(&clsid, None, CLSCTX_INPROC_SERVER)
+                }) else {
+                    return false;
+                };
+                if unsafe { taskbar.HrInit() }.is_err() {
+                    return false;
+                }
+                slot.borrow_mut().replace(taskbar);
+            }
+            slot.borrow()
+                .as_ref()
+                .is_some_and(|taskbar| unsafe { taskbar.DeleteTab(hwnd).is_ok() })
+        })
+    })
 }
 
 pub fn own_process_id() -> u32 {

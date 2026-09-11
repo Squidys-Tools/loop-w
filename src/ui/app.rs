@@ -961,6 +961,11 @@ fn reset_section(state: &mut State, section: Section) {
 /// Once-per-frame pump: events, tray, stash, snap, overlay hover, patching.
 fn frame_tick(state: &mut State) -> Task<Message> {
     let mut tasks: Vec<Task<Message>> = Vec::new();
+    if state.main_id.is_none() {
+        if let Some(hwnd) = native::find_window_by_class(native::WINIT_EVENT_TARGET_CLASS) {
+            native::suppress_taskbar_window(hwnd);
+        }
+    }
     if let Some(tray) = state.tray.as_ref() {
         win::tray::poll(tray);
     }
@@ -1616,6 +1621,7 @@ fn main_window_settings() -> window::Settings {
         transparent: false,
         level: window::Level::Normal,
         exit_on_close_request: false,
+        icon: Some(win::tray::window_icon()),
         ..Default::default()
     }
 }
