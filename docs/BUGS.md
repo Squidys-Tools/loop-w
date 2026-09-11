@@ -1,10 +1,9 @@
 # LoopW known issues (deferred)
 
 Minor defects and accepted deviations found during the C# → Rust port
-audits. None blocks the release gate; each entry records where it lives,
-why it was deferred, and what would trigger revisiting it. Local quality
-gates (`cargo fmt --check`, `cargo test --locked`,
-`cargo clippy --all-targets --locked`, via lefthook) stay green regardless.
+audits. Each entry records where it lives, why it was deferred, and what would
+trigger revisiting it. These entries are not the current release-gate status:
+the automated baseline is failing, and the desktop QA checklist is still unrun.
 
 ## 1. Hook timer threads pile up under rapid churn — accepted
 
@@ -103,47 +102,22 @@ gates (`cargo fmt --check`, `cargo test --locked`,
 - **Revisit if:** never — only noted so it isn't "fixed" into a
   use-after-free.
 
-## 9. Canvas geometry collapses in the settings window — under investigation
+## 9. Settings canvas rendering fix needs desktop verification
 
 - **Where:** `src/ui/widgets/radial_canvas.rs` /
   `src/ui/widgets/preview_canvas.rs` as hosted by the settings window
   (`src/ui/views/radial.rs`, `src/ui/views/preview.rs` inside the
   `scrollable` in `src/ui/app.rs` `settings_view`).
-- **What:** settings-page canvas geometry rasterizes as a thin vertical sliver
-  instead of the drawn shapes, leaving the previews effectively blank.
-  Measured on 1166x809 @ scale 1.0: a full-bounds
-  260x260 probe rect at layout `(256, 82.9)` appears as pixels
-  `x 512-515, y 196-322` — stable across frames, PIDs, and runs
-  (pixel-scanned, not eyeballed). Same program code renders correctly in
-  the small transparent overlay windows, so the live radial menu and
-  target preview are unaffected; only the settings-page previews are
-  blank. `draw()` itself runs every frame with correct bounds, radii,
-  and colors (verified with temporary file logging, since removed).
-- **Why deferred:** the product surfaces (overlays) work; only the
-  settings-page preview copies are blank. Bisected out: daemon clear
-  color (identical sliver with opaque and transparent clear), the
-  settings root-container background quad, separator geometry, and all
-  app-side layout inputs. The sliver's x sits at exactly 2x the canvas
-  origin (256 -> 512), which smells like a doubled translation in the
-  canvas-geometry clip/transform path, but every shared input in that
-  path (layout bounds, layer transform stack, scissor, projection) was
-  traced through iced 0.14 / iced_wgpu source and reads correct — quads
-  and text in the same window render perfectly, so only the triangle
-  (lyon-tessellated geometry) pipeline is affected, in one window.
-- **Revisit if:** a second machine/driver reproduces it (points at iced
-  + scrollable + large-surface interaction, file upstream with the
-  pixel measurements above), or it reproduces nowhere else (points at
-  this machine's DX11 driver state — try `WGPU_BACKEND=vulkan`,
-  driver update, `ICED_BACKEND=tiny-skia` if wired). Fix direction:
-  RenderDoc/Pix capture of one settings frame to see the actual
-  viewport, scissor, and vertex data for the canvas draw call; do not
-  "fix" by reworking draw math — the math is proven correct by logs
-  and the working overlay.
-- **Update:** the `src/bin` canvas probes (`cprobe`, `dcanvas`, `ovprobe`)
-  were removed after this investigation (they were the only clippy/fmt
-  offenders). Both settings previews now receive concrete fixed sizes:
-  `radial_canvas` uses `Fixed(260)`, and `preview_canvas` uses `Fixed(320x200)`.
-  This rules out the `Fill` canvas inside the settings `scrollable` as one
-  degenerate-sizing suspect, but it does not close the bug. The radial settings
-  preview still needs the RenderDoc/Pix and second-machine checks above, or a
-  confirmed fix, before this entry can close.
+- **What:** the earlier settings-page sliver came from applying the widget's
+  absolute layout translation inside iced's already-local canvas coordinate
+  system, effectively doubling the translation.
+- **Current state:** the renderers now use canvas-local coordinates, fixed
+  260x260 / 320x200 surfaces, and cached geometry that invalidates when visual
+  inputs change. A focused coordinate regression test covers the original 2x
+  translation symptom.
+- **Why still open:** no desktop visual check has been run in the current
+  workstream. Confirm both settings previews on Windows at the supported scale
+  settings before closing this entry.
+- **Revisit if:** a desktop check still shows a sliver. Capture the canvas
+  viewport, scissor, and geometry on the affected driver before changing the
+  draw math.

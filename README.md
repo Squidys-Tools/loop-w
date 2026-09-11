@@ -11,8 +11,14 @@ This tree is the Rust port (iced 0.14 UI, self-contained `win-x64` EXE, no
 The core product path, settings model, radial/preview surfaces, settings UI,
 and native Win32 backend are implemented. The project still needs code-level
 hardening and a full manual desktop QA pass across different window types,
-display scales, and Windows configurations. Expect rough edges while those
-remaining workstreams are completed.
+display scales, and Windows configurations. Desktop checks are not complete.
+
+The current test inventory is 88 binary tests plus 67 UI/settings contract
+tests, for 155 tests under `cargo test --all-targets --locked`. The locked
+build, formatting check, tests, and warnings-denied Clippy pass. A bounded
+Windows integration harness lives under `tools/` and covers resident lifecycle,
+IPC, disposable-window placement, and overlay HWND styles; broad desktop QA
+remains separate.
 
 ## What it does
 
@@ -28,6 +34,8 @@ remaining workstreams are completed.
 - Can snap title-bar drags to monitor edges and corners.
 - Handles mixed-DPI monitor layouts, screen padding, application exclusions,
   launch at login, tray operation, and single-instance activation.
+- Keeps the Winit event-target helper out of the taskbar while preserving the
+  paint messages needed by the resident runtime.
 - Provides a small local command interface for scripts and automation.
 
 The default trigger is Caps Lock. LoopW captures the configured trigger while
@@ -67,8 +75,10 @@ tracked separately in the roadmap and QA checklist.
 Run the automated checks with:
 
 ```powershell
-cargo test
-cargo clippy --all-targets
+cargo fmt -- --check
+cargo build --locked
+cargo test --all-targets --locked
+cargo clippy --all-targets --locked -- -D warnings
 ```
 
 Ship a self-contained release binary with:
@@ -131,16 +141,15 @@ Use `list/actions` to see the action names supported by the current build.
 - `src/settings` keeps the exact C# JSON contract (PascalCase keys, integer
   enums) with a tolerant loader.
 - `src/ui` is the iced 0.14 settings surface plus the shared text-free radial
-  and preview canvas renderers. It improves on the WPF surface with live canvas
-  previews leading the Radial and Preview pages, preset-first appearance, and
-  inline validation.
+  and preview canvas renderers. The settings canvases use fixed dimensions and
+  cached geometry; desktop rendering still needs manual verification.
 - `src/win` owns all Win32 side effects (hooks, window actions, snap, stash,
   IPC, tray). The backend is implemented; desktop validation and runtime
   hardening remain. Pure logic it depends on is tested in `src/core`.
-- Some modules are currently larger than the project's modularity target,
-  especially `src/ui/app.rs`, `src/win/stash_service.rs`, `src/win/hooks.rs`,
-  `src/core/frame_math.rs`, and `src/win/ipc.rs`. New code should stay modular,
-  and splitting those areas is follow-up work.
+- The former `src/ui/app.rs` monolith is split into focused settings, runtime,
+  and window modules. `src/win/stash_service.rs`, `src/win/hooks.rs`,
+  `src/core/frame_math.rs`, and `src/win/ipc.rs` remain larger follow-up
+  candidates; new code should stay modular.
 
 ## License
 

@@ -30,25 +30,33 @@ The following product areas are implemented:
 - Drag snapping, target previews, stash and reveal, monitor move policies,
   screen padding, application exclusions, tray lifecycle, launch at login, and
   single-instance activation are wired into the runtime.
+- The Winit event-target helper is kept out of the taskbar with a tool-window
+  style and a taskbar-tab removal call; it remains visible to Winit for paint
+  delivery.
 - A same-user named-pipe command server supports activation, action listing,
   keybind listing, directional actions, and named actions.
-- Pure tests cover frame math, radial geometry, cycles, navigation, settings
-  normalization, stash calculations, drag snapping, and command parsing.
+- The automated suite currently contains 88 binary tests and 67 UI/settings
+  contract tests, for 155 tests in total. It covers frame math, radial
+  geometry, cycles, navigation, settings normalization, stash calculations,
+  drag snapping, and command parsing.
 
 The design document for the settings surface remains in
 [`specs/settings-ui-redesign-spec.md`](../specs/settings-ui-redesign-spec.md).
-It describes the intended behavior and the manual checks that still need to be
-run. [`QA.md`](QA.md) is the desktop test checklist.
+It records the settings requirements and acceptance scenarios. The current Rust
+and iced implementation status is summarized in this roadmap. [`QA.md`](QA.md)
+is the desktop test checklist.
 
 ### Remaining implementation and hardening
 
-- [ ] Resolve or close the settings-page canvas geometry issue documented in
-  [`BUGS.md`](BUGS.md#9-canvas-geometry-collapses-in-the-settings-window--under-investigation).
-  The preview canvas now has a fixed size, but the radial settings preview
-  still needs a confirmed rendering diagnosis or fix.
-- [ ] Split oversized implementation modules, especially `src/ui/app.rs`,
+- [x] Apply the settings-canvas rendering fix documented in
+  [`BUGS.md`](BUGS.md#9-settings-canvas-rendering-fix-needs-desktop-verification).
+  Both canvases now use local coordinates, fixed dimensions, and cached
+  geometry. The desktop rendering result is still unverified.
+- [x] Split the former `src/ui/app.rs` monolith into focused settings, runtime,
+  and window modules. The remaining large Win32/core modules are follow-up
+  refactors:
   `src/win/stash_service.rs`, `src/win/hooks.rs`, `src/core/frame_math.rs`, and
-  `src/win/ipc.rs`, so new work remains easy to test and review.
+  `src/win/ipc.rs`.
 
 ## Next work
 
@@ -62,6 +70,8 @@ run. [`QA.md`](QA.md) is the desktop test checklist.
   elevated, borderless, fullscreen, non-resizable, and minimum-size cases.
 - [ ] Test snapping, stash persistence, exclusions, display changes, and named
   pipe commands after a restart.
+- [ ] Confirm that the Winit helper event target does not appear in the taskbar
+  or Alt+Tab while LoopW remains resident.
 - [ ] Record the Windows version, display layout, DPI settings, and commit used
   for each manual pass.
 
@@ -112,11 +122,16 @@ window action behaves correctly on every Windows setup.
 
 ## Release gate
 
+The current automated gate is met: 155 tests pass, formatting is clean, the
+locked build passes, and warning-denied Clippy passes. The broader release gate
+is not met because the desktop checklist has not been run.
+
 LoopW is ready for a broader release when:
 
-1. The automated build and pure test suite pass without warnings.
-2. The desktop checklist passes on the supported Windows and display setups, or
-   each exception has a documented reason.
+1. Formatting, the locked build, the all-targets test suite, and
+   warning-denied Clippy pass.
+2. The desktop checklist passes on the supported Windows and display setups.
+   Each exception must have a documented reason.
 3. Trigger, radial, keybind, snapping, stash, monitor, exclusion, tray, and IPC
    behavior are consistent across their supported entry points.
 4. Existing settings files load without losing values, and save failures are
@@ -135,11 +150,12 @@ runs automatically on every pull request.
 Run these commands from the repository root in PowerShell:
 
 ```powershell
-cargo build
-cargo test
-cargo clippy --all-targets
+cargo fmt -- --check
+cargo build --locked
+cargo test --all-targets --locked
+cargo clippy --all-targets --locked -- -D warnings
 cargo run
-cargo build --release
+cargo build --release --locked
 ```
 
 The release binary is `target\release\LoopW.exe`.

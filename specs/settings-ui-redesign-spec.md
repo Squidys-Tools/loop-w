@@ -1,6 +1,6 @@
 # LoopW Settings UI Redesign Specification
 
-**Status:** WPF UI implementation direction recorded; functional and visual QA scenarios retained
+**Status:** Rust + iced implementation is current; WPF-specific implementation notes below are historical
 **Date:** 2026-08-16
 **Scope:** Settings surface redesign plus integration of the advanced trigger/radial settings already introduced by `origin/main`; preserve all existing behavior and persistence contracts.
 
@@ -8,7 +8,9 @@
 
 Redesign the LoopW settings experience into a modern, polished, premium, and coherent native Windows settings surface. The redesign should feel like a carefully crafted desktop utility rather than a collection of styled controls: quiet, confident, highly scannable, and precise.
 
-The product should retain its existing dark visual identity and blue-accent lineage, but let WPF UI 4.3.0 provide the Fluent palette, control templates, navigation states, title-bar controls, and density foundation. The redesign should reorganize the current settings lightly rather than replace the information architecture wholesale. It should preserve all currently supported settings and their existing persistence semantics while improving hierarchy, navigation, feedback, accessibility, and visual coherence. LoopW-specific XAML is limited to the shared, text-free radial and window-preview surfaces plus the persisted appearance values and geometry behavior those surfaces consume.
+The product should retain its existing dark visual identity and blue-accent lineage. The current implementation uses Rust with iced 0.14 for the settings window, navigation, controls, and shared canvas surfaces. The redesign should reorganize the current settings lightly rather than replace the information architecture wholesale. It should preserve all currently supported settings and their existing persistence semantics while improving hierarchy, navigation, feedback, accessibility, and visual coherence.
+
+The WPF-specific implementation names retained later in this document describe the former implementation direction. They are historical requirements and are not the current Rust port architecture. Current implementation details live in `src/ui/app.rs`, `src/ui/views`, `src/ui/widgets`, and `src/ui/theme.rs`.
 
 This is an **Operate** surface: users come here to configure LoopW quickly, understand what each option does, and leave without friction. Utility, scanability, and native Windows expectations outrank decoration.
 
@@ -21,7 +23,7 @@ These decisions were gathered during the design interview and are requirements f
 - Brand continuity: evolve the existing dark/blue identity rather than discard it.
 - Information architecture: retain the current feature groupings, but reorganize and rename lightly where it improves clarity.
 - Navigation: persistent **left sidebar** with a content pane.
-- Primary context: a desktop-first WPF settings window.
+- Primary context: a desktop-first iced settings window on Windows.
 - Initial priority: make **trigger and launch behavior** the most prominent content.
 - Advanced controls: use a **dedicated advanced section** rather than hiding important capabilities behind ambiguous menus.
 - Theme editing: provide **curated presets** plus a **full visual editor as an advanced option in the same theme area**.
@@ -38,14 +40,14 @@ These decisions were gathered during the design interview and are requirements f
 
 ## 3. Existing product context
 
-LoopW is a native .NET 8 WPF/Win32 Windows utility for window management. The app runs resident in the system tray and uses a global trigger key to open a radial window-management surface. The settings surface is hosted directly inside `MainWindow`; the former `SettingsWindow` is currently a `UserControl` placed into `MainWindow.SettingsHost`.
+LoopW is a native Rust + iced and Win32 Windows utility for window management. The app starts with a settings window, remains resident in the system tray, and uses a global trigger key to open a radial window-management surface. The current settings window is assembled in `src/ui/app.rs` from the section views under `src/ui/views`.
 
 Current relevant behavior and constraints:
 
-- `MainWindow` starts hidden for resident/tray operation and is shown or activated from the tray.
+- The resident runtime starts with the settings window and uses the tray for later activation.
 - Closing the main window hides it to the tray rather than exiting.
 - Settings changes are currently persisted automatically to `%LOCALAPPDATA%\\LoopW\\settings.json`.
-- The settings control is hosted as a `UserControl` inside `MainWindow.SettingsHost`; the redesign uses a persistent WPF UI navigation pane for General, Radial menu, Preview, Appearance, and Advanced. General is the user-facing name for the existing behavior group. The visible settings surface does not add a resident-status badge.
+- The settings surface uses a persistent left navigation pane for General, Radial menu, Preview, Appearance, and Advanced. General is the user-facing name for the trigger and launch group. The visible settings surface does not add a resident-status badge.
 - Trigger rebinding uses `GlobalHotkey.BeginCapture`; Esc cancels and reserved OS keys are rejected.
 - Keybinds remain part of the persisted model and are honored by the resident runtime; the Advanced section exposes add, rebind, action, cycle, bypass, and delete controls.
 - Radial settings include enabled state, cursor interaction, outer radius, inner radius, per-wedge targets, center target, cycle behavior, and color tokens.
@@ -79,7 +81,7 @@ The redesign must not accidentally change window action behavior, global hotkey 
 - Do not add text labels to the radial overlay.
 - Do not regress the action catalog, placement algorithms, global hook, tray lifecycle, IPC, or keybind execution semantics. New trigger and radial configuration options documented in section 17 are explicitly supported integration scope.
 - Do not turn settings into a dashboard or marketing page.
-- Do not introduce a web-based UI framework. The explicit WPF UI adoption decision in the implementation guidance is the approved native control-library exception for this redesign.
+- Do not introduce another UI framework. The current settings surface uses iced 0.14.
 - Do not require a full light theme as the default design deliverable; the standard product appearance remains dark.
 - Do not remove raw theme customization; it should be available as an advanced option.
 - Do not bury trigger rebinding, launch-at-login, keybinds, or reset/recovery behind unexplained overflow menus.
@@ -339,7 +341,7 @@ The selected quality bar prioritizes visual polish plus keyboard usability and c
 - Keep the navigation stable while the content pane scrolls.
 - Avoid a second independent settings window unless a later product decision explicitly asks for it.
 
-## 12. Implementation guidance
+## 12. Historical WPF implementation guidance
 
 This is a visual and interaction redesign, not a data-model rewrite.
 
@@ -467,7 +469,7 @@ The implementation resolves the former open questions as follows:
 
 The redesign is ready for implementation sign-off when the UI has a clear visual system, the left-sidebar navigation and General-first hierarchy are established, all existing settings remain available and persistent, the advanced workflows are not hidden or degraded, reset/error/capture states are specified and testable, and the layout passes keyboard, contrast, DPI, and tray/runtime regression checks without changing LoopW's core window-management behavior.
 
-## 17. Post-pull integration: advanced trigger and radial configuration
+## 17. Historical post-pull integration notes: advanced trigger and radial configuration
 
 The current `origin/main` native-port work is integrated into the WPF UI direction rather than treated as a separate settings surface. These additions are now part of the supported settings contract:
 
@@ -495,7 +497,7 @@ Additional QA scenarios for this integration:
 5. Assign built-in actions, keybinds, and No action to radial wedges and the center; verify assignments persist and invalid/missing targets normalize safely.
 6. Confirm the same radial hover/selection treatment and appearance values are visible in Settings and during actual hotkey use.
 
-## 18. Post-merge integration: snapping, monitor policy, and stash settings
+## 18. Historical post-merge integration notes: snapping, monitor policy, and stash settings
 
 The current `main` runtime additions are integrated into the existing five-section WPF UI rather than introducing a second navigation model:
 
