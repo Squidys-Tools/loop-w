@@ -63,6 +63,7 @@ struct Config {
     double_click: bool,
     middle_click: bool,
     keybinds: Vec<KeybindSnapshot>,
+    match_entries: Vec<MatchEntry>,
 }
 
 #[derive(Debug, Clone)]
@@ -129,6 +130,25 @@ fn handles() -> &'static Mutex<Handles> {
 
 fn config_from_shared() -> Config {
     let settings = super::shared::snapshot();
+    let keybinds: Vec<KeybindSnapshot> = settings
+        .keybinds
+        .iter()
+        .map(|keybind| KeybindSnapshot {
+            vk: keybind.vk,
+            mods: keybind.modifiers,
+            action: keybind.action,
+            cycle: keybind.cycle_enabled,
+            bypass: keybind.bypass_trigger,
+        })
+        .collect();
+    let match_entries = keybinds
+        .iter()
+        .map(|keybind| MatchEntry {
+            vk: keybind.vk,
+            modifiers: keybind.mods,
+            bypass_trigger: keybind.bypass,
+        })
+        .collect();
     Config {
         trigger_vk: settings.trigger_vk,
         trigger_mods: settings.trigger_modifiers,
@@ -137,17 +157,8 @@ fn config_from_shared() -> Config {
         timeout_ms: settings.trigger_timeout_ms.clamp(0, 10_000) as u64,
         double_click: settings.double_click_to_trigger,
         middle_click: settings.middle_click_to_trigger,
-        keybinds: settings
-            .keybinds
-            .iter()
-            .map(|keybind| KeybindSnapshot {
-                vk: keybind.vk,
-                mods: keybind.modifiers,
-                action: keybind.action,
-                cycle: keybind.cycle_enabled,
-                bypass: keybind.bypass_trigger,
-            })
-            .collect(),
+        keybinds,
+        match_entries,
     }
 }
 
@@ -238,15 +249,14 @@ pub fn is_capturing() -> bool {
 
 fn hook_thread() {
     unsafe extern "system" fn keyboard_proc(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
-        let handle = handles().lock().map(|g| g.keyboard).unwrap_or_default();
         if code < 0 {
-            return CallNextHookEx(Some(handle), code, wparam, lparam);
+            return CallNextHookEx(None, code, wparam, lparam);
         }
         let message = wparam.0 as u32;
         let is_down = message == WM_KEYDOWN || message == WM_SYSKEYDOWN;
         let is_up = message == WM_KEYUP || message == WM_SYSKEYUP;
         if !is_down && !is_up {
-            return CallNextHookEx(Some(handle), code, wparam, lparam);
+            return CallNextHookEx(None, code, wparam, lparam);
         }
         let vk = (*(lparam.0 as *const KBDLLHOOKSTRUCT)).vkCode;
         let swallow = state()
@@ -262,21 +272,25 @@ fn hook_thread() {
         if swallow {
             LRESULT(1)
         } else {
-            CallNextHookEx(Some(handle), code, wparam, lparam)
+            CallNextHookEx(None, code, wparam, lparam)
         }
     }
 
     unsafe extern "system" fn mouse_proc(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
-        let handle = handles().lock().map(|g| g.mouse).unwrap_or_default();
         if code < 0 {
-            return CallNextHookEx(Some(handle), code, wparam, lparam);
+            return CallNextHookEx(None, code, wparam, lparam);
         }
         let message = wparam.0 as u32;
-        let swallow = state().lock().map(|mut guard| match message {
-            WM_MBUTTONDOWN => handle_middle_down_locked(&mut guard),
-            WM_MBUTTONUP => handle_middle_up_locked(&mut guard),
-            _ => false,
-        });
+        let swallow = match message {
+            WM_MBUTTONDOWN | WM_MBUTTONUP => state().lock().map(|mut guard| {
+                if message == WM_MBUTTONDOWN {
+                    handle_middle_down_locked(&mut guard)
+                } else {
+                    handle_middle_up_locked(&mut guard)
+                }
+            }),
+            _ => Ok(false),
+        };
         // Title-bar drag traffic goes to the snap tracker (never swallowed);
         // middle-button traffic drives the alternate trigger only.
         match message {
@@ -287,7 +301,7 @@ fn hook_thread() {
         if swallow.unwrap_or(false) {
             LRESULT(1)
         } else {
-            CallNextHookEx(Some(handle), code, wparam, lparam)
+            CallNextHookEx(None, code, wparam, lparam)
         }
     }
 
@@ -346,7 +360,11 @@ fn any_held(guard: &HookState) -> bool {
 
 fn handle_key_down_locked(guard: &mut HookState, vk: u32) -> bool {
     let trigger_modifiers = current_modifiers(guard.config.side);
-    let keybind_modifiers = current_modifiers(TriggerModifierSide::Any);
+    let keybind_modifiers = if guard.config.side == TriggerModifierSide::Any {
+        trigger_modifiers
+    } else {
+        current_modifiers(TriggerModifierSide::Any)
+    };
     handle_key_down_with_modifiers_locked(guard, vk, trigger_modifiers, keybind_modifiers)
 }
 
@@ -409,18 +427,8 @@ fn matched_keybind_index(
     modifiers: u32,
     trigger_held: bool,
 ) -> Option<usize> {
-    let entries: Vec<MatchEntry> = guard
-        .config
-        .keybinds
-        .iter()
-        .map(|keybind| MatchEntry {
-            vk: keybind.vk,
-            modifiers: keybind.mods,
-            bypass_trigger: keybind.bypass,
-        })
-        .collect();
     match_keybind(
-        &entries,
+        &guard.config.match_entries,
         vk,
         modifiers,
         guard.config.trigger_vk,
@@ -642,6 +650,14 @@ mod tests {
     use super::*;
 
     fn state_with_keybinds(keybinds: Vec<KeybindSnapshot>) -> HookState {
+        let match_entries = keybinds
+            .iter()
+            .map(|keybind| MatchEntry {
+                vk: keybind.vk,
+                modifiers: keybind.mods,
+                bypass_trigger: keybind.bypass,
+            })
+            .collect();
         HookState {
             config: Config {
                 trigger_vk: 0x20,
@@ -652,6 +668,7 @@ mod tests {
                 double_click: false,
                 middle_click: false,
                 keybinds,
+                match_entries,
             },
             trigger_down: false,
             middle_down: false,

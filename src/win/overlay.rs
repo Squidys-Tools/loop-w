@@ -8,6 +8,57 @@
 
 use super::native;
 use crate::core::rect::Rect;
+use std::sync::{Mutex, OnceLock};
+
+#[derive(Clone, Copy)]
+enum CacheSlot {
+    Radial,
+    Preview,
+}
+
+#[derive(Default)]
+struct OverlayCache {
+    radial: Option<isize>,
+    preview: Option<isize>,
+    ordered: Option<(isize, isize)>,
+}
+
+static OVERLAY_CACHE: OnceLock<Mutex<OverlayCache>> = OnceLock::new();
+
+fn overlay_cache() -> &'static Mutex<OverlayCache> {
+    OVERLAY_CACHE.get_or_init(|| Mutex::new(OverlayCache::default()))
+}
+
+fn cached_window(slot: CacheSlot, expected: Rect) -> Option<windows::Win32::Foundation::HWND> {
+    let Ok(mut cache) = overlay_cache().lock() else {
+        return find_own_window(expected);
+    };
+    let cached = match slot {
+        CacheSlot::Radial => &mut cache.radial,
+        CacheSlot::Preview => &mut cache.preview,
+    };
+    if let Some(raw) = *cached {
+        let hwnd = native::from_raw(raw);
+        if window_matches(hwnd, expected) {
+            return Some(hwnd);
+        }
+        *cached = None;
+    }
+    let found = find_own_window(expected);
+    *cached = found.map(native::raw);
+    found
+}
+
+fn window_matches(hwnd: windows::Win32::Foundation::HWND, expected: Rect) -> bool {
+    native::is_window(hwnd)
+        && native::process_id(hwnd) == native::own_process_id()
+        && native::window_rect(hwnd).is_some_and(|frame| {
+            (frame.left - expected.left).abs() <= 2
+                && (frame.top - expected.top).abs() <= 2
+                && (frame.width() - expected.width()).abs() <= 2
+                && (frame.height() - expected.height()).abs() <= 2
+        })
+}
 
 /// Unique titles used to find overlay HWNDs for style patching.
 pub const RADIAL_TITLE: &str = "LoopW Radial";
@@ -73,7 +124,7 @@ pub fn make_click_through_by_title(title: &str) -> bool {
 /// Find one of our own top-level windows whose rect matches `expected`
 /// (±2 px) and add WS_EX_TOOLWINDOW (no taskbar button, no Alt+Tab).
 pub fn patch_tool_window(expected: Rect) -> bool {
-    match find_own_window(expected) {
+    match cached_window(CacheSlot::Radial, expected) {
         Some(hwnd) => {
             use windows::Win32::UI::WindowsAndMessaging::*;
             unsafe {
@@ -97,15 +148,23 @@ pub fn patch_tool_window(expected: Rect) -> bool {
 pub fn order_preview_below_radial(preview_expected: Rect, radial_expected: Rect) -> bool {
     use windows::Win32::UI::WindowsAndMessaging::*;
     let (Some(preview), Some(radial)) = (
-        find_own_window(preview_expected),
-        find_own_window(radial_expected),
+        cached_window(CacheSlot::Preview, preview_expected),
+        cached_window(CacheSlot::Radial, radial_expected),
     ) else {
         return false;
     };
     if preview == radial {
         return true;
     }
-    unsafe {
+    let order = (native::raw(preview), native::raw(radial));
+    if overlay_cache()
+        .lock()
+        .map(|cache| cache.ordered == Some(order))
+        .unwrap_or(false)
+    {
+        return true;
+    }
+    let ordered = unsafe {
         SetWindowPos(
             preview,
             Some(radial),
@@ -116,13 +175,19 @@ pub fn order_preview_below_radial(preview_expected: Rect, radial_expected: Rect)
             SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_ASYNCWINDOWPOS,
         )
         .is_ok()
+    };
+    if ordered {
+        if let Ok(mut cache) = overlay_cache().lock() {
+            cache.ordered = Some(order);
+        }
     }
+    ordered
 }
 
 /// Find one of our own overlay windows at `expected` and make it
 /// click-through (+ tool-window).
 pub fn patch_click_through(expected: Rect) -> bool {
-    match find_own_window(expected) {
+    match cached_window(CacheSlot::Preview, expected) {
         Some(hwnd) => {
             native::make_overlay_click_through(hwnd);
             true
@@ -138,7 +203,7 @@ pub fn patch_click_through(expected: Rect) -> bool {
 /// `SetWindowPos` call prevents a resize and move from landing in different
 /// compositor passes when the hover changes between differently sized zones.
 pub fn set_preview_frame(frame: Rect) -> bool {
-    native::find_window_by_title(PREVIEW_TITLE)
+    cached_window(CacheSlot::Preview, frame)
         .map(|hwnd| native::set_pos(hwnd, frame))
         .unwrap_or(false)
 }

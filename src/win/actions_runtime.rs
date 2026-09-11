@@ -20,9 +20,6 @@ pub fn apply(hwnd: u64, action: WindowAction) -> Result<String, String> {
     if action == WindowAction::RevealStashed {
         return super::stash_service::reveal_next();
     }
-    if hwnd == 0 || !native::is_window(native::from_raw(hwnd as isize)) {
-        return Err("The target window is no longer available.".to_string());
-    }
     if let Err(diagnostic) = policy::try_authorize_action(hwnd, action) {
         return Err(diagnostic.to_string());
     }
@@ -111,10 +108,7 @@ pub fn apply_geometry(
 
 /// Snap commit: re-validated from scratch against the ideal frame.
 pub fn apply_snap(hwnd: u64, action: WindowAction, frame: Rect) -> Result<String, String> {
-    if hwnd == 0
-        || !native::is_window(native::from_raw(hwnd as isize))
-        || !super::query::is_eligible_for_snap(hwnd)
-    {
+    if hwnd == 0 || !super::query::is_eligible_for_snap(hwnd) {
         return Err("The dragged window is no longer available.".to_string());
     }
     if let Err(diagnostic) = policy::try_authorize_action(hwnd, action) {
