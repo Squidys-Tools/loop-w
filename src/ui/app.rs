@@ -68,7 +68,6 @@ impl Section {
 /// All UI events.
 #[derive(Debug, Clone)]
 pub enum Message {
-    Noop,
     SelectSection(Section),
     BeginTriggerCapture,
     CancelTriggerCapture,
@@ -165,6 +164,10 @@ struct PreviewSession {
     /// DPI scale at the frame origin: converts physical geometry to the
     /// logical values handed to iced (mirrors `RadialSession.scale`).
     scale: f64,
+    /// Number of z-order repair attempts after the asynchronous windows open.
+    /// Once the native windows are found and ordered, repeating the Win32
+    /// lookup on every runtime tick only adds work and cannot improve the UI.
+    order_tries: u8,
 }
 
 /// Mutable UI + runtime state.
@@ -327,15 +330,18 @@ fn subscription(state: &State) -> Subscription<Message> {
         && state.preview.is_none()
         && !win::snap_service::is_active();
 
-    let mut subscriptions = vec![
-        window::close_requests().map(Message::WindowClosed),
-        iced::event::listen().map(|event| match event {
+    let mut subscriptions = vec![window::close_requests().map(Message::WindowClosed)];
+    subscriptions.push(iced::event::listen_with(|event, status, _window| {
+        if status != iced::event::Status::Ignored {
+            return None;
+        }
+        match event {
             iced::Event::Keyboard(keyboard::Event::KeyPressed { key, .. }) => {
-                Message::OverlayKey(key)
+                Some(Message::OverlayKey(key))
             }
-            _ => Message::Noop,
-        }),
-    ];
+            _ => None,
+        }
+    }));
 
     if settings_only {
         // A settings-only window does not need animation frames. Keeping the
@@ -345,10 +351,11 @@ fn subscription(state: &State) -> Subscription<Message> {
         subscriptions
             .push(iced::time::every(Duration::from_millis(250)).map(|_| Message::FrameTick));
     } else {
-        // Overlay hover and drag snapping need frame-rate cursor tracking.
-        // The timer remains necessary in tray-only mode, where iced has no
-        // window redraw events to drive the resident runtime.
-        subscriptions.push(window::frames().map(|_| Message::FrameTick));
+        // Overlay hover and drag snapping need frame-rate cursor tracking. A
+        // timer is sufficient for that polling; subscribing to window frames
+        // as well duplicates ticks because each update can request a redraw.
+        // The same timer also keeps the tray-only runtime alive, where iced
+        // has no window redraw events to drive it.
         subscriptions
             .push(iced::time::every(Duration::from_millis(16)).map(|_| Message::FrameTick));
     }
@@ -397,7 +404,6 @@ fn commit_settings(state: &mut State, status: &str) {
 #[allow(clippy::too_many_lines)]
 fn update(state: &mut State, message: Message) -> Task<Message> {
     match message {
-        Message::Noop => Task::none(),
         Message::SelectSection(section) => {
             state.section = section;
             state.confirming_reset_all = false;
@@ -958,8 +964,16 @@ fn frame_tick(state: &mut State) -> Task<Message> {
     if let Some(tray) = state.tray.as_ref() {
         win::tray::poll(tray);
     }
-    // Stash records change under us (persist/prune paths): mirror them.
-    state.settings.stash_records = win::shared::snapshot().stash_records;
+    // Stash records change under us (persist/prune paths): mirror them only
+    // while settings is open, and only when the value actually changed. The
+    // shared snapshot clones the full settings object, so avoid doing that on
+    // every overlay tick; the settings-only pump is deliberately slower.
+    if state.main_id.is_some() {
+        let stash_records = win::shared::snapshot().stash_records;
+        if state.settings.stash_records != stash_records {
+            state.settings.stash_records = stash_records;
+        }
+    }
     for event in drain() {
         handle_runtime(state, &mut tasks, event);
     }
@@ -1004,10 +1018,21 @@ fn frame_tick(state: &mut State) -> Task<Message> {
     }
     // The preview opens and moves after the radial, so it settles above it
     // in the topmost band and hides the menu where they overlap. Pin the
-    // preview back below the radial (no activation, no focus steal); this
-    // retries through the async open/move window like the patching above.
-    if let (Some(radial), Some(preview)) = (state.radial.as_ref(), state.preview.as_ref()) {
-        win::overlay::order_preview_below_radial(preview.overlay_frame, radial_expected(radial));
+    // preview back below the radial (no activation, no focus steal), but only
+    // retry while the asynchronous windows are settling. Re-running the
+    // EnumWindows lookup every tick made the overlay path needlessly expensive.
+    if let (Some(radial), Some(preview)) = (state.radial.as_ref(), state.preview.as_mut()) {
+        if preview.order_tries < 12 {
+            let ordered = win::overlay::order_preview_below_radial(
+                preview.overlay_frame,
+                radial_expected(radial),
+            );
+            if ordered {
+                preview.order_tries = 12;
+            } else {
+                preview.order_tries += 1;
+            }
+        }
     }
     Task::batch(tasks)
 }
@@ -1250,6 +1275,11 @@ fn open_radial(state: &mut State, tasks: &mut Vec<Task<Message>>, target_hwnd: u
     let scale = native::dpi_scale_at_point(cursor);
     let (lx, ly, lw, lh) = win::overlay::to_logical(bounds, scale);
     let (id, task) = window::open(radial_window_settings(lx, ly, lw, lh));
+    if let Some(preview) = state.preview.as_mut() {
+        // A radial can be opened while a drag preview is already alive. That
+        // creates a new z-order relationship which needs one settling pass.
+        preview.order_tries = 0;
+    }
     state.radial = Some(RadialSession {
         id,
         target_hwnd,
@@ -1296,15 +1326,21 @@ fn state_cursor_interaction() -> bool {
 }
 
 fn update_radial_hover(state: &mut State, tasks: &mut Vec<Task<Message>>, cursor: Point) {
-    match state.radial.as_mut() {
+    let changed = match state.radial.as_mut() {
         Some(session) => {
-            session.hovered = wedge_at(session, cursor);
+            let hovered = wedge_at(session, cursor);
+            let changed = session.hovered != hovered;
+            session.hovered = hovered;
+            changed
         }
         None => return,
+    };
+    // Target-frame resolution crosses into Win32 and can be relatively
+    // expensive. Re-resolve only when the ray selects a different wedge, or
+    // when an external event (display/settings change) left the preview gone.
+    if changed || state.preview.is_none() {
+        refresh_preview_for_hover(state, tasks);
     }
-    // Always refresh while open: display/DPI/work-area changes must move a
-    // live preview even when the cursor (and hover) did not.
-    refresh_preview_for_hover(state, tasks);
 }
 
 fn refresh_preview_for_hover(state: &mut State, tasks: &mut Vec<Task<Message>>) {
@@ -1379,6 +1415,7 @@ fn ensure_preview(state: &mut State, tasks: &mut Vec<Task<Message>>, frame: Rect
         patch_tries: 0,
         window_size: (lw, lh),
         scale,
+        order_tries: 0,
     });
     tasks.push(task.map(Message::PreviewOpened));
 }
