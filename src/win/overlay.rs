@@ -187,7 +187,15 @@ pub fn order_preview_below_radial(preview_expected: Rect, radial_expected: Rect)
 /// Find one of our own overlay windows at `expected` and make it
 /// click-through (+ tool-window).
 pub fn patch_click_through(expected: Rect) -> bool {
-    match cached_window(CacheSlot::Preview, expected) {
+    // The preview can be created after its target frame has already moved.
+    // During that short async window its HWND may not yet match the cached
+    // physical rect, so fall back to the unique app-owned title instead of
+    // exhausting the retry budget and leaving a taskbar/Alt+Tab window.
+    let hwnd = cached_window(CacheSlot::Preview, expected).or_else(|| {
+        native::find_window_by_title(PREVIEW_TITLE)
+            .filter(|hwnd| native::process_id(*hwnd) == native::own_process_id())
+    });
+    match hwnd {
         Some(hwnd) => {
             native::make_overlay_click_through(hwnd);
             true
