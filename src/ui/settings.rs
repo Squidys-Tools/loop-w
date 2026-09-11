@@ -24,7 +24,10 @@ pub(super) fn commit(state: &mut State, status: &str) {
     // `sync::commit` computes this comparison against the last saved value
     // and reports it only on success (a failed save changes nothing).
     let last_saved = win::shared::snapshot();
-    let candidate = state.settings.clone();
+    // Stash records are maintained by the resident stash service, not by the
+    // settings controls. The UI copy can be one frame behind, so preserve the
+    // newest shared value instead of writing an older list back to disk.
+    let candidate = merge_runtime_owned_fields(state.settings.clone(), &last_saved);
     let report = crate::settings::sync::commit(candidate, last_saved, persistence::save, status);
     state.settings = report.settings.clone();
     state.save_error = report.save_error;
@@ -45,9 +48,44 @@ pub(super) fn commit(state: &mut State, status: &str) {
     win::stash_service::handle_settings_changed();
 }
 
+fn merge_runtime_owned_fields(mut candidate: AppSettings, last_saved: &AppSettings) -> AppSettings {
+    candidate.stash_records = last_saved.stash_records.clone();
+    candidate
+}
+
+pub(super) fn cancel_captures(state: &mut State) {
+    if state.capturing_trigger || state.capturing_keybind.is_some() {
+        win::hooks::cancel_capture();
+    }
+    state.capturing_trigger = false;
+    state.capturing_keybind = None;
+}
+
+fn sync_launch_at_login_before_commit(state: &mut State, previous: bool) -> bool {
+    let requested = state.settings.launch_at_login;
+    if requested == previous {
+        return true;
+    }
+    if win::startup::set_launch_at_login(requested).is_err() {
+        state.settings.launch_at_login = previous;
+        state.status = "Could not update launch setting".to_string();
+        return false;
+    }
+    true
+}
+
+fn restore_launch_at_login_after_failed_commit(state: &State, requested: bool) {
+    if state.settings.launch_at_login != requested {
+        let _ = win::startup::set_launch_at_login(state.settings.launch_at_login);
+    }
+}
+
 pub(super) fn try_update(state: &mut State, message: Message) -> Result<Task<Message>, Message> {
     match message {
         Message::SelectSection(section) => {
+            if section != Section::General {
+                cancel_captures(state);
+            }
             state.section = section;
             state.confirming_reset_all = false;
             Ok(Task::none())
@@ -97,18 +135,15 @@ pub(super) fn try_update(state: &mut State, message: Message) -> Result<Task<Mes
             Ok(Task::none())
         }
         Message::SetLaunchAtLogin(enabled) => {
+            let previous = state.settings.launch_at_login;
             state.settings.launch_at_login = enabled;
-            if win::startup::set_launch_at_login(enabled).is_err() {
-                state.settings.launch_at_login = !enabled;
-                state.status = "Could not update launch setting".to_string();
+            if !sync_launch_at_login_before_commit(state, previous) {
                 return Ok(Task::none());
             }
             commit(state, "Saved");
             // Persistence failure reverts the in-memory settings snapshot;
             // keep the registry entry aligned with that last saved value too.
-            if state.settings.launch_at_login != enabled {
-                let _ = win::startup::set_launch_at_login(state.settings.launch_at_login);
-            }
+            restore_launch_at_login_after_failed_commit(state, enabled);
             Ok(Task::none())
         }
         Message::NudgeDelay(delta) => {
@@ -136,6 +171,11 @@ pub(super) fn try_update(state: &mut State, message: Message) -> Result<Task<Mes
         Message::SetRadialEnabled(value) => {
             state.settings.radial_enabled = value;
             commit(state, "Saved");
+            if !state.settings.radial_enabled {
+                let mut tasks = Vec::new();
+                super::app::close_overlays(state, &mut tasks);
+                return Ok(Task::batch(tasks));
+            }
             Ok(Task::none())
         }
         Message::SetCursorInteraction(value) => {
@@ -197,7 +237,7 @@ pub(super) fn try_update(state: &mut State, message: Message) -> Result<Task<Mes
         Message::SetPreviewEnabled(value) => {
             state.settings.preview_enabled = value;
             commit(state, "Saved");
-            if !value {
+            if !state.settings.preview_enabled {
                 let mut tasks = Vec::new();
                 super::app::close_preview(state, &mut tasks);
                 return Ok(Task::batch(tasks));
@@ -207,7 +247,7 @@ pub(super) fn try_update(state: &mut State, message: Message) -> Result<Task<Mes
         Message::SetDragSnap(value) => {
             state.settings.drag_snap_enabled = value;
             commit(state, "Saved");
-            if !value {
+            if !state.settings.drag_snap_enabled {
                 // End mid-drag as Disabled: hide preview, restore pre-drag
                 // frame when a candidate was seen.
                 let mut tasks = Vec::new();
@@ -382,8 +422,17 @@ pub(super) fn try_update(state: &mut State, message: Message) -> Result<Task<Mes
             Ok(Task::none())
         }
         Message::ResetSection(section) => {
+            cancel_captures(state);
+            let previous_settings = state.settings.clone();
+            let previous_launch_at_login = state.settings.launch_at_login;
             reset_section(state, section);
+            let requested_launch_at_login = state.settings.launch_at_login;
+            if !sync_launch_at_login_before_commit(state, previous_launch_at_login) {
+                state.settings = previous_settings;
+                return Ok(Task::none());
+            }
             commit(state, "Reset complete");
+            restore_launch_at_login_after_failed_commit(state, requested_launch_at_login);
             Ok(Task::none())
         }
         Message::ConfirmResetAll => {
@@ -395,10 +444,19 @@ pub(super) fn try_update(state: &mut State, message: Message) -> Result<Task<Mes
             Ok(Task::none())
         }
         Message::ResetAll => {
+            cancel_captures(state);
+            let previous_settings = state.settings.clone();
+            let previous_launch_at_login = state.settings.launch_at_login;
             state.settings.reset_all();
             state.color_error = None;
             state.confirming_reset_all = false;
+            let requested_launch_at_login = state.settings.launch_at_login;
+            if !sync_launch_at_login_before_commit(state, previous_launch_at_login) {
+                state.settings = previous_settings;
+                return Ok(Task::none());
+            }
             commit(state, "Reset complete");
+            restore_launch_at_login_after_failed_commit(state, requested_launch_at_login);
             Ok(Task::none())
         }
         Message::ClearDiagnostics => {
@@ -539,5 +597,32 @@ fn reset_section(state: &mut State, section: Section) {
             state.settings.excluded_executables = defaults.excluded_executables;
             state.settings.excluded_processes = defaults.excluded_processes;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::stash::{StashEdge, StashRecord};
+
+    #[test]
+    fn commit_candidate_preserves_newer_runtime_stash_records() {
+        let mut last_saved = AppSettings::default();
+        last_saved.stash_records.push(StashRecord {
+            id: "live-record".to_string(),
+            executable_path: String::new(),
+            process_id: 42,
+            window_class: String::new(),
+            title: String::new(),
+            edge: StashEdge::Left,
+            original_placement: Default::default(),
+            original_monitor: Default::default(),
+            stashed_frame: Default::default(),
+        });
+
+        let candidate = AppSettings::default();
+        let merged = merge_runtime_owned_fields(candidate, &last_saved);
+
+        assert_eq!(merged.stash_records, last_saved.stash_records);
     }
 }

@@ -189,6 +189,8 @@ pub struct State {
     pub(super) instance: Option<win::instance::InstanceGuard>,
     pub(super) startup_command: Option<String>,
     pub(super) pending_target: Option<u64>,
+    /// Revision observed when the shared settings mirror was last synchronized.
+    pub(super) settings_revision: u64,
 }
 
 struct BootArgs {
@@ -313,6 +315,7 @@ impl State {
                 instance,
                 startup_command,
                 pending_target: None,
+                settings_revision: win::shared::settings_revision(),
             },
             task,
         )
@@ -330,18 +333,36 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
     match message {
         Message::FrameTick => super::runtime::frame_tick(state),
         Message::MainOpened(id) => {
-            state.main_id = Some(id);
+            // `windows::show_main` records the id synchronously when it queues
+            // the open task. Ignore a completion from a window that was
+            // closed before iced finished creating it; accepting it would
+            // resurrect a ghost settings window in resident state.
+            if state.main_id != Some(id) {
+                return Task::none();
+            }
             Task::none()
         }
         Message::RadialOpened(id) => {
-            if let Some(session) = state.radial.as_mut() {
-                session.id = id;
+            // The id returned by `window::open` is stable. A stale completion
+            // must not retarget a newer radial session after close/reopen.
+            if state
+                .radial
+                .as_ref()
+                .is_some_and(|session| session.id != id)
+            {
+                return Task::none();
             }
             Task::none()
         }
         Message::PreviewOpened(id) => {
-            if let Some(session) = state.preview.as_mut() {
-                session.id = id;
+            // See `RadialOpened`: an old async completion is harmless only if
+            // it still belongs to the currently tracked preview session.
+            if state
+                .preview
+                .as_ref()
+                .is_some_and(|session| session.id != id)
+            {
+                return Task::none();
             }
             Task::none()
         }
@@ -352,6 +373,9 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
                 // native window here; clearing only the id leaves its last
                 // painted surface behind as a black/ghost window.
                 state.main_id = None;
+                super::settings::cancel_captures(state);
+                state.confirming_reset_all = false;
+                state.color_error = None;
                 return window::close(id);
             }
             if state.radial.as_ref().map(|s| s.id) == Some(id) {
@@ -506,6 +530,9 @@ fn refresh_preview_for_hover(state: &mut State, tasks: &mut Vec<Task<Message>>) 
 
 pub(super) fn ensure_preview(state: &mut State, tasks: &mut Vec<Task<Message>>, frame: Rect) {
     if frame.width() <= 0 || frame.height() <= 0 {
+        // Never leave the last valid preview visible when the producer hands
+        // us an invalid/stale frame during a drag or display transition.
+        close_preview(state, tasks);
         return;
     }
     let overlay_frame = preview_overlay_frame(frame);
@@ -514,16 +541,13 @@ pub(super) fn ensure_preview(state: &mut State, tasks: &mut Vec<Task<Message>>, 
             return;
         }
         // Most hover transitions stay on one monitor. Keep the HWND and its
-        // iced surface stable in that case. Re-submit its unchanged size as
-        // a redraw boundary: iced can otherwise retain the existing canvas
-        // surface while only the target rectangle inside it changes.
+        // iced surface stable in that case. The canvas cache invalidates from
+        // the changed target during draw, so do not issue a native same-size
+        // resize just to force a redraw.
         if session.overlay_frame == overlay_frame {
-            let id = session.id;
-            let size = iced::Size::new(session.window_size.0, session.window_size.1);
             if let Some(session) = state.preview.as_mut() {
                 session.frame = frame;
             }
-            tasks.push(window::resize(id, size));
             return;
         }
 
@@ -753,7 +777,29 @@ fn settings_view(state: &State) -> Element<'_, Message> {
 mod tests {
     use super::*;
     use crate::core::actions::WindowAction;
-    use crate::core::radial_targets::RadialTargetKind;
+    use crate::core::radial_targets::{RadialTarget, RadialTargetKind};
+
+    fn test_state() -> State {
+        State {
+            settings: AppSettings::default(),
+            section: Section::General,
+            status: String::new(),
+            color_error: None,
+            save_error: None,
+            confirming_reset_all: false,
+            capturing_trigger: false,
+            capturing_keybind: None,
+            main_id: None,
+            radial: None,
+            preview: None,
+            tray: None,
+            cycle: CycleState::new(),
+            instance: None,
+            startup_command: None,
+            pending_target: None,
+            settings_revision: 0,
+        }
+    }
 
     #[test]
     fn radial_target_choices_round_trip_built_in_and_none() {
@@ -791,5 +837,64 @@ mod tests {
         assert_eq!(wedge_index_at(center, 40.0, Point::new(900, 100)), Some(0));
         assert_eq!(wedge_index_at(center, 40.0, Point::new(100, -700)), Some(6));
         assert_eq!(wedge_index_at(center, 40.0, Point::new(120, 110)), None);
+    }
+
+    #[test]
+    fn stale_main_open_completion_does_not_resurrect_closed_window() {
+        let id = window::Id::unique();
+        let mut state = test_state();
+
+        let _ = update(&mut state, Message::MainOpened(id));
+        assert_eq!(state.main_id, None);
+
+        state.main_id = Some(id);
+        let _ = update(&mut state, Message::WindowClosed(id));
+        assert_eq!(state.main_id, None);
+
+        let _ = update(&mut state, Message::MainOpened(id));
+        assert_eq!(state.main_id, None);
+    }
+
+    #[test]
+    fn stale_overlay_open_completion_does_not_retarget_new_session() {
+        let current_radial = window::Id::unique();
+        let stale_radial = window::Id::unique();
+        let current_preview = window::Id::unique();
+        let stale_preview = window::Id::unique();
+        let mut state = test_state();
+        state.radial = Some(RadialSession {
+            id: current_radial,
+            target_hwnd: 1,
+            center: Point::new(100, 100),
+            outer: 90.0,
+            inner: 50.0,
+            hovered: None,
+            targets: vec![RadialTarget::None],
+            center_target: RadialTarget::None,
+            patch_tries: 0,
+            window_size: (200.0, 200.0),
+            scale: 1.0,
+        });
+        state.preview = Some(PreviewSession {
+            id: current_preview,
+            frame: Rect::new(0, 0, 100, 100),
+            overlay_frame: Rect::new(0, 0, 100, 100),
+            patch_tries: 0,
+            window_size: (100.0, 100.0),
+            scale: 1.0,
+            order_tries: 0,
+        });
+
+        let _ = update(&mut state, Message::RadialOpened(stale_radial));
+        let _ = update(&mut state, Message::PreviewOpened(stale_preview));
+
+        assert_eq!(
+            state.radial.as_ref().map(|session| session.id),
+            Some(current_radial)
+        );
+        assert_eq!(
+            state.preview.as_ref().map(|session| session.id),
+            Some(current_preview)
+        );
     }
 }

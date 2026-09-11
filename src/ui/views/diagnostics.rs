@@ -4,7 +4,7 @@
 //! Reads the global [`crate::win::diagnostics`] ring buffer directly, so no
 //! `State` plumbing is needed; the returned element owns all its text.
 
-use iced::widget::{button, column, text};
+use iced::widget::{button, column, keyed_column, text};
 use iced::Element;
 
 use crate::ui::app::Message;
@@ -14,33 +14,39 @@ use crate::win::diagnostics::{self, VIEW_TAIL};
 pub fn section() -> Element<'static, Message> {
     let entries = diagnostics::list();
     let entry_count = entries.len();
-    let mut log = column![text("Diagnostics").size(15)].spacing(6);
+    let mut log = keyed_column([(0_u64, text("Diagnostics").size(15).into())]).spacing(6);
     log = log.push(
+        1,
         text("Recent LoopW failures land here instead of failing silently (newest first).")
             .size(12),
     );
     if entries.is_empty() {
-        log = log.push(text("No diagnostics recorded this session.").size(13));
+        log = log.push(2, text("No diagnostics recorded this session.").size(13));
     } else {
         for entry in entries.into_iter().rev().take(VIEW_TAIL) {
             let mut item = column![text(entry.headline()).size(12)].spacing(2);
             if !entry.detail.is_empty() {
                 item = item.push(text(entry.detail).size(11));
             }
-            log = log.push(item);
+            log = log.push(entry.seq | (1_u64 << 63), item);
         }
         let older = entry_count.saturating_sub(VIEW_TAIL);
         if older > 0 {
-            log = log.push(text(format!("…plus {older} older.")).size(11));
+            log = log.push(2, text(format!("…plus {older} older.")).size(11));
         }
-        log = log.push(button("Clear diagnostics").on_press(Message::ClearDiagnostics));
+        log = log.push(
+            3,
+            button("Clear diagnostics").on_press(Message::ClearDiagnostics),
+        );
     }
     log = log
         .push(
+            4,
             text("Reproduce a pipe (IPC) issue: run LoopW.exe list/actions from a console while LoopW is running; failures appear here.")
                 .size(12),
         )
         .push(
+            5,
             text("Reproduce a settings issue: make %LOCALAPPDATA%\\LoopW\\settings.json read-only, change a setting, and watch for the save failure here.")
                 .size(12),
         );

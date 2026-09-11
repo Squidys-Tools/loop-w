@@ -1,5 +1,6 @@
 //! Radial section: text-free surface first, geometry + assignments below.
 
+use std::cell::RefCell;
 use std::sync::Arc;
 
 use iced::widget::{
@@ -11,6 +12,35 @@ use crate::core::actions::WindowAction;
 use crate::core::radial::GEOMETRY;
 use crate::ui::app::{Message, Section, State};
 use crate::ui::widgets::radial_canvas::{self, RadialCanvas};
+
+struct TargetChoiceKey {
+    id: Arc<str>,
+    modifiers: u32,
+    vk: u32,
+}
+
+struct TargetChoiceCache {
+    keybinds: Vec<TargetChoiceKey>,
+    choices: Arc<[String]>,
+}
+
+thread_local! {
+    static TARGET_CHOICE_CACHE: RefCell<Option<TargetChoiceCache>> = const { RefCell::new(None) };
+}
+
+fn action_choices() -> &'static Arc<[String]> {
+    static CHOICES: std::sync::OnceLock<Arc<[String]>> = std::sync::OnceLock::new();
+
+    CHOICES.get_or_init(|| {
+        let mut choices = vec!["No action".to_string()];
+        choices.extend(
+            WindowAction::ALL
+                .iter()
+                .map(|action| format!("Action: {}", action.display_name())),
+        );
+        choices.into()
+    })
+}
 
 pub fn view(state: &State) -> Element<'_, Message> {
     let settings = &state.settings;
@@ -96,24 +126,56 @@ pub fn view(state: &State) -> Element<'_, Message> {
 }
 
 fn target_choices(settings: &StateSettings) -> Arc<[String]> {
-    let mut choices = vec!["No action".to_string()];
-    choices.extend(
-        WindowAction::ALL
-            .iter()
-            .map(|action| format!("Action: {}", action.display_name())),
-    );
-    choices.extend(settings.keybinds.iter().map(|bind| {
-        format!(
-            "Keybind: {} ({})",
-            bind.id,
-            crate::core::hotkey::hotkey_name(
-                bind.modifiers,
-                bind.vk,
-                crate::core::hotkey::TriggerModifierSide::Any,
+    if settings.keybinds.is_empty() {
+        return Arc::clone(action_choices());
+    }
+
+    TARGET_CHOICE_CACHE.with(|cache| {
+        let mut cache = cache.borrow_mut();
+        let cache_matches = cache.as_ref().is_some_and(|cached| {
+            cached.keybinds.len() == settings.keybinds.len()
+                && cached
+                    .keybinds
+                    .iter()
+                    .zip(&settings.keybinds)
+                    .all(|(cached, bind)| {
+                        cached.id.as_ref() == bind.id
+                            && cached.modifiers == bind.modifiers
+                            && cached.vk == bind.vk
+                    })
+        });
+        if cache_matches {
+            return Arc::clone(&cache.as_ref().expect("matched cache").choices);
+        }
+
+        let mut choices = action_choices().iter().cloned().collect::<Vec<_>>();
+        choices.extend(settings.keybinds.iter().map(|bind| {
+            format!(
+                "Keybind: {} ({})",
+                bind.id,
+                crate::core::hotkey::hotkey_name(
+                    bind.modifiers,
+                    bind.vk,
+                    crate::core::hotkey::TriggerModifierSide::Any,
+                )
             )
-        )
-    }));
-    choices.into()
+        }));
+        let choices: Arc<[String]> = choices.into();
+        let keybinds = settings
+            .keybinds
+            .iter()
+            .map(|bind| TargetChoiceKey {
+                id: Arc::from(bind.id.as_str()),
+                modifiers: bind.modifiers,
+                vk: bind.vk,
+            })
+            .collect();
+        *cache = Some(TargetChoiceCache {
+            keybinds,
+            choices: choices.clone(),
+        });
+        choices
+    })
 }
 
 type StateSettings = crate::settings::AppSettings;

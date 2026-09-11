@@ -31,6 +31,7 @@ pub fn view(state: &State) -> Element<'_, Message> {
     }
     let actions = action_choices();
     for bind in &settings.keybinds {
+        let id = bind.id.as_str();
         let capturing = state.capturing_keybind.as_deref() == Some(bind.id.as_str());
         let key_label = if capturing {
             "Press a key… (Esc cancels)".to_string()
@@ -44,23 +45,20 @@ pub fn view(state: &State) -> Element<'_, Message> {
                     button(text(key_label).size(13))
                         .on_press(Message::BeginKeybindCapture(bind.id.clone())),
                     pick_list(actions, Some(bind.action.display_name()), {
-                        let id = bind.id.clone();
-                        move |name: &str| Message::SetKeybindAction(id.clone(), name.to_string())
+                        move |name: &str| {
+                            Message::SetKeybindAction(id.to_string(), name.to_string())
+                        }
                     },),
                     button("Delete").on_press(Message::DeleteKeybind(bind.id.clone())),
                 ]
                 .spacing(10),
                 row![
                     text("Cycle").size(12),
-                    toggler(bind.cycle_enabled).on_toggle({
-                        let id = bind.id.clone();
-                        move |_| Message::ToggleKeybindCycle(id.clone())
-                    }),
+                    toggler(bind.cycle_enabled)
+                        .on_toggle(move |_| Message::ToggleKeybindCycle(id.to_string())),
                     text("Bypass trigger").size(12),
-                    toggler(bind.bypass_trigger).on_toggle({
-                        let id = bind.id.clone();
-                        move |_| Message::ToggleKeybindBypass(id.clone())
-                    }),
+                    toggler(bind.bypass_trigger)
+                        .on_toggle(move |_| Message::ToggleKeybindBypass(id.to_string())),
                 ]
                 .spacing(10),
             ]

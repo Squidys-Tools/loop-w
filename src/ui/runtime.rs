@@ -11,40 +11,62 @@ use super::app::{self, Message, State};
 use super::settings;
 use super::windows;
 
+const IDLE_TICK_INTERVAL: Duration = Duration::from_millis(250);
+const ACTIVE_TICK_INTERVAL: Duration = Duration::from_millis(16);
+
+fn tick_interval(settings_open: bool, overlay_active: bool, snap_active: bool) -> Duration {
+    if settings_open && !overlay_active && !snap_active {
+        IDLE_TICK_INTERVAL
+    } else {
+        ACTIVE_TICK_INTERVAL
+    }
+}
+
 pub(super) fn subscription(state: &State) -> Subscription<Message> {
-    let settings_only = state.main_id.is_some()
-        && state.radial.is_none()
-        && state.preview.is_none()
-        && !win::snap_service::is_active();
+    let overlay_active = state.radial.is_some() || state.preview.is_some();
+    let snap_active = win::snap_service::is_active();
+    let settings_only = state.main_id.is_some() && !overlay_active && !snap_active;
 
     let mut subscriptions = vec![window::close_requests().map(Message::WindowClosed)];
-    subscriptions.push(iced::event::listen_with(|event, status, _window| {
-        if status != iced::event::Status::Ignored {
-            return None;
-        }
-        match event {
-            iced::Event::Keyboard(keyboard::Event::KeyPressed { key, .. }) => {
-                Some(Message::OverlayKey(key))
+    if state.radial.is_some() {
+        subscriptions.push(iced::event::listen_with(|event, status, _window| {
+            if status != iced::event::Status::Ignored {
+                return None;
             }
-            _ => None,
-        }
-    }));
+            match event {
+                iced::Event::Keyboard(keyboard::Event::KeyPressed { key, .. }) => {
+                    Some(Message::OverlayKey(key))
+                }
+                _ => None,
+            }
+        }));
+    }
 
-    if settings_only {
-        // A settings-only window does not need animation frames. Keeping the
-        // 60 Hz frame subscription here makes every pump tick rebuild the
-        // entire settings tree, which makes Scrollable feel laggy. Keep the
-        // resident tray/event pump alive at a low rate instead.
-        subscriptions
-            .push(iced::time::every(Duration::from_millis(250)).map(|_| Message::FrameTick));
-    } else {
+    if !settings_only {
         // Overlay hover and drag snapping need frame-rate cursor tracking. A
         // timer is sufficient for that polling; subscribing to window frames
         // as well duplicates ticks because each update can request a redraw.
-        // The same timer also keeps the tray-only runtime alive, where iced
-        // has no window redraw events to drive it.
-        subscriptions
-            .push(iced::time::every(Duration::from_millis(16)).map(|_| Message::FrameTick));
+        subscriptions.push(
+            iced::time::every(tick_interval(
+                state.main_id.is_some(),
+                overlay_active,
+                snap_active,
+            ))
+            .map(|_| Message::FrameTick),
+        );
+    } else {
+        // The settings window does not need frame-rate polling. Keeping the
+        // resident tray/event pump at its existing cadence is important here:
+        // global trigger and drag events still need low input latency when no
+        // settings window is open.
+        subscriptions.push(
+            iced::time::every(tick_interval(
+                state.main_id.is_some(),
+                overlay_active,
+                snap_active,
+            ))
+            .map(|_| Message::FrameTick),
+        );
     }
 
     Subscription::batch(subscriptions)
@@ -53,7 +75,11 @@ pub(super) fn subscription(state: &State) -> Subscription<Message> {
 /// Once-per-frame pump: events, tray, stash, snap, overlay hover, patching.
 pub(super) fn frame_tick(state: &mut State) -> Task<Message> {
     let mut tasks: Vec<Task<Message>> = Vec::new();
-    if state.main_id.is_none() {
+    let snap_active = win::snap_service::is_active();
+    let overlay_active = state.radial.is_some() || state.preview.is_some();
+    let frame_rate_active = overlay_active || snap_active;
+
+    if state.main_id.is_none() && !frame_rate_active {
         if let Some(hwnd) = native::find_window_by_class(native::WINIT_EVENT_TARGET_CLASS) {
             native::suppress_taskbar_window(hwnd);
         }
@@ -61,42 +87,50 @@ pub(super) fn frame_tick(state: &mut State) -> Task<Message> {
     if let Some(tray) = state.tray.as_ref() {
         win::tray::poll(tray);
     }
-    // Stash records change under us (persist/prune paths): mirror them only
-    // while settings is open, and only when the value actually changed. The
-    // shared snapshot clones the full settings object, so avoid doing that on
-    // every overlay tick; the settings-only pump is deliberately slower.
-    if state.main_id.is_some() {
+    // Shared settings changes are revisioned, so avoid cloning the stash list
+    // on every settings-only pump tick. This matters while a long settings
+    // page is being scrolled: the timer remains alive for resident IPC/tray
+    // work, but it should not copy configuration data unnecessarily.
+    let settings_revision = win::shared::settings_revision();
+    if state.main_id.is_some() && !frame_rate_active && state.settings_revision != settings_revision
+    {
         let stash_records = win::shared::stash_records();
-        if state.settings.stash_records != stash_records {
-            state.settings.stash_records = stash_records;
-        }
+        state.settings.stash_records = stash_records;
+        state.settings_revision = settings_revision;
     }
     for event in drain() {
         handle_runtime(state, &mut tasks, event);
     }
-    if let Some(cursor) = native::cursor_pos() {
-        // Snap tracking (preview honors the PreviewEnabled gate here so a
-        // disabled preview never opens for drags; hover path gates inside).
-        let (track, finish) = win::snap_service::track(cursor);
-        match track {
-            win::snap_service::SnapTrack::Show(frame)
-            | win::snap_service::SnapTrack::Update(frame) => {
-                if state.settings.preview_enabled {
-                    app::ensure_preview(state, &mut tasks, frame);
+    let needs_cursor_poll = overlay_active || snap_active || win::stash_service::is_active();
+    if needs_cursor_poll {
+        if let Some(cursor) = native::cursor_pos() {
+            if snap_active {
+                // Snap tracking (preview honors the PreviewEnabled gate here so a
+                // disabled preview never opens for drags; hover path gates inside).
+                let (track, finish) = win::snap_service::track(cursor);
+                match track {
+                    win::snap_service::SnapTrack::Show(frame)
+                    | win::snap_service::SnapTrack::Update(frame) => {
+                        if state.settings.preview_enabled {
+                            app::ensure_preview(state, &mut tasks, frame);
+                        }
+                    }
+                    win::snap_service::SnapTrack::Hide => app::close_preview(state, &mut tasks),
+                    win::snap_service::SnapTrack::Idle => {}
+                }
+                if let Some(finish) = finish {
+                    apply_snap_finish(state, &mut tasks, finish);
                 }
             }
-            win::snap_service::SnapTrack::Hide => app::close_preview(state, &mut tasks),
-            win::snap_service::SnapTrack::Idle => {}
+            // Stash hover polling (internally 80 ms throttled).
+            if let Some(message) = win::stash_service::poll(cursor) {
+                state.status = message;
+            }
+            if state.radial.is_some() {
+                // Radial hover follows the cursor.
+                app::update_radial_hover(state, &mut tasks, cursor);
+            }
         }
-        if let Some(finish) = finish {
-            apply_snap_finish(state, &mut tasks, finish);
-        }
-        // Stash hover polling (internally 80 ms throttled).
-        if let Some(message) = win::stash_service::poll(cursor) {
-            state.status = message;
-        }
-        // Radial hover follows the cursor.
-        app::update_radial_hover(state, &mut tasks, cursor);
     }
     // Overlay style patching retries (windows can appear several ticks after
     // open, especially when the preview follows a newly opened radial).
@@ -139,7 +173,11 @@ pub(super) fn frame_tick(state: &mut State) -> Task<Message> {
             }
         }
     }
-    Task::batch(tasks)
+    if tasks.is_empty() {
+        Task::none()
+    } else {
+        Task::batch(tasks)
+    }
 }
 
 #[allow(clippy::too_many_lines)]
@@ -453,5 +491,22 @@ fn execute_command_inner(
                 )
             }
         },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{tick_interval, ACTIVE_TICK_INTERVAL, IDLE_TICK_INTERVAL};
+
+    #[test]
+    fn idle_runtime_uses_low_frequency_pump() {
+        assert_eq!(tick_interval(true, false, false), IDLE_TICK_INTERVAL);
+    }
+
+    #[test]
+    fn overlays_drags_and_resident_pump_use_frame_rate_cadence() {
+        assert_eq!(tick_interval(true, true, false), ACTIVE_TICK_INTERVAL);
+        assert_eq!(tick_interval(true, false, true), ACTIVE_TICK_INTERVAL);
+        assert_eq!(tick_interval(false, false, false), ACTIVE_TICK_INTERVAL);
     }
 }

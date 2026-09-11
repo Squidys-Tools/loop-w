@@ -7,6 +7,7 @@
 use iced::mouse;
 use iced::widget::canvas::{self, Canvas, Frame, Geometry, Path, Stroke};
 use iced::{Color, Element, Length, Point, Rectangle, Renderer, Theme};
+use std::cell::Cell;
 
 use crate::settings::color::to_iced;
 
@@ -27,12 +28,12 @@ pub struct PreviewCanvas {
 /// The application rebuilds `PreviewCanvas` values whenever iced rebuilds a
 /// window view. Keeping the cache in the Canvas state lets the renderer reuse
 /// geometry across those view rebuilds instead of allocating a new frame for
-/// every redraw request. The key is synchronized from `Program::update` so a
-/// moved target or edited style still invalidates the cached geometry.
+/// every redraw request. The key is checked in `draw` so a moved target or
+/// edited style invalidates the cached geometry even when no input event ran.
 #[derive(Debug, Default)]
 pub struct PreviewCanvasState {
     cache: canvas::Cache,
-    key: Option<RenderKey>,
+    key: Cell<Option<RenderKey>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -60,22 +61,6 @@ impl PreviewCanvas {
 impl<Message> canvas::Program<Message> for PreviewCanvas {
     type State = PreviewCanvasState;
 
-    fn update(
-        &self,
-        state: &mut Self::State,
-        _event: &canvas::Event,
-        _bounds: Rectangle,
-        _cursor: mouse::Cursor,
-    ) -> Option<canvas::Action<Message>> {
-        let key = self.render_key();
-        if state.key != Some(key) {
-            state.cache.clear();
-            state.key = Some(key);
-        }
-
-        None
-    }
-
     fn draw(
         &self,
         state: &Self::State,
@@ -84,6 +69,11 @@ impl<Message> canvas::Program<Message> for PreviewCanvas {
         bounds: Rectangle,
         _cursor: mouse::Cursor,
     ) -> Vec<Geometry> {
+        let key = self.render_key();
+        if state.key.get() != Some(key) {
+            state.cache.clear();
+            state.key.set(Some(key));
+        }
         let size = bounds.size();
         let geometry = state.cache.draw(renderer, size, |frame| {
             // The canvas frame is local to the widget. The renderer applies

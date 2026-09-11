@@ -47,40 +47,57 @@ pub enum RadialCanvasMessage {
 }
 
 /// Persistent canvas state retained by iced across parent view rebuilds.
-/// Frame ticks can therefore reuse the generated geometry until a visual
-/// input changes instead of rebuilding the donut every time.
+/// Frame ticks can therefore reuse the ring until its inputs change and the
+/// highlight until its inputs change, instead of rebuilding both every time.
 #[derive(Debug)]
 pub struct RadialCanvasState {
-    cache: canvas::Cache,
-    render_key: Cell<Option<RenderKey>>,
+    ring_cache: canvas::Cache,
+    highlight_cache: canvas::Cache,
+    ring_key: Cell<Option<RingKey>>,
+    highlight_key: Cell<Option<HighlightKey>>,
 }
 
 impl Default for RadialCanvasState {
     fn default() -> Self {
         Self {
-            cache: canvas::Cache::default(),
-            render_key: Cell::new(None),
+            ring_cache: canvas::Cache::default(),
+            highlight_cache: canvas::Cache::default(),
+            ring_key: Cell::new(None),
+            highlight_key: Cell::new(None),
         }
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct RenderKey {
+struct RingKey {
+    outer_radius: u32,
+    inner_radius: u32,
+    ring: [u32; 4],
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct HighlightKey {
     outer_radius: u32,
     inner_radius: u32,
     hovered: Option<usize>,
-    ring: [u32; 4],
     sector_fill: [u32; 4],
     sector_stroke: [u32; 4],
 }
 
 impl RadialCanvas {
-    fn render_key(&self) -> RenderKey {
-        RenderKey {
+    fn ring_key(&self) -> RingKey {
+        RingKey {
+            outer_radius: self.outer_radius.to_bits(),
+            inner_radius: self.inner_radius.to_bits(),
+            ring: color_key(self.ring),
+        }
+    }
+
+    fn highlight_key(&self) -> HighlightKey {
+        HighlightKey {
             outer_radius: self.outer_radius.to_bits(),
             inner_radius: self.inner_radius.to_bits(),
             hovered: self.hovered,
-            ring: color_key(self.ring),
             sector_fill: color_key(self.sector_fill),
             sector_stroke: color_key(self.sector_stroke),
         }
@@ -107,55 +124,66 @@ impl<Message> canvas::Program<Message> for RadialCanvas {
         bounds: Rectangle,
         _cursor: mouse::Cursor,
     ) -> Vec<Geometry> {
-        let render_key = self.render_key();
-        if state.render_key.get() != Some(render_key) {
-            state.cache.clear();
-            state.render_key.set(Some(render_key));
+        let ring_key = self.ring_key();
+        if state.ring_key.get() != Some(ring_key) {
+            state.ring_cache.clear();
+            state.ring_key.set(Some(ring_key));
+        }
+
+        let highlight_key = self.highlight_key();
+        if state.highlight_key.get() != Some(highlight_key) {
+            state.highlight_cache.clear();
+            state.highlight_key.set(Some(highlight_key));
         }
 
         let size = bounds.size();
-        let geometry = state.cache.draw(renderer, size, |frame| {
+        let center = Point::new(size.width / 2.0, size.height / 2.0);
+        let outer = self.outer_radius.min(size.width / 2.0 - 4.0);
+        let inner = self.inner_radius.min(outer - 8.0);
+
+        let ring_geometry = state.ring_cache.draw(renderer, size, |frame| {
             // `Canvas` translates the renderer to the widget origin before
             // calling the program, while `Cache::draw` creates a frame whose
             // coordinates start at (0, 0). Keep all geometry in that local
             // frame; using bounds.x/y here double-applies the widget offset.
-            let center = Point::new(size.width / 2.0, size.height / 2.0);
-            let outer = self.outer_radius.min(size.width / 2.0 - 4.0);
-            let inner = self.inner_radius.min(outer - 8.0);
-
-            // Donut backdrop: outer disc with the center punched out
-            // (even-odd fill), so the hole shows whatever is behind the
-            // overlay. The hole stays a live commit target (release inside it
-            // commits the center action) — only its visuals are cut out.
-            let ring = Path::new(|p| {
-                p.circle(center, outer);
-                p.circle(center, inner);
-            });
-            frame.fill(
-                &ring,
-                Fill {
-                    rule: canvas::fill::Rule::EvenOdd,
-                    ..Fill::from(self.ring)
-                },
-            );
-            // Hovered wedge highlight only — this is the single visual that
-            // reveals the wedge divisions.
-            if let Some(index) = self.hovered {
-                if GEOMETRY.get(index).is_some() {
-                    let wedge = wedge_path(center, outer, inner, index);
-                    frame.fill(&wedge, self.sector_fill);
-                    frame.stroke(
-                        &wedge,
-                        Stroke::default()
-                            .with_width(2.0)
-                            .with_color(self.sector_stroke),
-                    );
-                }
-            }
+            draw_ring(frame, center, outer, inner, self.ring);
         });
 
-        vec![geometry]
+        let Some(index) = self.hovered.filter(|index| GEOMETRY.get(*index).is_some()) else {
+            return vec![ring_geometry];
+        };
+
+        let highlight_geometry = state.highlight_cache.draw(renderer, size, |frame| {
+            let wedge = wedge_path(center, outer, inner, index);
+            frame.fill(&wedge, self.sector_fill);
+            frame.stroke(
+                &wedge,
+                Stroke::default()
+                    .with_width(2.0)
+                    .with_color(self.sector_stroke),
+            );
+        });
+
+        vec![ring_geometry, highlight_geometry]
     }
+}
+
+fn draw_ring(frame: &mut canvas::Frame, center: Point, outer: f32, inner: f32, color: Color) {
+    // Donut backdrop: outer disc with the center punched out (even-odd fill),
+    // so the hole shows whatever is behind the overlay. The hole stays a
+    // live commit target (release inside it commits the center action) — only
+    // its visuals are cut out.
+    let ring = Path::new(|p| {
+        p.circle(center, outer);
+        p.circle(center, inner);
+    });
+    frame.fill(
+        &ring,
+        Fill {
+            rule: canvas::fill::Rule::EvenOdd,
+            ..Fill::from(color)
+        },
+    );
 }
 
 const WEDGE_STEPS: usize = 24;
@@ -216,6 +244,17 @@ where
 mod tests {
     use super::*;
 
+    fn canvas() -> RadialCanvas {
+        RadialCanvas {
+            outer_radius: 96.0,
+            inner_radius: 32.0,
+            hovered: None,
+            ring: Color::BLACK,
+            sector_fill: Color::WHITE,
+            sector_stroke: Color::WHITE,
+        }
+    }
+
     #[test]
     fn radial_geometry_uses_canvas_local_coordinates() {
         let layout_bounds = Rectangle {
@@ -230,5 +269,27 @@ mod tests {
             Point::new(size.width / 2.0, size.height / 2.0),
             Point::new(130.0, 130.0)
         );
+    }
+
+    #[test]
+    fn hover_changes_only_highlight_key() {
+        let mut canvas = canvas();
+        let ring = canvas.ring_key();
+        let highlight = canvas.highlight_key();
+
+        canvas.hovered = Some(2);
+
+        assert_eq!(ring, canvas.ring_key());
+        assert_ne!(highlight, canvas.highlight_key());
+    }
+
+    #[test]
+    fn ring_style_change_invalidates_ring_key() {
+        let mut canvas = canvas();
+        let initial = canvas.ring_key();
+
+        canvas.ring = Color::from_rgb(0.2, 0.3, 0.4);
+
+        assert_ne!(initial, canvas.ring_key());
     }
 }
