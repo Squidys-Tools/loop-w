@@ -35,8 +35,8 @@ The following product areas are implemented:
   delivery.
 - A same-user named-pipe command server supports activation, action listing,
   keybind listing, directional actions, and named actions.
-- The automated suite currently contains 88 binary tests and 67 UI/settings
-  contract tests, for 155 tests in total. It covers frame math, radial
+- The automated suite currently contains 98 binary tests and 72 UI/settings
+  contract tests, for 170 tests in total. It covers frame math, radial
   geometry, cycles, navigation, settings normalization, stash calculations,
   drag snapping, and command parsing.
 

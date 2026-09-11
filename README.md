@@ -13,8 +13,8 @@ and native Win32 backend are implemented. The project still needs code-level
 hardening and a full manual desktop QA pass across different window types,
 display scales, and Windows configurations. Desktop checks are not complete.
 
-The current test inventory is 88 binary tests plus 67 UI/settings contract
-tests, for 155 tests under `cargo test --all-targets --locked`. The locked
+The current test inventory is 98 binary tests plus 72 UI/settings contract
+tests, for 170 tests under `cargo test --all-targets --locked`. The locked
 build, formatting check, tests, and warnings-denied Clippy pass. A bounded
 Windows integration harness lives under `tools/` and covers resident lifecycle,
 IPC, disposable-window placement, and overlay HWND styles; broad desktop QA
@@ -124,6 +124,21 @@ LoopW.exe action/maximize
 ```
 
 Use `list/actions` to see the action names supported by the current build.
+
+For agent-friendly Windows driving, use the wrapper around the integration
+harness. It never prompts, supports JSON output, and tracks only processes it
+started:
+
+```powershell
+.\tools\loopw-agent.ps1 doctor --json
+.\tools\loopw-agent.ps1 run --suite all --profile release --build --json
+.\tools\loopw-agent.ps1 launch --profile release --json
+.\tools\loopw-agent.ps1 status --run-id <run-id> --json
+.\tools\loopw-agent.ps1 stop --run-id <run-id> --yes --json
+```
+
+Use `run --evidence-dir <path>` to save the raw harness log and its JSON
+summary. Use `stop --dry-run` when inspecting cleanup before allowing it.
 
 ## Project docs
 
