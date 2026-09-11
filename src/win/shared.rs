@@ -27,6 +27,26 @@ pub fn snapshot() -> AppSettings {
         .unwrap_or_default()
 }
 
+/// Read the one live setting used by the radial cursor hot path without
+/// cloning the complete settings model.
+pub fn cursor_interaction_enabled() -> bool {
+    SHARED_SETTINGS
+        .get()
+        .and_then(|lock| lock.read().ok())
+        .map(|guard| guard.cursor_interaction_enabled)
+        .unwrap_or(true)
+}
+
+/// Clone only the live stash records for the settings mirror. Runtime ticks
+/// should not clone the complete settings model just to detect stash changes.
+pub fn stash_records() -> Vec<crate::core::stash::StashRecord> {
+    SHARED_SETTINGS
+        .get()
+        .and_then(|lock| lock.read().ok())
+        .map(|guard| guard.stash_records.clone())
+        .unwrap_or_default()
+}
+
 /// Mutate the shared settings in place.
 pub fn update(change: impl FnOnce(&mut AppSettings)) {
     if let Some(lock) = SHARED_SETTINGS.get() {

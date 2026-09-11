@@ -17,7 +17,7 @@ use crate::core::actions::WindowAction;
 use crate::core::cycle::CycleState;
 use crate::core::hotkey::{hotkey_name, TriggerModifierSide};
 use crate::core::monitor::MonitorMoveSizePolicy;
-use crate::core::radial::{angle_of, index_at, GEOMETRY};
+use crate::core::radial::{index_at_vector, GEOMETRY};
 use crate::core::radial_targets::{resolve_slot, RadialTarget, ResolvedKeybind};
 use crate::core::rect::{Point, Rect};
 use crate::settings::persistence;
@@ -969,7 +969,7 @@ fn frame_tick(state: &mut State) -> Task<Message> {
     // shared snapshot clones the full settings object, so avoid doing that on
     // every overlay tick; the settings-only pump is deliberately slower.
     if state.main_id.is_some() {
-        let stash_records = win::shared::snapshot().stash_records;
+        let stash_records = win::shared::stash_records();
         if state.settings.stash_records != stash_records {
             state.settings.stash_records = stash_records;
         }
@@ -1318,11 +1318,11 @@ fn wedge_index_at(center: Point, inner: f64, cursor: Point) -> Option<usize> {
     if distance < inner {
         return None;
     }
-    Some(index_at(angle_of(dx, dy)))
+    Some(index_at_vector(dx, dy))
 }
 
 fn state_cursor_interaction() -> bool {
-    win::shared::snapshot().cursor_interaction_enabled
+    win::shared::cursor_interaction_enabled()
 }
 
 fn update_radial_hover(state: &mut State, tasks: &mut Vec<Task<Message>>, cursor: Point) {
