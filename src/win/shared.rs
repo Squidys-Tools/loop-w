@@ -5,11 +5,13 @@
 //! behavior changes apply without restart and no hook can stay logically
 //! stuck on stale config.
 
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{OnceLock, RwLock};
 
 use crate::settings::AppSettings;
 
 static SHARED_SETTINGS: OnceLock<std::sync::Arc<RwLock<AppSettings>>> = OnceLock::new();
+static SETTINGS_REVISION: AtomicU64 = AtomicU64::new(1);
 
 /// Install the shared settings handle. Call once at startup.
 pub fn init(settings: AppSettings) -> std::sync::Arc<RwLock<AppSettings>> {
@@ -47,11 +49,21 @@ pub fn stash_records() -> Vec<crate::core::stash::StashRecord> {
         .unwrap_or_default()
 }
 
+/// Monotonic revision for updates made through the shared settings mirror.
+///
+/// The UI uses this to avoid cloning the stash list on every resident timer
+/// tick. A revision may advance for an unrelated settings edit; that is still
+/// cheap to compare and only causes a stash clone after an actual update.
+pub fn settings_revision() -> u64 {
+    SETTINGS_REVISION.load(Ordering::Relaxed)
+}
+
 /// Mutate the shared settings in place.
 pub fn update(change: impl FnOnce(&mut AppSettings)) {
     if let Some(lock) = SHARED_SETTINGS.get() {
         if let Ok(mut guard) = lock.write() {
             change(&mut guard);
+            SETTINGS_REVISION.fetch_add(1, Ordering::Relaxed);
         }
     }
 }

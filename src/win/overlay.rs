@@ -31,7 +31,7 @@ fn overlay_cache() -> &'static Mutex<OverlayCache> {
 
 fn cached_window(slot: CacheSlot, expected: Rect) -> Option<windows::Win32::Foundation::HWND> {
     let Ok(mut cache) = overlay_cache().lock() else {
-        return find_own_window(expected);
+        return find_own_window(slot, expected);
     };
     let cached = match slot {
         CacheSlot::Radial => &mut cache.radial,
@@ -44,7 +44,7 @@ fn cached_window(slot: CacheSlot, expected: Rect) -> Option<windows::Win32::Foun
         }
         *cached = None;
     }
-    let found = find_own_window(expected);
+    let found = find_own_window(slot, expected);
     *cached = found.map(native::raw);
     found
 }
@@ -216,47 +216,13 @@ pub fn set_preview_frame(frame: Rect) -> bool {
         .unwrap_or(false)
 }
 
-fn find_own_window(expected: Rect) -> Option<windows::Win32::Foundation::HWND> {
-    use windows::core::BOOL;
-    use windows::Win32::Foundation::*;
-    use windows::Win32::UI::WindowsAndMessaging::*;
-    struct Pack {
-        own_pid: u32,
-        expected: Rect,
-        found: Option<HWND>,
-    }
-    unsafe extern "system" fn proc(hwnd: HWND, lparam: LPARAM) -> BOOL {
-        let pack = &mut *(lparam.0 as *mut Pack);
-        let mut pid = 0u32;
-        GetWindowThreadProcessId(hwnd, Some(&mut pid));
-        if pid != pack.own_pid {
-            return BOOL::from(true);
-        }
-        let mut rect = RECT::default();
-        if GetWindowRect(hwnd, &mut rect).is_err() {
-            return BOOL::from(true);
-        }
-        let frame = native::rect_from_native(rect);
-        let expected = pack.expected;
-        let close = (frame.left - expected.left).abs() <= 2
-            && (frame.top - expected.top).abs() <= 2
-            && (frame.width() - expected.width()).abs() <= 2
-            && (frame.height() - expected.height()).abs() <= 2;
-        if close {
-            pack.found = Some(hwnd);
-            return BOOL::from(false);
-        }
-        BOOL::from(true)
-    }
-    let mut pack = Pack {
-        own_pid: native::own_process_id(),
-        expected,
-        found: None,
+fn find_own_window(slot: CacheSlot, expected: Rect) -> Option<windows::Win32::Foundation::HWND> {
+    let title = match slot {
+        CacheSlot::Radial => RADIAL_TITLE,
+        CacheSlot::Preview => PREVIEW_TITLE,
     };
-    unsafe {
-        let _ = EnumWindows(Some(proc), LPARAM(&mut pack as *mut Pack as isize));
-    }
-    pack.found
+    let hwnd = native::find_window_by_title(title)?;
+    window_matches(hwnd, expected).then_some(hwnd)
 }
 
 #[cfg(test)]

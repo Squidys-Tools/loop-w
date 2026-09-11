@@ -12,6 +12,7 @@ use std::sync::{Mutex, OnceLock};
 use windows::Win32::UI::WindowsAndMessaging::*;
 
 use super::native;
+use crate::core::identity::WindowIdentity;
 use crate::core::rect::{Point, Rect};
 use crate::core::stash::{
     calculate_stashed_frame, nearest_edge, StashEdge, StashMonitor, StashPlacement, StashPoint,
@@ -195,55 +196,57 @@ pub fn poll(cursor: Point) -> Option<String> {
     reveal_at_cursor(cursor)
 }
 
+/// Whether any stashed window needs cursor hover polling.
+pub fn is_active() -> bool {
+    live()
+        .lock()
+        .map(|guard| !guard.by_hwnd.is_empty())
+        .unwrap_or(false)
+}
+
 /// Reveal whichever stashed window's hit zone holds the cursor.
 pub fn reveal_at_cursor(cursor: Point) -> Option<String> {
     let settings = super::shared::snapshot();
     let zone = settings.stash_hit_zone.clamp(1, 96);
     let delay = settings.stash_reveal_delay_ms.clamp(0, 2000) as u64;
-    let candidates: Vec<(u64, StashEdge, Rect)> = {
+    let hit = {
         let guard = live().lock().ok()?;
-        guard
-            .order
-            .iter()
-            .filter_map(|hwnd| {
-                let record = guard.by_hwnd.get(hwnd)?;
-                // Resolve the CURRENT monitor from the stashed frame so
-                // display/padding/work-area changes move the hit zone.
-                let work = super::monitor_service::for_rect(record.frame)
-                    .map(|snapshot| snapshot.work)
-                    .unwrap_or_else(|| record.monitor.work.into());
-                Some((*hwnd, record.edge, work))
-            })
-            .collect()
+        guard.order.iter().find_map(|hwnd| {
+            let record = guard.by_hwnd.get(hwnd)?;
+            // Resolve the CURRENT monitor from the stashed frame so
+            // display/padding/work-area changes move the hit zone.
+            let work = super::monitor_service::for_rect(record.frame)
+                .map(|snapshot| snapshot.work)
+                .unwrap_or_else(|| record.monitor.work.into());
+            in_hit_zone(cursor, record.edge, work, zone).then_some(*hwnd)
+        })
     };
-    for (hwnd, edge, work) in candidates {
-        if !in_hit_zone(cursor, edge, work, zone) {
-            continue;
+    let Some(hwnd) = hit else {
+        if let Ok(mut guard) = live().lock() {
+            guard.pending = None;
         }
-        if delay == 0 {
-            return reveal(hwnd).ok();
-        }
-        let now = native::tick_count();
-        let mut guard = live().lock().ok()?;
-        match guard.pending {
-            Some((pending_hwnd, started)) if pending_hwnd == hwnd => {
-                if now.saturating_sub(started) >= delay {
-                    guard.pending = None;
-                    drop(guard);
-                    return reveal(hwnd).ok();
-                }
-                return None;
-            }
-            _ => {
-                guard.pending = Some((hwnd, now));
-                return None;
+        return None;
+    };
+    if delay == 0 {
+        return reveal(hwnd).ok();
+    }
+    let now = native::tick_count();
+    let mut guard = live().lock().ok()?;
+    match guard.pending {
+        Some((pending_hwnd, started)) if pending_hwnd == hwnd => {
+            if now.saturating_sub(started) >= delay {
+                guard.pending = None;
+                drop(guard);
+                reveal(hwnd).ok()
+            } else {
+                None
             }
         }
+        _ => {
+            guard.pending = Some((hwnd, now));
+            None
+        }
     }
-    if let Ok(mut guard) = live().lock() {
-        guard.pending = None;
-    }
-    None
 }
 
 fn reveal(hwnd: u64) -> Result<String, String> {
@@ -304,7 +307,13 @@ pub fn prune_stale() {
                 .order
                 .iter()
                 .copied()
-                .filter(|hwnd| !is_stash_alive(*hwnd))
+                .filter(|hwnd| {
+                    guard
+                        .by_hwnd
+                        .get(hwnd)
+                        .map(|record| !is_stash_alive_with_identity(*hwnd, &record.identity))
+                        .unwrap_or(true)
+                })
                 .collect()
         })
         .unwrap_or_default();
@@ -318,6 +327,16 @@ pub fn prune_stale() {
 }
 
 fn is_stash_alive(hwnd: u64) -> bool {
+    let identity = live()
+        .lock()
+        .ok()
+        .and_then(|guard| guard.by_hwnd.get(&hwnd).map(|r| r.identity.clone()));
+    identity
+        .as_ref()
+        .is_some_and(|identity| is_stash_alive_with_identity(hwnd, identity))
+}
+
+fn is_stash_alive_with_identity(hwnd: u64, identity: &WindowIdentity) -> bool {
     let native_hwnd = native::from_raw(hwnd as isize);
     if hwnd == 0 || !native::is_window(native_hwnd) {
         return false;
@@ -326,24 +345,10 @@ fn is_stash_alive(hwnd: u64) -> bool {
     if pid == 0 {
         return false;
     }
-    let recorded_pid = live()
-        .lock()
-        .ok()
-        .and_then(|guard| guard.by_hwnd.get(&hwnd).map(|r| r.identity.process_id));
-    if recorded_pid != Some(pid) {
+    if identity.process_id != pid {
         // PID reused by an unrelated process: verify class still matches.
         let class = native::window_class(native_hwnd);
-        let same_class = live().lock().ok().map(|guard| {
-            guard
-                .by_hwnd
-                .get(&hwnd)
-                .map(|r| {
-                    !r.identity.window_class.is_empty()
-                        && r.identity.window_class.eq_ignore_ascii_case(&class)
-                })
-                .unwrap_or(false)
-        });
-        if same_class != Some(true) {
+        if identity.window_class.is_empty() || !identity.window_class.eq_ignore_ascii_case(&class) {
             return false;
         }
     }

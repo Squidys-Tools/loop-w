@@ -7,6 +7,7 @@
 //! path prints them in full).
 
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Condvar, OnceLock};
 use std::time::Duration;
 
 use windows::core::{BOOL, PCWSTR};
@@ -29,11 +30,16 @@ const READ_TIMEOUT_MS: u64 = 2000;
 static NEXT_ID: AtomicU64 = AtomicU64::new(1);
 
 /// Pending pipe replies, completed on the UI thread.
-static REPLIES: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<u64, String>>> =
-    std::sync::OnceLock::new();
+static REPLIES: OnceLock<std::sync::Mutex<std::collections::HashMap<u64, String>>> =
+    OnceLock::new();
+static REPLY_WAKE: OnceLock<Condvar> = OnceLock::new();
 
 fn replies() -> &'static std::sync::Mutex<std::collections::HashMap<u64, String>> {
     REPLIES.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()))
+}
+
+fn reply_wake() -> &'static Condvar {
+    REPLY_WAKE.get_or_init(Condvar::new)
 }
 
 pub fn take_reply(id: u64) -> Option<String> {
@@ -44,6 +50,26 @@ pub fn take_reply(id: u64) -> Option<String> {
 pub fn set_reply(id: u64, reply: String) {
     if let Ok(mut slots) = replies().lock() {
         slots.insert(id, reply);
+        reply_wake().notify_one();
+    }
+}
+
+fn wait_reply(id: u64) -> Option<String> {
+    let deadline = std::time::Instant::now() + Duration::from_millis(READ_TIMEOUT_MS);
+    let mut slots = replies().lock().ok()?;
+    loop {
+        if let Some(reply) = slots.remove(&id) {
+            return Some(reply);
+        }
+        let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+        if remaining.is_zero() {
+            return slots.remove(&id);
+        }
+        let (next, timeout) = reply_wake().wait_timeout(slots, remaining).ok()?;
+        slots = next;
+        if timeout.timed_out() {
+            return slots.remove(&id);
+        }
     }
 }
 
@@ -94,7 +120,21 @@ fn pipe_name_wide() -> Vec<u16> {
 
 /// SECURITY_ATTRIBUTES restricting the pipe to System + current user,
 /// mirroring `PipeOptions.CurrentUserOnly`.
-fn current_user_sa() -> Option<(SECURITY_ATTRIBUTES, Vec<u8>)> {
+struct PipeSecurity {
+    attributes: SECURITY_ATTRIBUTES,
+    descriptor: PSECURITY_DESCRIPTOR,
+    _sid_buffer: Vec<u8>,
+}
+
+impl Drop for PipeSecurity {
+    fn drop(&mut self) {
+        unsafe {
+            let _ = LocalFree(Some(HLOCAL(self.descriptor.0)));
+        }
+    }
+}
+
+fn current_user_sa() -> Option<PipeSecurity> {
     unsafe {
         // Current user SID -> string -> SDDL "D:P(A;;GA;;;SY)(A;;GA;;;sid)".
         let mut token = HANDLE::default();
@@ -146,19 +186,23 @@ fn current_user_sa() -> Option<(SECURITY_ATTRIBUTES, Vec<u8>)> {
             lpSecurityDescriptor: descriptor.0,
             bInheritHandle: BOOL(0),
         };
-        // NOTE: descriptor intentionally leaks for process lifetime; the
-        // pipe server lives as long as the app and recreates pipes with it.
-        Some((sa, buffer))
+        Some(PipeSecurity {
+            attributes: sa,
+            descriptor,
+            _sid_buffer: buffer,
+        })
     }
 }
 
 fn server_loop() {
     let name = pipe_name_wide();
-    // Leak the SA pair once; reused for every accepted instance.
-    let sa_box: Option<Box<(SECURITY_ATTRIBUTES, Vec<u8>)>> = current_user_sa().map(Box::new);
+    // Keep the descriptor and SID storage alive while accepted pipes reuse
+    // the same SECURITY_ATTRIBUTES pair. The descriptor is freed when the
+    // server thread exits.
+    let sa_box = current_user_sa().map(Box::new);
     let sa_ptr = sa_box
         .as_ref()
-        .map(|pair| &pair.0 as *const SECURITY_ATTRIBUTES);
+        .map(|pair| &pair.attributes as *const SECURITY_ATTRIBUTES);
     // Keep the box alive for the thread's lifetime.
     let _keep = sa_box;
     loop {
@@ -202,24 +246,11 @@ fn server_loop() {
         if let Some(command) = read_command(pipe) {
             let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
             push(RuntimeEvent::PipeCommand { id, command });
-            // Wait briefly for the UI thread to execute and reply.
-            let deadline = std::time::Instant::now() + Duration::from_millis(READ_TIMEOUT_MS);
-            let mut replied = false;
-            loop {
-                if let Some(reply) = take_reply(id) {
-                    write_line(pipe, &reply);
-                    replied = true;
-                    break;
-                }
-                if std::time::Instant::now() >= deadline {
-                    break;
-                }
-                std::thread::sleep(Duration::from_millis(10));
-            }
-            if !replied {
-                // Reap the slot so a late reply cannot leak or surprise
-                // a future command reusing the id space.
-                take_reply(id);
+            // Sleep until the UI thread publishes the reply instead of
+            // polling the shared map every 10 ms.
+            if let Some(reply) = wait_reply(id) {
+                write_line(pipe, &reply);
+            } else {
                 super::diagnostics::report_ipc(
                     "command reply timed out",
                     "UI thread did not answer within 2 s",

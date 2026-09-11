@@ -33,6 +33,9 @@ const WM_MBUTTONUP: u32 = 0x0208;
 const WM_LBUTTONDOWN: u32 = 0x0201;
 const WM_LBUTTONUP: u32 = 0x0202;
 const WM_QUIT_LOOP: u32 = 0x0012;
+const WM_TIMER: u32 = 0x0113;
+const ACTIVATION_TIMER_ID: usize = 1;
+const TIMEOUT_TIMER_ID: usize = 2;
 
 const VK_SHIFT: i32 = 0x10;
 const VK_CONTROL: i32 = 0x11;
@@ -85,6 +88,8 @@ struct HookState {
     pressed: HashSet<u32>,
     last_release_at: i64,
     version: u64,
+    activation_timer_version: Option<u64>,
+    timeout_timer_version: Option<u64>,
 }
 
 struct Handles {
@@ -113,6 +118,8 @@ fn state() -> &'static Mutex<HookState> {
             pressed: HashSet::new(),
             last_release_at: -1,
             version: 0,
+            activation_timer_version: None,
+            timeout_timer_version: None,
         })
     })
 }
@@ -329,9 +336,15 @@ fn hook_thread() {
         }
         let mut message = MSG::default();
         while GetMessageW(&mut message, None, 0, 0).as_bool() {
+            if message.message == WM_TIMER {
+                handle_timer(message.wParam.0);
+                continue;
+            }
             let _ = TranslateMessage(&message);
             DispatchMessageW(&message);
         }
+        let _ = KillTimer(None, ACTIVATION_TIMER_ID);
+        let _ = KillTimer(None, TIMEOUT_TIMER_ID);
         if let Ok(guards) = handles().lock() {
             if !guards.keyboard.is_invalid() {
                 let _ = UnhookWindowsHookEx(guards.keyboard);
@@ -497,41 +510,81 @@ fn schedule_activation_locked(guard: &mut HookState) {
         return;
     }
     let delay = guard.config.delay_ms;
-    std::thread::spawn(move || {
-        std::thread::sleep(Duration::from_millis(delay));
-        if let Ok(mut guard) = state().lock() {
-            if guard.version == version && any_held(&guard) {
-                activate_locked(&mut guard, version);
-            }
-        }
-    });
+    guard.activation_timer_version = Some(version);
+    unsafe {
+        let _ = SetTimer(
+            None,
+            ACTIVATION_TIMER_ID,
+            delay.min(u32::MAX as u64) as u32,
+            None,
+        );
+    }
 }
 
 fn activate_locked(guard: &mut HookState, version: u64) {
     if version != guard.version || !any_held(guard) || guard.activated || guard.timed_out {
         return;
     }
+    guard.activation_timer_version = None;
+    unsafe {
+        let _ = KillTimer(None, ACTIVATION_TIMER_ID);
+    }
     guard.activated = true;
     push(RuntimeEvent::TriggerPressed);
     if guard.config.timeout_ms > 0 {
         let timeout = guard.config.timeout_ms;
-        std::thread::spawn(move || {
-            std::thread::sleep(Duration::from_millis(timeout));
-            if let Ok(mut guard) = state().lock() {
-                if guard.version == version && any_held(&guard) && guard.activated {
-                    guard.activated = false;
-                    guard.timed_out = true;
-                    guard.version += 1;
-                    guard.pressed.clear();
-                    push(RuntimeEvent::TriggerTimedOut);
-                }
-            }
-        });
+        guard.timeout_timer_version = Some(version);
+        unsafe {
+            let _ = SetTimer(
+                None,
+                TIMEOUT_TIMER_ID,
+                timeout.min(u32::MAX as u64) as u32,
+                None,
+            );
+        }
+    }
+}
+
+fn handle_timer(timer_id: usize) {
+    let Ok(mut guard) = state().lock() else {
+        return;
+    };
+    let version = match timer_id {
+        ACTIVATION_TIMER_ID => guard.activation_timer_version.take(),
+        TIMEOUT_TIMER_ID => guard.timeout_timer_version.take(),
+        _ => None,
+    };
+    unsafe {
+        let _ = KillTimer(None, timer_id);
+    }
+    let Some(version) = version else {
+        return;
+    };
+    if timer_id == ACTIVATION_TIMER_ID {
+        if guard.version == version && any_held(&guard) {
+            activate_locked(&mut guard, version);
+        }
+    } else if timer_id == TIMEOUT_TIMER_ID
+        && guard.version == version
+        && any_held(&guard)
+        && guard.activated
+    {
+        guard.activated = false;
+        guard.timed_out = true;
+        guard.version += 1;
+        guard.pressed.clear();
+        push(RuntimeEvent::TriggerTimedOut);
     }
 }
 
 fn complete_release_locked(guard: &mut HookState) {
     guard.version += 1;
+    guard.activation_timer_version = None;
+    guard.timeout_timer_version = None;
+    unsafe {
+        let _ = KillTimer(None, ACTIVATION_TIMER_ID);
+        let _ = KillTimer(None, TIMEOUT_TIMER_ID);
+    }
     let was_activated = guard.activated;
     guard.activated = false;
     guard.timed_out = false;
@@ -549,6 +602,12 @@ fn complete_release_locked(guard: &mut HookState) {
 fn reset_input_locked(guard: &mut HookState, notify: bool) {
     let was_active = guard.activated;
     guard.version += 1;
+    guard.activation_timer_version = None;
+    guard.timeout_timer_version = None;
+    unsafe {
+        let _ = KillTimer(None, ACTIVATION_TIMER_ID);
+        let _ = KillTimer(None, TIMEOUT_TIMER_ID);
+    }
     guard.trigger_down = false;
     guard.middle_down = false;
     guard.activated = false;
@@ -678,6 +737,8 @@ mod tests {
             pressed: HashSet::new(),
             last_release_at: -1,
             version: 0,
+            activation_timer_version: None,
+            timeout_timer_version: None,
         }
     }
 

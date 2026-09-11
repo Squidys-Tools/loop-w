@@ -4,6 +4,7 @@
 //! and physical-pixel based. UI code never touches raw Win32 directly.
 
 use std::cell::{Cell, RefCell};
+use std::sync::{Mutex, OnceLock};
 
 use windows::core::{BOOL, GUID, PCWSTR};
 use windows::Win32::Foundation::*;
@@ -30,6 +31,17 @@ pub const WINIT_EVENT_TARGET_CLASS: &str = "Winit Thread Event Target";
 thread_local! {
     static TASKBAR_COM_READY: Cell<Option<bool>> = const { Cell::new(None) };
     static TASKBAR_LIST: RefCell<Option<ITaskbarList>> = const { RefCell::new(None) };
+}
+
+static EVENT_TARGET_CACHE: OnceLock<Mutex<Option<RawHwnd>>> = OnceLock::new();
+static SUPPRESSED_TASKBAR_CACHE: OnceLock<Mutex<Option<RawHwnd>>> = OnceLock::new();
+
+fn event_target_cache() -> &'static Mutex<Option<RawHwnd>> {
+    EVENT_TARGET_CACHE.get_or_init(|| Mutex::new(None))
+}
+
+fn suppressed_taskbar_cache() -> &'static Mutex<Option<RawHwnd>> {
+    SUPPRESSED_TASKBAR_CACHE.get_or_init(|| Mutex::new(None))
 }
 
 pub fn raw(hwnd: HWND) -> RawHwnd {
@@ -386,6 +398,18 @@ pub fn find_window_by_title(title: &str) -> Option<HWND> {
 }
 
 pub fn find_window_by_class(class: &str) -> Option<HWND> {
+    if class == WINIT_EVENT_TARGET_CLASS {
+        if let Ok(mut cached) = event_target_cache().lock() {
+            if let Some(raw_hwnd) = *cached {
+                let hwnd = from_raw(raw_hwnd);
+                if is_window(hwnd) && process_id(hwnd) == own_process_id() {
+                    return Some(hwnd);
+                }
+                *cached = None;
+            }
+        }
+    }
+
     struct Search {
         pid: u32,
         class: String,
@@ -412,6 +436,14 @@ pub fn find_window_by_class(class: &str) -> Option<HWND> {
     };
     unsafe {
         let _ = EnumWindows(Some(callback), LPARAM(&mut search as *mut Search as isize));
+    }
+    if class == WINIT_EVENT_TARGET_CLASS {
+        if let Some(hwnd) = search.found {
+            if let Ok(mut cached) = event_target_cache().lock() {
+                *cached = Some(raw(hwnd));
+            }
+            return Some(hwnd);
+        }
     }
     search.found
 }
@@ -442,7 +474,22 @@ pub fn suppress_taskbar_window(hwnd: HWND) -> bool {
         }
     }
 
-    delete_taskbar_tab(hwnd)
+    if desired == current
+        && suppressed_taskbar_cache()
+            .lock()
+            .map(|cached| *cached == Some(raw(hwnd)))
+            .unwrap_or(false)
+    {
+        return true;
+    }
+
+    let deleted = delete_taskbar_tab(hwnd);
+    if deleted {
+        if let Ok(mut cached) = suppressed_taskbar_cache().lock() {
+            *cached = Some(raw(hwnd));
+        }
+    }
+    deleted
 }
 
 fn delete_taskbar_tab(hwnd: HWND) -> bool {

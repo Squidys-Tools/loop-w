@@ -5,6 +5,7 @@
 //! `crate::core::monitor`. Invalidated on display/DPI/setting changes.
 
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, OnceLock};
 
 use windows::core::BOOL;
@@ -16,17 +17,16 @@ use super::native;
 use crate::core::monitor::{apply_padding, MonitorMoveSizePolicy, MonitorSnapshot};
 
 struct Cache {
-    generation: u64,
     snapshots: HashMap<isize, MonitorSnapshot>,
     all: Option<Vec<MonitorSnapshot>>,
 }
 
 static CACHE: OnceLock<Mutex<Cache>> = OnceLock::new();
+static GENERATION: AtomicU64 = AtomicU64::new(0);
 
 fn cache() -> &'static Mutex<Cache> {
     CACHE.get_or_init(|| {
         Mutex::new(Cache {
-            generation: 0,
             snapshots: HashMap::new(),
             all: None,
         })
@@ -34,7 +34,7 @@ fn cache() -> &'static Mutex<Cache> {
 }
 
 pub fn generation() -> u64 {
-    cache().lock().map(|c| c.generation).unwrap_or(0)
+    GENERATION.load(Ordering::Relaxed)
 }
 
 pub fn move_size_policy() -> MonitorMoveSizePolicy {
@@ -43,8 +43,8 @@ pub fn move_size_policy() -> MonitorMoveSizePolicy {
 
 /// Drop all cached snapshots (display/DPI/settings changed).
 pub fn invalidate() {
+    GENERATION.fetch_add(1, Ordering::Relaxed);
     if let Ok(mut guard) = cache().lock() {
-        guard.generation += 1;
         guard.snapshots.clear();
         guard.all = None;
     }
