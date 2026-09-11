@@ -25,6 +25,11 @@ pub enum TrayAction {
 
 /// Build the resident tray icon + menu. Must be called on the main thread.
 pub fn build() -> Result<Tray, String> {
+    // tray-icon delegates this popup to Windows' native TrackPopupMenu. The
+    // tray-icon/muda API exposes MenuTheme only for menu bars attached to a
+    // caller-owned window, and explicitly does not apply it to context menus.
+    // The tray's owner window is private to tray-icon, so keep the native menu
+    // rendering here; Windows will apply the user's configured menu theme.
     let menu = Menu::new();
     let open = MenuItem::new("Open LoopW", true, None);
     let settings = MenuItem::new("Open settings", true, None);

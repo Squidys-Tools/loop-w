@@ -321,13 +321,13 @@ impl State {
     }
 }
 
-fn subscription(_state: &State) -> Subscription<Message> {
-    Subscription::batch([
-        window::frames().map(|_| Message::FrameTick),
-        // Steady pump independent of windows: with no window open (tray-only)
-        // iced emits no frame events, which would starve tray polling, event
-        // draining, and snap/stash tracking. Match the ~60 Hz frame cadence.
-        iced::time::every(Duration::from_millis(16)).map(|_| Message::FrameTick),
+fn subscription(state: &State) -> Subscription<Message> {
+    let settings_only = state.main_id.is_some()
+        && state.radial.is_none()
+        && state.preview.is_none()
+        && !win::snap_service::is_active();
+
+    let mut subscriptions = vec![
         window::close_requests().map(Message::WindowClosed),
         iced::event::listen().map(|event| match event {
             iced::Event::Keyboard(keyboard::Event::KeyPressed { key, .. }) => {
@@ -335,7 +335,25 @@ fn subscription(_state: &State) -> Subscription<Message> {
             }
             _ => Message::Noop,
         }),
-    ])
+    ];
+
+    if settings_only {
+        // A settings-only window does not need animation frames. Keeping the
+        // 60 Hz frame subscription here makes every pump tick rebuild the
+        // entire settings tree, which makes Scrollable feel laggy. Keep the
+        // resident tray/event pump alive at a low rate instead.
+        subscriptions
+            .push(iced::time::every(Duration::from_millis(250)).map(|_| Message::FrameTick));
+    } else {
+        // Overlay hover and drag snapping need frame-rate cursor tracking.
+        // The timer remains necessary in tray-only mode, where iced has no
+        // window redraw events to drive the resident runtime.
+        subscriptions.push(window::frames().map(|_| Message::FrameTick));
+        subscriptions
+            .push(iced::time::every(Duration::from_millis(16)).map(|_| Message::FrameTick));
+    }
+
+    Subscription::batch(subscriptions)
 }
 
 // --- settings persistence (edit -> disk -> shared -> services) ---
@@ -1256,10 +1274,18 @@ fn wedge_at(session: &RadialSession, cursor: Point) -> Option<usize> {
     if !state_cursor_interaction() {
         return session.hovered;
     }
-    let dx = cursor.x as f64 - session.center.x as f64;
-    let dy = cursor.y as f64 - session.center.y as f64;
+    wedge_index_at(session.center, session.inner, cursor)
+}
+
+/// Resolve a radial selection from the ray through the menu center.
+///
+/// The menu's outer edge is visual only: once the cursor has left the dead
+/// zone, its distance from the center must not change which wedge is active.
+fn wedge_index_at(center: Point, inner: f64, cursor: Point) -> Option<usize> {
+    let dx = cursor.x as f64 - center.x as f64;
+    let dy = cursor.y as f64 - center.y as f64;
     let distance = (dx * dx + dy * dy).sqrt();
-    if distance < session.inner || distance > session.outer + 12.0 {
+    if distance < inner {
         return None;
     }
     Some(index_at(angle_of(dx, dy)))
@@ -1309,12 +1335,16 @@ fn ensure_preview(state: &mut State, tasks: &mut Vec<Task<Message>>, frame: Rect
             return;
         }
         // Most hover transitions stay on one monitor. Keep the HWND and its
-        // iced surface stable in that case; the canvas will redraw the new
-        // target rectangle without any native move/resize race.
+        // iced surface stable in that case. Re-submit its unchanged size as
+        // a redraw boundary: iced can otherwise retain the existing canvas
+        // surface while only the target rectangle inside it changes.
         if session.overlay_frame == overlay_frame {
+            let id = session.id;
+            let size = iced::Size::new(session.window_size.0, session.window_size.1);
             if let Some(session) = state.preview.as_mut() {
                 session.frame = frame;
             }
+            tasks.push(window::resize(id, size));
             return;
         }
 
@@ -1716,5 +1746,14 @@ mod tests {
         assert_eq!(target.kind, RadialTargetKind::Keybind);
         assert_eq!(target.keybind_id, id);
         assert_eq!(target.action, action);
+    }
+
+    #[test]
+    fn radial_selection_follows_angle_beyond_outer_edge() {
+        let center = Point::new(100, 100);
+
+        assert_eq!(wedge_index_at(center, 40.0, Point::new(900, 100)), Some(0));
+        assert_eq!(wedge_index_at(center, 40.0, Point::new(100, -700)), Some(6));
+        assert_eq!(wedge_index_at(center, 40.0, Point::new(120, 110)), None);
     }
 }
