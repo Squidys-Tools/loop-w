@@ -43,6 +43,8 @@ pub const PRESETS: [Preset; 3] = [
     },
 ];
 
+pub const PRESET_NAMES: [&str; 3] = ["LoopW Blue", "LoopW Cobalt", "LoopW Violet"];
+
 /// Name of the preset matching the current colors, if any.
 pub fn matching_preset(
     accent: &str,
@@ -51,22 +53,48 @@ pub fn matching_preset(
     ring_fill: &str,
     preview_border: &str,
 ) -> Option<&'static str> {
-    use crate::settings::normalize_color;
-    let (a, sf, ss, rf, pb) = (
-        normalize_color(accent, "#000000"),
-        normalize_color(sector_fill, "#000000"),
-        normalize_color(sector_stroke, "#000000"),
-        normalize_color(ring_fill, "#000000"),
-        normalize_color(preview_border, "#000000"),
-    );
+    let colors = [
+        parse_color(accent)?,
+        parse_color(sector_fill)?,
+        parse_color(sector_stroke)?,
+        parse_color(ring_fill)?,
+        parse_color(preview_border)?,
+    ];
+
     PRESETS
         .iter()
-        .find(|p| {
-            normalize_color(p.accent, "#111111") == a
-                && normalize_color(p.sector_fill, "#111111") == sf
-                && normalize_color(p.sector_stroke, "#111111") == ss
-                && normalize_color(p.ring_fill, "#111111") == rf
-                && normalize_color(p.preview_border, "#111111") == pb
+        .find(|preset| {
+            [
+                parse_color(preset.accent),
+                parse_color(preset.sector_fill),
+                parse_color(preset.sector_stroke),
+                parse_color(preset.ring_fill),
+                parse_color(preset.preview_border),
+            ]
+            .into_iter()
+            .flatten()
+            .eq(colors)
         })
-        .map(|p| p.name)
+        .map(|preset| preset.name)
+}
+
+fn parse_color(value: &str) -> Option<[u8; 4]> {
+    let hex = value.trim().trim_start_matches('#');
+    let value = u32::from_str_radix(hex, 16).ok()?;
+
+    match hex.len() {
+        6 => Some([
+            0xFF,
+            ((value >> 16) & 0xFF) as u8,
+            ((value >> 8) & 0xFF) as u8,
+            (value & 0xFF) as u8,
+        ]),
+        8 => Some([
+            ((value >> 24) & 0xFF) as u8,
+            ((value >> 16) & 0xFF) as u8,
+            ((value >> 8) & 0xFF) as u8,
+            (value & 0xFF) as u8,
+        ]),
+        _ => None,
+    }
 }

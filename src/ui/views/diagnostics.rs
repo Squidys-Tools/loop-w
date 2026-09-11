@@ -13,6 +13,7 @@ use crate::win::diagnostics::{self, VIEW_TAIL};
 /// Newest-first tail of the diagnostics log with repro hints.
 pub fn section() -> Element<'static, Message> {
     let entries = diagnostics::list();
+    let entry_count = entries.len();
     let mut log = column![text("Diagnostics").size(15)].spacing(6);
     log = log.push(
         text("Recent LoopW failures land here instead of failing silently (newest first).")
@@ -21,14 +22,14 @@ pub fn section() -> Element<'static, Message> {
     if entries.is_empty() {
         log = log.push(text("No diagnostics recorded this session.").size(13));
     } else {
-        for entry in entries.iter().rev().take(VIEW_TAIL) {
+        for entry in entries.into_iter().rev().take(VIEW_TAIL) {
             let mut item = column![text(entry.headline()).size(12)].spacing(2);
             if !entry.detail.is_empty() {
-                item = item.push(text(entry.detail.clone()).size(11));
+                item = item.push(text(entry.detail).size(11));
             }
             log = log.push(item);
         }
-        let older = entries.len().saturating_sub(VIEW_TAIL);
+        let older = entry_count.saturating_sub(VIEW_TAIL);
         if older > 0 {
             log = log.push(text(format!("…plus {older} older.")).size(11));
         }

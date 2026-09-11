@@ -6,6 +6,8 @@ use iced::{Element, Length};
 use crate::core::hotkey::hotkey_name;
 use crate::ui::app::{Message, Section, State};
 
+const MODIFIER_SIDE_OPTIONS: [&str; 3] = ["Any", "Left", "Right"];
+
 pub fn view(state: &State) -> Element<'_, Message> {
     let settings = &state.settings;
     let trigger = hotkey_name(
@@ -17,6 +19,11 @@ pub fn view(state: &State) -> Element<'_, Message> {
         "Press a key… (Esc cancels)"
     } else {
         "Rebind trigger"
+    };
+    let modifier_side = match settings.trigger_modifier_side {
+        crate::core::hotkey::TriggerModifierSide::Any => "Any",
+        crate::core::hotkey::TriggerModifierSide::Left => "Left",
+        crate::core::hotkey::TriggerModifierSide::Right => "Right",
     };
 
     let content = column![
@@ -30,13 +37,9 @@ pub fn view(state: &State) -> Element<'_, Message> {
         row![
             text("Modifier side").size(14),
             pick_list(
-                vec!["Any".to_string(), "Left".to_string(), "Right".to_string()],
-                Some(match settings.trigger_modifier_side {
-                    crate::core::hotkey::TriggerModifierSide::Any => "Any".to_string(),
-                    crate::core::hotkey::TriggerModifierSide::Left => "Left".to_string(),
-                    crate::core::hotkey::TriggerModifierSide::Right => "Right".to_string(),
-                }),
-                Message::SetModifierSide,
+                &MODIFIER_SIDE_OPTIONS[..],
+                Some(modifier_side),
+                |side: &str| Message::SetModifierSide(side.to_string()),
             ),
         ]
         .spacing(12),

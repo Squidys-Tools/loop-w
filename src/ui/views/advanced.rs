@@ -1,6 +1,11 @@
 //! Advanced section: keybinds, monitor policy, padding, exclusions, reset-all.
 
-use iced::widget::{button, column, container, pick_list, row, text, text_input, toggler};
+use std::hash::{Hash, Hasher};
+use std::sync::OnceLock;
+
+use iced::widget::{
+    button, column, container, keyed_column, pick_list, row, text, text_input, toggler,
+};
 use iced::{Element, Length};
 
 use crate::core::actions::WindowAction;
@@ -8,14 +13,23 @@ use crate::core::hotkey::hotkey_name;
 use crate::core::hotkey::TriggerModifierSide;
 use crate::ui::app::{Message, Section, State};
 
+const MONITOR_MOVE_POLICIES: [&str; 2] = ["PreservePixels", "PreserveLogicalSize"];
+const KEYBIND_HEADER_KEY: u64 = 0;
+const KEYBIND_EMPTY_KEY: u64 = 1;
+const KEYBIND_ADD_KEY: u64 = 2;
+
 pub fn view(state: &State) -> Element<'_, Message> {
     let settings = &state.settings;
 
-    let mut binds = column![text("Keybinds").size(15)].spacing(6);
+    let mut binds =
+        keyed_column([(KEYBIND_HEADER_KEY, text("Keybinds").size(15).into())]).spacing(6);
     if settings.keybinds.is_empty() {
-        binds = binds
-            .push(text("No keybinds yet. Keybinds run without opening the radial menu.").size(13));
+        binds = binds.push(
+            KEYBIND_EMPTY_KEY,
+            text("No keybinds yet. Keybinds run without opening the radial menu.").size(13),
+        );
     }
+    let actions = action_choices();
     for bind in &settings.keybinds {
         let capturing = state.capturing_keybind.as_deref() == Some(bind.id.as_str());
         let key_label = if capturing {
@@ -23,18 +37,15 @@ pub fn view(state: &State) -> Element<'_, Message> {
         } else {
             hotkey_name(bind.modifiers, bind.vk, TriggerModifierSide::Any)
         };
-        let actions: Vec<String> = WindowAction::ALL
-            .iter()
-            .map(|action| action.display_name().to_string())
-            .collect();
         binds = binds.push(
+            keybind_row_key(&bind.id),
             column![
                 row![
                     button(text(key_label).size(13))
                         .on_press(Message::BeginKeybindCapture(bind.id.clone())),
-                    pick_list(actions, Some(bind.action.display_name().to_string()), {
+                    pick_list(actions, Some(bind.action.display_name()), {
                         let id = bind.id.clone();
-                        move |name: String| Message::SetKeybindAction(id.clone(), name)
+                        move |name: &str| Message::SetKeybindAction(id.clone(), name.to_string())
                     },),
                     button("Delete").on_press(Message::DeleteKeybind(bind.id.clone())),
                 ]
@@ -56,7 +67,10 @@ pub fn view(state: &State) -> Element<'_, Message> {
             .spacing(4),
         );
     }
-    binds = binds.push(row![button("Add keybind").on_press(Message::AddKeybind),].spacing(10));
+    binds = binds.push(
+        KEYBIND_ADD_KEY,
+        row![button("Add keybind").on_press(Message::AddKeybind)].spacing(10),
+    );
 
     let content = column![
         text("Advanced").size(20),
@@ -65,17 +79,16 @@ pub fn view(state: &State) -> Element<'_, Message> {
         row![
             text("Monitor move sizing").size(14),
             pick_list(
-                vec![
-                    "PreservePixels".to_string(),
-                    "PreserveLogicalSize".to_string(),
-                ],
+                &MONITOR_MOVE_POLICIES[..],
                 Some(match settings.monitor_move_policy {
-                    crate::core::monitor::MonitorMoveSizePolicy::PreservePixels =>
-                        "PreservePixels".to_string(),
-                    crate::core::monitor::MonitorMoveSizePolicy::PreserveLogicalSize =>
-                        "PreserveLogicalSize".to_string(),
+                    crate::core::monitor::MonitorMoveSizePolicy::PreservePixels => {
+                        "PreservePixels"
+                    }
+                    crate::core::monitor::MonitorMoveSizePolicy::PreserveLogicalSize => {
+                        "PreserveLogicalSize"
+                    }
                 }),
-                Message::SetMonitorPolicy,
+                |policy: &str| Message::SetMonitorPolicy(policy.to_string()),
             ),
         ]
         .spacing(12),
@@ -146,6 +159,25 @@ pub fn view(state: &State) -> Element<'_, Message> {
         .width(Length::Fill)
         .height(Length::Fill)
         .into()
+}
+
+fn action_choices() -> &'static [&'static str] {
+    static CHOICES: OnceLock<Box<[&'static str]>> = OnceLock::new();
+
+    CHOICES
+        .get_or_init(|| {
+            WindowAction::ALL
+                .iter()
+                .map(|action| action.display_name())
+                .collect()
+        })
+        .as_ref()
+}
+
+fn keybind_row_key(id: &str) -> u64 {
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    id.hash(&mut hasher);
+    hasher.finish() | (1 << 63)
 }
 
 fn padding_row(

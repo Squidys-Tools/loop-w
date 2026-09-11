@@ -4,7 +4,9 @@ use iced::widget::{button, column, container, pick_list, row, text, text_input};
 use iced::{Element, Length};
 
 use crate::ui::app::{Message, Section, State};
-use crate::ui::theme::{matching_preset, PRESETS};
+use crate::ui::theme::{matching_preset, PRESET_NAMES};
+
+const APPEARANCE_MODES: [&str; 3] = ["Dark", "FollowWindows", "Light"];
 
 pub fn view(state: &State) -> Element<'_, Message> {
     let settings = &state.settings;
@@ -17,28 +19,23 @@ pub fn view(state: &State) -> Element<'_, Message> {
     )
     .unwrap_or("Custom");
 
-    let names: Vec<String> = PRESETS.iter().map(|p| p.name.to_string()).collect();
-    let modes = vec![
-        "Dark".to_string(),
-        "FollowWindows".to_string(),
-        "Light".to_string(),
-    ];
-
     let content = column![
         text("Appearance").size(20),
         text("Dark is the product standard. Presets apply instantly.").size(13),
         row![
             text("Theme").size(14),
             pick_list(
-                modes,
-                Some(settings.appearance_mode.clone()),
-                Message::SetAppearanceMode,
+                &APPEARANCE_MODES[..],
+                Some(settings.appearance_mode.as_str()),
+                |mode: &str| Message::SetAppearanceMode(mode.to_string()),
             ),
         ]
         .spacing(12),
         row![
             text(format!("Preset: {current}")).size(14),
-            pick_list(names, Some(current.to_string()), Message::ApplyPreset),
+            pick_list(&PRESET_NAMES[..], Some(current), |preset: &str| {
+                Message::ApplyPreset(preset.to_string())
+            }),
         ]
         .spacing(12),
         color_row("Accent", &settings.accent_color, Message::EditAccent),

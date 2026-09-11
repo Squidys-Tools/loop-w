@@ -1,6 +1,10 @@
 //! Radial section: text-free surface first, geometry + assignments below.
 
-use iced::widget::{button, column, container, pick_list, row, slider, text, toggler};
+use std::sync::Arc;
+
+use iced::widget::{
+    button, column, container, keyed_column, pick_list, row, slider, text, toggler,
+};
 use iced::{Element, Length};
 
 use crate::core::actions::WindowAction;
@@ -12,14 +16,17 @@ pub fn view(state: &State) -> Element<'_, Message> {
     let settings = &state.settings;
     let canvas = RadialCanvas::from_settings(settings);
 
-    let mut assignments = column![text("Wedge assignments").size(15)].spacing(6);
+    let choices = target_choices(settings);
+    let mut assignments =
+        keyed_column([(0_u8, text("Wedge assignments").size(15).into())]).spacing(6);
     for (index, slot) in GEOMETRY.iter().enumerate() {
         let target = settings.radial_slots.get(index);
         let name = target_choice(settings, target);
         assignments = assignments.push(
+            (index + 1) as u8,
             row![
                 text(format!("{} ", slot.label)).size(13),
-                pick_list(target_choices(settings), Some(name), {
+                pick_list(choices.clone(), Some(name), {
                     move |choice: String| Message::SetRadialTarget(Some(index), choice)
                 }),
                 toggler(target.is_some_and(|target| target.cycle_enabled))
@@ -32,9 +39,10 @@ pub fn view(state: &State) -> Element<'_, Message> {
 
     let center = target_choice(settings, Some(&settings.center_target));
     assignments = assignments.push(
+        (GEOMETRY.len() + 1) as u8,
         row![
             text("Center").size(13),
-            pick_list(target_choices(settings), Some(center), |choice: String| {
+            pick_list(choices, Some(center), |choice: String| {
                 Message::SetRadialTarget(None, choice)
             },),
             toggler(settings.center_target.cycle_enabled)
@@ -87,7 +95,7 @@ pub fn view(state: &State) -> Element<'_, Message> {
         .into()
 }
 
-fn target_choices(settings: &StateSettings) -> Vec<String> {
+fn target_choices(settings: &StateSettings) -> Arc<[String]> {
     let mut choices = vec!["No action".to_string()];
     choices.extend(
         WindowAction::ALL
@@ -105,7 +113,7 @@ fn target_choices(settings: &StateSettings) -> Vec<String> {
             )
         )
     }));
-    choices
+    choices.into()
 }
 
 type StateSettings = crate::settings::AppSettings;
