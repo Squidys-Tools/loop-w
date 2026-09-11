@@ -113,9 +113,14 @@ impl<Message> canvas::Program<Message> for RadialCanvas {
             state.render_key.set(Some(render_key));
         }
 
-        let geometry = state.cache.draw(renderer, bounds.size(), |frame| {
-            let center = Point::new(bounds.width / 2.0, bounds.height / 2.0);
-            let outer = self.outer_radius.min(bounds.width / 2.0 - 4.0);
+        let size = bounds.size();
+        let geometry = state.cache.draw(renderer, size, |frame| {
+            // `Canvas` translates the renderer to the widget origin before
+            // calling the program, while `Cache::draw` creates a frame whose
+            // coordinates start at (0, 0). Keep all geometry in that local
+            // frame; using bounds.x/y here double-applies the widget offset.
+            let center = Point::new(size.width / 2.0, size.height / 2.0);
+            let outer = self.outer_radius.min(size.width / 2.0 - 4.0);
             let inner = self.inner_radius.min(outer - 8.0);
 
             // Donut backdrop: outer disc with the center punched out
@@ -205,4 +210,25 @@ where
         .width(Length::Fixed(size))
         .height(Length::Fixed(size))
         .into()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn radial_geometry_uses_canvas_local_coordinates() {
+        let layout_bounds = Rectangle {
+            x: 256.0,
+            y: 82.9,
+            width: 260.0,
+            height: 260.0,
+        };
+        let size = layout_bounds.size();
+
+        assert_eq!(
+            Point::new(size.width / 2.0, size.height / 2.0),
+            Point::new(130.0, 130.0)
+        );
+    }
 }

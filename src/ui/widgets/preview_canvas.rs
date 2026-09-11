@@ -84,8 +84,13 @@ impl<Message> canvas::Program<Message> for PreviewCanvas {
         bounds: Rectangle,
         _cursor: mouse::Cursor,
     ) -> Vec<Geometry> {
-        let geometry = state.cache.draw(renderer, bounds.size(), |frame| {
-            self.draw_geometry(frame, bounds);
+        let size = bounds.size();
+        let geometry = state.cache.draw(renderer, size, |frame| {
+            // The canvas frame is local to the widget. The renderer applies
+            // the widget's layout translation outside this program, so pass
+            // local bounds to geometry generation instead of applying x/y a
+            // second time.
+            self.draw_geometry(frame, Rectangle::with_size(size));
         });
 
         vec![geometry]
