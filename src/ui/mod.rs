@@ -6,9 +6,12 @@
 //! the live overlays — a deliberate improvement over the WPF mockups.
 
 pub mod app;
+mod runtime;
+mod settings;
 pub mod theme;
 pub mod views;
 pub mod widgets;
+mod windows;
 
 /// Boot the resident daemon (hidden start, tray-first lifecycle).
 pub fn run_daemon(
