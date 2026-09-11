@@ -241,3 +241,24 @@ fn is_borderless_fullscreen(hwnd: windows::Win32::Foundation::HWND, style: isize
         && (frame.right - monitor.right).abs() <= 2
         && (frame.bottom - monitor.bottom).abs() <= 2
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn non_resizable_actions_are_limited_to_safe_window_operations() {
+        assert!(!requires_resize(WindowAction::MoveLeft));
+        assert!(!requires_resize(WindowAction::FocusNextInStack));
+        assert!(requires_resize(WindowAction::LeftHalf));
+        assert!(requires_resize(WindowAction::Maximize));
+    }
+
+    #[test]
+    fn borderless_fullscreen_allows_only_non_layout_actions() {
+        assert!(allows_borderless_action(WindowAction::Minimize));
+        assert!(allows_borderless_action(WindowAction::Undo));
+        assert!(!allows_borderless_action(WindowAction::LeftHalf));
+        assert!(!allows_borderless_action(WindowAction::Fullscreen));
+    }
+}

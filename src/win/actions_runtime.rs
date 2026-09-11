@@ -274,3 +274,39 @@ fn min_max_limits(hwnd: u64) -> MinMaxLimits {
 fn sizes_equal(first: Rect, second: Rect) -> bool {
     (first.width() - second.width()).abs() <= 2 && (first.height() - second.height()).abs() <= 2
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn invalid_handle_is_rejected_before_any_win32_action() {
+        let error = apply(0, WindowAction::LeftHalf).expect_err("zero HWND must be rejected");
+        assert_eq!(error, "The target window is no longer available.");
+    }
+
+    #[test]
+    fn snap_and_restore_paths_reject_zero_handles() {
+        let frame = Rect::new(0, 0, 100, 100);
+        assert_eq!(
+            apply_snap(0, WindowAction::LeftHalf, frame).unwrap_err(),
+            "The dragged window is no longer available."
+        );
+        assert_eq!(
+            restore_frame(0, frame).unwrap_err(),
+            "The dragged window is no longer available."
+        );
+    }
+
+    #[test]
+    fn size_comparison_allows_small_win32_rounding_error() {
+        assert!(sizes_equal(
+            Rect::new(0, 0, 100, 100),
+            Rect::new(9, 9, 110, 110)
+        ));
+        assert!(!sizes_equal(
+            Rect::new(0, 0, 100, 100),
+            Rect::new(0, 0, 104, 100)
+        ));
+    }
+}

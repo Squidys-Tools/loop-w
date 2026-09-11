@@ -127,7 +127,11 @@ pub fn track(cursor: Point) -> (SnapTrack, Option<SnapFinish>) {
         // Watchdog: only a drag that actually saw a zone may restore;
         // a plain click ends silently (matches EndGesture's hadCandidate gate).
         let finished = if drag.had_candidate {
-            finish_gesture(drag, false)
+            finish_gesture(
+                drag,
+                false,
+                super::shared::snapshot().restore_pre_drag_on_cancel,
+            )
         } else {
             None
         };
@@ -180,10 +184,21 @@ pub fn end_released() -> Option<SnapFinish> {
     if !drag.dragging || !drag.had_candidate {
         return None;
     }
-    finish_gesture(&drag, true)
+    finish_gesture(
+        &drag,
+        true,
+        super::shared::snapshot().restore_pre_drag_on_cancel,
+    )
 }
 
-fn finish_gesture(drag: &SnapState, released: bool) -> Option<SnapFinish> {
+fn finish_gesture(
+    drag: &SnapState,
+    released: bool,
+    restore_pre_drag_on_cancel: bool,
+) -> Option<SnapFinish> {
+    if !drag.dragging || !drag.had_candidate {
+        return None;
+    }
     let commit = released && drag.target.is_some();
     match drag.target {
         Some((action, frame)) if commit => Some(SnapFinish::Apply {
@@ -192,7 +207,7 @@ fn finish_gesture(drag: &SnapState, released: bool) -> Option<SnapFinish> {
             frame,
         }),
         _ => {
-            if super::shared::snapshot().restore_pre_drag_on_cancel {
+            if restore_pre_drag_on_cancel {
                 Some(SnapFinish::Restore {
                     window: drag.window,
                     frame: drag.original_frame,
@@ -227,5 +242,63 @@ pub fn disable() -> Option<SnapFinish> {
     if !drag.dragging || !drag.had_candidate {
         return None;
     }
-    finish_gesture(&drag, false)
+    finish_gesture(
+        &drag,
+        false,
+        super::shared::snapshot().restore_pre_drag_on_cancel,
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn drag(
+        target: Option<(WindowAction, Rect)>,
+        dragging: bool,
+        had_candidate: bool,
+    ) -> SnapState {
+        SnapState {
+            window: 42,
+            original_frame: Rect::new(10, 20, 210, 220),
+            start_point: Point::new(100, 100),
+            dragging,
+            target,
+            had_candidate,
+        }
+    }
+
+    #[test]
+    fn release_with_candidate_commits_the_current_target() {
+        let target = (WindowAction::LeftHalf, Rect::new(0, 0, 500, 900));
+        let result = finish_gesture(&drag(Some(target), true, true), true, true);
+        assert!(matches!(
+            result,
+            Some(SnapFinish::Apply {
+                window: 42,
+                action: WindowAction::LeftHalf,
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn cancelled_candidate_restores_only_when_enabled() {
+        let cancelled = drag(
+            Some((WindowAction::LeftHalf, Rect::new(0, 0, 500, 900))),
+            true,
+            true,
+        );
+        assert!(matches!(
+            finish_gesture(&cancelled, false, true),
+            Some(SnapFinish::Restore { window: 42, frame }) if frame == cancelled.original_frame
+        ));
+        assert!(finish_gesture(&cancelled, false, false).is_none());
+    }
+
+    #[test]
+    fn plain_click_or_interior_drag_does_not_restore() {
+        assert!(finish_gesture(&drag(None, false, false), false, true).is_none());
+        assert!(finish_gesture(&drag(None, true, false), false, true).is_none());
+    }
 }

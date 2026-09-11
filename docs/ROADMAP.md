@@ -40,6 +40,16 @@ The design document for the settings surface remains in
 It describes the intended behavior and the manual checks that still need to be
 run. [`QA.md`](QA.md) is the desktop test checklist.
 
+### Remaining implementation and hardening
+
+- [ ] Resolve or close the settings-page canvas geometry issue documented in
+  [`BUGS.md`](BUGS.md#9-canvas-geometry-collapses-in-the-settings-window--under-investigation).
+  The preview canvas now has a fixed size, but the radial settings preview
+  still needs a confirmed rendering diagnosis or fix.
+- [ ] Split oversized implementation modules, especially `src/ui/app.rs`,
+  `src/win/stash_service.rs`, `src/win/hooks.rs`, `src/core/frame_math.rs`, and
+  `src/win/ipc.rs`, so new work remains easy to test and review.
+
 ## Next work
 
 ### Finish the desktop QA pass
@@ -113,11 +123,12 @@ LoopW is ready for a broader release when:
    visible and recoverable.
 5. Unsupported windows fail safely and tell the user what happened.
 
-Packaging is a separate decision after this gate. The current GitHub Actions
-workflows run `cargo fmt --check`, `cargo test`, and warning-denied
-`cargo clippy` on every PR; the publish workflow additionally builds the
-release EXE for `v*` tags and stores the ZIP archive and checksum for
-manual workflow runs.
+Packaging is a separate decision after this gate. The repository currently has
+one GitHub Actions workflow, `publish.yml`; it runs when manually dispatched or
+when a `v*` tag is pushed. It checks formatting, tests, and warning-denied
+Clippy, builds the release EXE, and uploads the ZIP archive and checksum. Tag
+runs additionally create a GitHub Release. There is currently no workflow that
+runs automatically on every pull request.
 
 ## Development commands
 

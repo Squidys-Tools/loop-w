@@ -345,12 +345,24 @@ fn any_held(guard: &HookState) -> bool {
 }
 
 fn handle_key_down_locked(guard: &mut HookState, vk: u32) -> bool {
+    let trigger_modifiers = current_modifiers(guard.config.side);
+    let keybind_modifiers = current_modifiers(TriggerModifierSide::Any);
+    handle_key_down_with_modifiers_locked(guard, vk, trigger_modifiers, keybind_modifiers)
+}
+
+/// Testable key-down reducer. The hook callback supplies the two modifier
+/// snapshots because trigger-side matching and keybind matching deliberately
+/// use different side policies.
+fn handle_key_down_with_modifiers_locked(
+    guard: &mut HookState,
+    vk: u32,
+    trigger_modifiers: u32,
+    keybind_modifiers: u32,
+) -> bool {
     if guard.capturing.is_some() {
-        return handle_capture_locked(guard, vk);
+        return handle_capture_locked(guard, vk, keybind_modifiers);
     }
-    if vk == guard.config.trigger_vk
-        && current_modifiers(guard.config.side) == guard.config.trigger_mods
-    {
+    if vk == guard.config.trigger_vk && trigger_modifiers == guard.config.trigger_mods {
         if !guard.trigger_down {
             guard.trigger_down = true;
             if !guard.middle_down {
@@ -364,32 +376,10 @@ fn handle_key_down_locked(guard: &mut HookState, vk: u32) -> bool {
         // Auto-repeat: swallow, fire nothing.
         return true;
     }
-    let entries: Vec<MatchEntry> = guard
-        .config
-        .keybinds
-        .iter()
-        .map(|keybind| MatchEntry {
-            vk: keybind.vk,
-            modifiers: keybind.mods,
-            bypass_trigger: keybind.bypass,
-        })
-        .collect();
     let matched = if held && !guard.timed_out {
-        match_keybind(
-            &entries,
-            vk,
-            current_modifiers(TriggerModifierSide::Any),
-            guard.config.trigger_vk,
-            true,
-        )
+        matched_keybind_index(guard, vk, keybind_modifiers, true)
     } else if !held {
-        match_keybind(
-            &entries,
-            vk,
-            current_modifiers(TriggerModifierSide::Any),
-            guard.config.trigger_vk,
-            false,
-        )
+        matched_keybind_index(guard, vk, keybind_modifiers, false)
     } else {
         None
     };
@@ -408,6 +398,34 @@ fn handle_key_down_locked(guard: &mut HookState, vk: u32) -> bool {
         return true;
     }
     false
+}
+
+/// Match a keybind without reading Win32 modifier state or emitting events.
+/// This keeps the hook's policy decisions deterministic and directly
+/// testable while the callback remains responsible only for side effects.
+fn matched_keybind_index(
+    guard: &HookState,
+    vk: u32,
+    modifiers: u32,
+    trigger_held: bool,
+) -> Option<usize> {
+    let entries: Vec<MatchEntry> = guard
+        .config
+        .keybinds
+        .iter()
+        .map(|keybind| MatchEntry {
+            vk: keybind.vk,
+            modifiers: keybind.mods,
+            bypass_trigger: keybind.bypass,
+        })
+        .collect();
+    match_keybind(
+        &entries,
+        vk,
+        modifiers,
+        guard.config.trigger_vk,
+        trigger_held,
+    )
 }
 
 fn handle_key_up_locked(guard: &mut HookState, vk: u32) -> bool {
@@ -534,29 +552,43 @@ fn reset_input_locked(guard: &mut HookState, notify: bool) {
     }
 }
 
-fn handle_capture_locked(guard: &mut HookState, vk: u32) -> bool {
+fn handle_capture_locked(guard: &mut HookState, vk: u32, modifiers: u32) -> bool {
     if is_modifier_vk(vk) {
         return false;
     }
     let target = guard.capturing.take();
+    match capture_decision(target.as_ref(), vk, modifiers) {
+        CaptureDecision::Cancelled => push(RuntimeEvent::CaptureCancelled),
+        CaptureDecision::Rejected => push(RuntimeEvent::CaptureRejected),
+        CaptureDecision::Updated { keybind } => push(RuntimeEvent::CaptureUpdate {
+            modifiers,
+            vk,
+            keybind,
+        }),
+    }
+    true
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum CaptureDecision {
+    Cancelled,
+    Rejected,
+    Updated { keybind: Option<String> },
+}
+
+fn capture_decision(target: Option<&CaptureTarget>, vk: u32, modifiers: u32) -> CaptureDecision {
     if vk == VK_ESCAPE {
-        push(RuntimeEvent::CaptureCancelled);
-        return true;
+        return CaptureDecision::Cancelled;
     }
-    let mods = current_modifiers(TriggerModifierSide::Any);
-    if mods & MOD_WIN != 0 {
-        push(RuntimeEvent::CaptureRejected);
-        return true;
+    if modifiers & MOD_WIN != 0 {
+        return CaptureDecision::Rejected;
     }
-    push(RuntimeEvent::CaptureUpdate {
-        modifiers: mods,
-        vk,
+    CaptureDecision::Updated {
         keybind: match target {
-            Some(CaptureTarget::Keybind(id)) => Some(id),
+            Some(CaptureTarget::Keybind(id)) => Some(id.clone()),
             _ => None,
         },
-    });
-    true
+    }
 }
 
 fn is_modifier_vk(vk: u32) -> bool {
@@ -603,4 +635,91 @@ fn current_modifiers(side: TriggerModifierSide) -> u32 {
         mods |= MOD_WIN;
     }
     mods
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn state_with_keybinds(keybinds: Vec<KeybindSnapshot>) -> HookState {
+        HookState {
+            config: Config {
+                trigger_vk: 0x20,
+                trigger_mods: 0,
+                side: TriggerModifierSide::Any,
+                delay_ms: 0,
+                timeout_ms: 0,
+                double_click: false,
+                middle_click: false,
+                keybinds,
+            },
+            trigger_down: false,
+            middle_down: false,
+            activated: false,
+            timed_out: false,
+            capturing: None,
+            pressed: HashSet::new(),
+            last_release_at: -1,
+            version: 0,
+        }
+    }
+
+    #[test]
+    fn keybind_matching_keeps_trigger_and_bypass_paths_distinct() {
+        let mut guard = state_with_keybinds(vec![
+            KeybindSnapshot {
+                vk: 0x41,
+                mods: MOD_CONTROL,
+                action: crate::core::actions::WindowAction::LeftHalf,
+                cycle: false,
+                bypass: false,
+            },
+            KeybindSnapshot {
+                vk: 0x42,
+                mods: MOD_ALT,
+                action: crate::core::actions::WindowAction::RightHalf,
+                cycle: false,
+                bypass: true,
+            },
+        ]);
+
+        assert_eq!(
+            matched_keybind_index(&guard, 0x41, MOD_CONTROL, true),
+            Some(0)
+        );
+        assert_eq!(
+            matched_keybind_index(&guard, 0x41, MOD_CONTROL, false),
+            None
+        );
+        assert_eq!(matched_keybind_index(&guard, 0x42, MOD_ALT, false), Some(1));
+        assert_eq!(matched_keybind_index(&guard, 0x42, MOD_ALT, true), None);
+
+        guard.timed_out = true;
+        assert_eq!(
+            matched_keybind_index(&guard, 0x41, MOD_CONTROL, false),
+            None
+        );
+    }
+
+    #[test]
+    fn capture_decisions_cover_cancel_reject_and_update() {
+        assert_eq!(
+            capture_decision(Some(&CaptureTarget::Trigger), VK_ESCAPE, 0),
+            CaptureDecision::Cancelled
+        );
+        assert_eq!(
+            capture_decision(Some(&CaptureTarget::Trigger), 0x41, MOD_WIN),
+            CaptureDecision::Rejected
+        );
+        assert_eq!(
+            capture_decision(
+                Some(&CaptureTarget::Keybind("left".to_string())),
+                0x41,
+                MOD_ALT
+            ),
+            CaptureDecision::Updated {
+                keybind: Some("left".to_string())
+            }
+        );
+    }
 }

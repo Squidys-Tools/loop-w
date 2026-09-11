@@ -8,10 +8,11 @@ This tree is the Rust port (iced 0.14 UI, self-contained `win-x64` EXE, no
 .NET runtime). The C# / WPF implementation has been replaced at the repo root;
 `git log` retains its history.
 
-LoopW is still early-stage. The core logic, settings model, radial/preview
-surfaces, and settings UI are ported and tested, but the project needs a full
-manual desktop QA pass across different window types, display scales, and
-Windows configurations. Expect rough edges.
+The core product path, settings model, radial/preview surfaces, settings UI,
+and native Win32 backend are implemented. The project still needs code-level
+hardening and a full manual desktop QA pass across different window types,
+display scales, and Windows configurations. Expect rough edges while those
+remaining workstreams are completed.
 
 ## What it does
 
@@ -60,7 +61,8 @@ cargo run
 ```
 
 The app starts with the Settings window. Tray-resident operation, global hooks,
-and overlays connect as the Win32 backend lands (see roadmap note below).
+and overlays are wired through the Win32 backend; live desktop validation is
+tracked separately in the roadmap and QA checklist.
 
 Run the automated checks with:
 
@@ -133,10 +135,12 @@ Use `list/actions` to see the action names supported by the current build.
   previews leading the Radial and Preview pages, preset-first appearance, and
   inline validation.
 - `src/win` owns all Win32 side effects (hooks, window actions, snap, stash,
-  IPC, tray). Live backend wiring is the active workstream; pure logic it
-  depends on is already tested in `src/core`.
-- No source file exceeds ~450 lines; most are under 250. New code should stay
-  modular rather than growing single large files.
+  IPC, tray). The backend is implemented; desktop validation and runtime
+  hardening remain. Pure logic it depends on is tested in `src/core`.
+- Some modules are currently larger than the project's modularity target,
+  especially `src/ui/app.rs`, `src/win/stash_service.rs`, `src/win/hooks.rs`,
+  `src/core/frame_math.rs`, and `src/win/ipc.rs`. New code should stay modular,
+  and splitting those areas is follow-up work.
 
 ## License
 

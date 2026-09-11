@@ -498,4 +498,16 @@ mod tests {
         }
         let _ = PSID::default();
     }
+
+    #[test]
+    fn command_decode_trims_cr_and_replaces_invalid_utf8() {
+        assert_eq!(decode(b"activate\r"), "activate");
+        assert_eq!(decode(b"bad\xFF"), "bad\u{FFFD}");
+    }
+
+    #[test]
+    fn replies_preserve_command_parser_failures_for_the_pipe_client() {
+        assert_eq!(reply_for("list/actions"), "OK");
+        assert!(reply_for("not-a-command").starts_with("ERROR: "));
+    }
 }

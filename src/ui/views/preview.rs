@@ -62,6 +62,26 @@ pub fn view(state: &State) -> Element<'_, Message> {
             toggler(settings.restore_pre_drag_on_cancel).on_toggle(Message::SetRestoreOnCancel),
         ]
         .spacing(12),
+        row![
+            text("Persist stashed windows").size(14),
+            toggler(settings.stash_persistence_enabled).on_toggle(Message::SetStashPersistence),
+        ]
+        .spacing(12),
+        stash_nudge_row(
+            "Stash edge peek",
+            settings.stash_peek,
+            Message::NudgeStashPeek,
+        ),
+        stash_nudge_row(
+            "Stash reveal hit zone",
+            settings.stash_hit_zone,
+            Message::NudgeStashHitZone,
+        ),
+        stash_nudge_row(
+            "Stash reveal delay",
+            settings.stash_reveal_delay_ms,
+            Message::NudgeStashDelay,
+        ),
         row![button("Reset section").on_press(Message::ResetSection(Section::Preview)),],
         text(&state.status).size(12),
     ]
@@ -72,4 +92,18 @@ pub fn view(state: &State) -> Element<'_, Message> {
         .width(Length::Fill)
         .height(Length::Fill)
         .into()
+}
+
+fn stash_nudge_row(
+    label: &'static str,
+    value: i32,
+    on_change: fn(i32) -> Message,
+) -> Element<'static, Message> {
+    row![
+        text(format!("{label}: {value}")).size(14),
+        button("-").on_press(on_change(-1)),
+        button("+").on_press(on_change(1)),
+    ]
+    .spacing(8)
+    .into()
 }

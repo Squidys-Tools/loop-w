@@ -1,6 +1,6 @@
 //! General section: trigger + launch behavior first.
 
-use iced::widget::{button, column, container, row, text, toggler};
+use iced::widget::{button, column, container, pick_list, row, text, toggler};
 use iced::{Element, Length};
 
 use crate::core::hotkey::hotkey_name;
@@ -25,6 +25,19 @@ pub fn view(state: &State) -> Element<'_, Message> {
         row![
             text(format!("Trigger: {trigger}")).size(15),
             button(capture_label).on_press(Message::BeginTriggerCapture),
+        ]
+        .spacing(12),
+        row![
+            text("Modifier side").size(14),
+            pick_list(
+                vec!["Any".to_string(), "Left".to_string(), "Right".to_string()],
+                Some(match settings.trigger_modifier_side {
+                    crate::core::hotkey::TriggerModifierSide::Any => "Any".to_string(),
+                    crate::core::hotkey::TriggerModifierSide::Left => "Left".to_string(),
+                    crate::core::hotkey::TriggerModifierSide::Right => "Right".to_string(),
+                }),
+                Message::SetModifierSide,
+            ),
         ]
         .spacing(12),
         if state.capturing_trigger {

@@ -8,14 +8,16 @@ before testing minimize, hide, stash, or focus actions.
 Status: `[ ]` not run, `[x]` passed, `[!]` blocked or not supported on this
 Windows configuration.
 
-The current automated baseline is a warning-free `cargo build` and the
-`cargo test` unit suite (67 tests). Live named-pipe responses and desktop
-actions still require the manual checks below. Re-run the automated baseline
-after every action-model change.
+The current automated baseline is clean in this checkout: `cargo fmt -- --check`,
+`cargo build --locked`, `cargo test --all-targets --locked` (82 binary tests
+plus 62 UI/settings contract tests), and `cargo clippy --all-targets --locked
+-- -D warnings` all pass. Live named-pipe responses and desktop actions still
+require the manual checks below; this automated result is not a manual QA
+result. Re-run the automated baseline after every action-model change.
 
 ## 1. Build and resident lifecycle
 
-- [ ] Run `cargo build` with zero warnings and `cargo test` with all tests passing.
+- [x] Run `cargo build` with zero warnings and `cargo test` with all tests passing.
 - [ ] Launch LoopW. The main window stays hidden and exactly one tray icon appears.
 - [x] Launch LoopW a second time. The existing instance activates; no second hook,
   process, or tray icon remains.
@@ -181,7 +183,7 @@ does not target its own settings, radial, preview, or tray surfaces.
 
 ## 11. Final gate
 
-- [ ] Run `cargo fmt --check`, `cargo build`, `cargo test`, and
+- [x] Run `cargo fmt --check`, `cargo build`, `cargo test`, and
   `cargo clippy --all-targets -- -D warnings` clean.
 - [ ] Complete sections 1 through 10 on at least one local multi-monitor setup.
 - [ ] Complete mixed-DPI, RDP, elevated-app, and taskbar-layout checks or record

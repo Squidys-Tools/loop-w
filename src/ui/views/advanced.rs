@@ -85,13 +85,28 @@ pub fn view(state: &State) -> Element<'_, Message> {
             button("+").on_press(Message::NudgeGlobalPadding(1)),
         ]
         .spacing(8),
-        row![text("Excluded processes (one per line, e.g. game.exe)").size(13),],
-        text_input("excluded.exe", &settings.excluded_processes.join("\n"),)
-            .on_input(Message::EditExcludedProcesses),
-        row![
-            text("Stash peek / hit zone / delay").size(13),
-            button("Defaults").on_press(Message::ResetSection(Section::Advanced)),
-        ],
+        text("Per-edge screen padding").size(14),
+        padding_row("Left", settings.padding_left, Message::NudgePaddingLeft),
+        padding_row("Top", settings.padding_top, Message::NudgePaddingTop),
+        padding_row("Right", settings.padding_right, Message::NudgePaddingRight),
+        padding_row(
+            "Bottom",
+            settings.padding_bottom,
+            Message::NudgePaddingBottom
+        ),
+        row![text("Excluded executables (comma-separated paths)").size(13),],
+        text_input(
+            "C:\\Games\\example.exe, C:\\Tools\\demo.exe",
+            &settings.excluded_executables.join(", "),
+        )
+        .on_input(Message::EditExcludedExecutables),
+        row![text("Excluded processes (comma-separated names)").size(13),],
+        text_input(
+            "game.exe, editor.exe",
+            &settings.excluded_processes.join(", "),
+        )
+        .on_input(Message::EditExcludedProcesses),
+        row![text("Stash settings are on the Preview section.").size(13),],
         row![text(format!(
             "Bypass note: {} keybind(s) bypass the trigger.",
             settings
@@ -131,4 +146,18 @@ pub fn view(state: &State) -> Element<'_, Message> {
         .width(Length::Fill)
         .height(Length::Fill)
         .into()
+}
+
+fn padding_row(
+    label: &'static str,
+    value: i32,
+    on_change: fn(i32) -> Message,
+) -> Element<'static, Message> {
+    row![
+        text(format!("{label}: {value}")).size(13),
+        button("-").on_press(on_change(-1)),
+        button("+").on_press(on_change(1)),
+    ]
+    .spacing(8)
+    .into()
 }

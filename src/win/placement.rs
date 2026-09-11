@@ -153,12 +153,9 @@ fn wait_for_placement(hwnd: u64, frame: Rect) -> bool {
             placement.showCmd == SW_SHOWMAXIMIZED.0 as u32 || native::is_zoomed(native_hwnd);
         if !maximized {
             if let Some(actual) = native::window_rect(native_hwnd) {
-                if rects_equal(actual, frame) {
-                    return true;
-                }
-                if previous == Some(actual) {
-                    // Stabilized elsewhere (app-clamped): accept.
-                    return true;
+                match classify_placement_sample(previous, actual, frame) {
+                    PlacementSample::Exact | PlacementSample::Stabilized => return true,
+                    PlacementSample::Pending => {}
                 }
                 previous = Some(actual);
             }
@@ -166,4 +163,54 @@ fn wait_for_placement(hwnd: u64, frame: Rect) -> bool {
         std::thread::sleep(core::time::Duration::from_millis(40));
     }
     !native::is_zoomed(native_hwnd)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PlacementSample {
+    Exact,
+    Stabilized,
+    Pending,
+}
+
+/// Classify one observable placement sample without touching Win32. A stable
+/// non-target frame is accepted because some applications clamp their own
+/// minimum size and never report the requested rectangle.
+fn classify_placement_sample(
+    previous: Option<Rect>,
+    actual: Rect,
+    target: Rect,
+) -> PlacementSample {
+    if rects_equal(actual, target) {
+        PlacementSample::Exact
+    } else if previous == Some(actual) {
+        PlacementSample::Stabilized
+    } else {
+        PlacementSample::Pending
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn placement_samples_distinguish_exact_clamped_and_pending() {
+        let target = Rect::new(0, 0, 500, 500);
+        let exact = Rect::new(1, 1, 499, 499);
+        let clamped = Rect::new(0, 0, 640, 480);
+        let moving = Rect::new(0, 0, 320, 240);
+
+        assert_eq!(
+            classify_placement_sample(None, exact, target),
+            PlacementSample::Exact
+        );
+        assert_eq!(
+            classify_placement_sample(Some(clamped), clamped, target),
+            PlacementSample::Stabilized
+        );
+        assert_eq!(
+            classify_placement_sample(Some(moving), clamped, target),
+            PlacementSample::Pending
+        );
+    }
 }

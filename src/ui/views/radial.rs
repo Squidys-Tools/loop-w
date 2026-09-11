@@ -1,8 +1,9 @@
 //! Radial section: text-free surface first, geometry + assignments below.
 
-use iced::widget::{button, column, container, row, slider, text, toggler};
+use iced::widget::{button, column, container, pick_list, row, slider, text, toggler};
 use iced::{Element, Length};
 
+use crate::core::actions::WindowAction;
 use crate::core::radial::GEOMETRY;
 use crate::ui::app::{Message, Section, State};
 use crate::ui::widgets::radial_canvas::{self, RadialCanvas};
@@ -14,28 +15,33 @@ pub fn view(state: &State) -> Element<'_, Message> {
     let mut assignments = column![text("Wedge assignments").size(15)].spacing(6);
     for (index, slot) in GEOMETRY.iter().enumerate() {
         let target = settings.radial_slots.get(index);
-        let name = target
-            .map(|t| match t.kind {
-                crate::core::radial_targets::RadialTargetKind::None => "No action".to_string(),
-                crate::core::radial_targets::RadialTargetKind::Action => {
-                    t.action.display_name().to_string()
-                }
-                crate::core::radial_targets::RadialTargetKind::Keybind => {
-                    format!(
-                        "Keybind {}",
-                        t.keybind_id.chars().take(6).collect::<String>()
-                    )
-                }
-            })
-            .unwrap_or_else(|| "No action".to_string());
+        let name = target_choice(settings, target);
         assignments = assignments.push(
             row![
-                text(format!("{} — {name}", slot.label)).size(13),
+                text(format!("{} ", slot.label)).size(13),
+                pick_list(target_choices(settings), Some(name), {
+                    move |choice: String| Message::SetRadialTarget(Some(index), choice)
+                }),
+                toggler(target.is_some_and(|target| target.cycle_enabled))
+                    .on_toggle(move |_| Message::ToggleRadialCycle(Some(index))),
                 button("Clear").on_press(Message::ClearWedge(index)),
             ]
             .spacing(10),
         );
     }
+
+    let center = target_choice(settings, Some(&settings.center_target));
+    assignments = assignments.push(
+        row![
+            text("Center").size(13),
+            pick_list(target_choices(settings), Some(center), |choice: String| {
+                Message::SetRadialTarget(None, choice)
+            },),
+            toggler(settings.center_target.cycle_enabled)
+                .on_toggle(|_| Message::ToggleRadialCycle(None)),
+        ]
+        .spacing(10),
+    );
 
     let content = column![
         text("Radial menu").size(20),
@@ -79,4 +85,58 @@ pub fn view(state: &State) -> Element<'_, Message> {
         .width(Length::Fill)
         .height(Length::Fill)
         .into()
+}
+
+fn target_choices(settings: &StateSettings) -> Vec<String> {
+    let mut choices = vec!["No action".to_string()];
+    choices.extend(
+        WindowAction::ALL
+            .iter()
+            .map(|action| format!("Action: {}", action.display_name())),
+    );
+    choices.extend(settings.keybinds.iter().map(|bind| {
+        format!(
+            "Keybind: {} ({})",
+            bind.id,
+            crate::core::hotkey::hotkey_name(
+                bind.modifiers,
+                bind.vk,
+                crate::core::hotkey::TriggerModifierSide::Any,
+            )
+        )
+    }));
+    choices
+}
+
+type StateSettings = crate::settings::AppSettings;
+
+fn target_choice(
+    settings: &StateSettings,
+    target: Option<&crate::core::radial_targets::RadialTargetSettings>,
+) -> String {
+    let Some(target) = target else {
+        return "No action".to_string();
+    };
+    match target.kind {
+        crate::core::radial_targets::RadialTargetKind::None => "No action".to_string(),
+        crate::core::radial_targets::RadialTargetKind::Action => {
+            format!("Action: {}", target.action.display_name())
+        }
+        crate::core::radial_targets::RadialTargetKind::Keybind => settings
+            .keybinds
+            .iter()
+            .find(|bind| bind.id == target.keybind_id)
+            .map(|bind| {
+                format!(
+                    "Keybind: {} ({})",
+                    bind.id,
+                    crate::core::hotkey::hotkey_name(
+                        bind.modifiers,
+                        bind.vk,
+                        crate::core::hotkey::TriggerModifierSide::Any,
+                    )
+                )
+            })
+            .unwrap_or_else(|| "No action".to_string()),
+    }
 }

@@ -73,6 +73,7 @@ pub enum Message {
     BeginTriggerCapture,
     CancelTriggerCapture,
     BeginKeybindCapture(String),
+    SetModifierSide(String),
     ToggleKeybindCycle(String),
     ToggleKeybindBypass(String),
     SetLaunchAtLogin(bool),
@@ -84,6 +85,8 @@ pub enum Message {
     SetCursorInteraction(bool),
     SetOuterRadius(f32),
     SetInnerRadius(f32),
+    SetRadialTarget(Option<usize>, String),
+    ToggleRadialCycle(Option<usize>),
     ClearWedge(usize),
     SetPreviewEnabled(bool),
     SetDragSnap(bool),
@@ -92,6 +95,10 @@ pub enum Message {
     SetPreviewBorder(f32),
     SetSnapThreshold(f32),
     SetRestoreOnCancel(bool),
+    SetStashPersistence(bool),
+    NudgeStashPeek(i32),
+    NudgeStashHitZone(i32),
+    NudgeStashDelay(i32),
     SetAppearanceMode(String),
     ApplyPreset(String),
     EditAccent(String),
@@ -104,6 +111,11 @@ pub enum Message {
     SetKeybindAction(String, String),
     SetMonitorPolicy(String),
     NudgeGlobalPadding(i32),
+    NudgePaddingLeft(i32),
+    NudgePaddingTop(i32),
+    NudgePaddingRight(i32),
+    NudgePaddingBottom(i32),
+    EditExcludedExecutables(String),
     EditExcludedProcesses(String),
     ResetSection(Section),
     ConfirmResetAll,
@@ -394,6 +406,15 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
             state.status = "Press a key… (Esc cancels)".to_string();
             Task::none()
         }
+        Message::SetModifierSide(side) => {
+            state.settings.trigger_modifier_side = match side.as_str() {
+                "Left" => TriggerModifierSide::Left,
+                "Right" => TriggerModifierSide::Right,
+                _ => TriggerModifierSide::Any,
+            };
+            commit_settings(state, "Trigger updated");
+            Task::none()
+        }
         Message::ToggleKeybindCycle(id) => {
             if let Some(bind) = state.settings.keybinds.iter_mut().find(|k| k.id == id) {
                 bind.cycle_enabled = !bind.cycle_enabled;
@@ -416,6 +437,11 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
                 return Task::none();
             }
             commit_settings(state, "Saved");
+            // Persistence failure reverts the in-memory settings snapshot;
+            // keep the registry entry aligned with that last saved value too.
+            if state.settings.launch_at_login != enabled {
+                let _ = win::startup::set_launch_at_login(state.settings.launch_at_login);
+            }
             Task::none()
         }
         Message::NudgeDelay(delta) => {
@@ -457,6 +483,35 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
         }
         Message::SetInnerRadius(value) => {
             state.settings.radial_inner_radius = value as f64;
+            commit_settings(state, "Saved");
+            Task::none()
+        }
+        Message::SetRadialTarget(slot, choice) => {
+            let target = radial_target_from_choice(&state.settings, &choice);
+            match slot {
+                Some(index) => {
+                    if let Some(current) = state.settings.radial_slots.get_mut(index) {
+                        *current = target;
+                    }
+                }
+                None => state.settings.center_target = target,
+            }
+            commit_settings(state, "Saved");
+            Task::none()
+        }
+        Message::ToggleRadialCycle(slot) => {
+            let target = match slot {
+                Some(index) => state.settings.radial_slots.get_mut(index),
+                None => Some(&mut state.settings.center_target),
+            };
+            if let Some(target) = target {
+                if !matches!(
+                    target.kind,
+                    crate::core::radial_targets::RadialTargetKind::None
+                ) {
+                    target.cycle_enabled = !target.cycle_enabled;
+                }
+            }
             commit_settings(state, "Saved");
             Task::none()
         }
@@ -520,6 +575,27 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
         }
         Message::SetRestoreOnCancel(value) => {
             state.settings.restore_pre_drag_on_cancel = value;
+            commit_settings(state, "Saved");
+            Task::none()
+        }
+        Message::SetStashPersistence(value) => {
+            state.settings.stash_persistence_enabled = value;
+            commit_settings(state, "Saved");
+            Task::none()
+        }
+        Message::NudgeStashPeek(delta) => {
+            state.settings.stash_peek = (state.settings.stash_peek + delta).clamp(1, 48);
+            commit_settings(state, "Saved");
+            Task::none()
+        }
+        Message::NudgeStashHitZone(delta) => {
+            state.settings.stash_hit_zone = (state.settings.stash_hit_zone + delta).clamp(1, 96);
+            commit_settings(state, "Saved");
+            Task::none()
+        }
+        Message::NudgeStashDelay(delta) => {
+            state.settings.stash_reveal_delay_ms =
+                (state.settings.stash_reveal_delay_ms + delta).clamp(0, 2000);
             commit_settings(state, "Saved");
             Task::none()
         }
@@ -600,9 +676,38 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
             commit_settings(state, "Saved");
             Task::none()
         }
+        Message::NudgePaddingLeft(delta) => {
+            state.settings.padding_left = (state.settings.padding_left + delta).clamp(0, 128);
+            commit_settings(state, "Saved");
+            Task::none()
+        }
+        Message::NudgePaddingTop(delta) => {
+            state.settings.padding_top = (state.settings.padding_top + delta).clamp(0, 128);
+            commit_settings(state, "Saved");
+            Task::none()
+        }
+        Message::NudgePaddingRight(delta) => {
+            state.settings.padding_right = (state.settings.padding_right + delta).clamp(0, 128);
+            commit_settings(state, "Saved");
+            Task::none()
+        }
+        Message::NudgePaddingBottom(delta) => {
+            state.settings.padding_bottom = (state.settings.padding_bottom + delta).clamp(0, 128);
+            commit_settings(state, "Saved");
+            Task::none()
+        }
+        Message::EditExcludedExecutables(value) => {
+            state.settings.excluded_executables = value
+                .split([',', '\n'])
+                .map(|line| line.trim().to_string())
+                .filter(|line| !line.is_empty())
+                .collect();
+            commit_settings(state, "Saved");
+            Task::none()
+        }
         Message::EditExcludedProcesses(value) => {
             state.settings.excluded_processes = value
-                .lines()
+                .split([',', '\n'])
                 .map(|line| line.trim().to_string())
                 .filter(|line| !line.is_empty())
                 .collect();
@@ -737,6 +842,38 @@ fn apply_color_edit(state: &mut State, field: &str, value: String) {
     commit_settings(state, "Saved");
 }
 
+fn radial_target_from_choice(
+    settings: &AppSettings,
+    choice: &str,
+) -> crate::core::radial_targets::RadialTargetSettings {
+    use crate::core::radial_targets::{RadialTargetKind, RadialTargetSettings};
+
+    if choice == "No action" {
+        return RadialTargetSettings::none();
+    }
+    if let Some(name) = choice.strip_prefix("Action: ") {
+        if let Some(action) = WindowAction::ALL
+            .iter()
+            .copied()
+            .find(|action| action.display_name() == name)
+        {
+            return RadialTargetSettings::action(action);
+        }
+    }
+    if let Some(rest) = choice.strip_prefix("Keybind: ") {
+        let id = rest.split(" (").next().unwrap_or(rest);
+        if let Some(bind) = settings.keybinds.iter().find(|bind| bind.id == id) {
+            return RadialTargetSettings {
+                kind: RadialTargetKind::Keybind,
+                action: bind.action,
+                keybind_id: bind.id.clone(),
+                cycle_enabled: bind.cycle_enabled,
+            };
+        }
+    }
+    RadialTargetSettings::none()
+}
+
 fn reset_section(state: &mut State, section: Section) {
     let defaults = AppSettings::default();
     match section {
@@ -767,6 +904,10 @@ fn reset_section(state: &mut State, section: Section) {
             state.settings.drag_snap_enabled = defaults.drag_snap_enabled;
             state.settings.drag_snap_threshold = defaults.drag_snap_threshold;
             state.settings.restore_pre_drag_on_cancel = defaults.restore_pre_drag_on_cancel;
+            state.settings.stash_persistence_enabled = defaults.stash_persistence_enabled;
+            state.settings.stash_peek = defaults.stash_peek;
+            state.settings.stash_hit_zone = defaults.stash_hit_zone;
+            state.settings.stash_reveal_delay_ms = defaults.stash_reveal_delay_ms;
         }
         Section::Appearance => {
             state.settings.appearance_mode = defaults.appearance_mode;
@@ -787,9 +928,6 @@ fn reset_section(state: &mut State, section: Section) {
             state.settings.padding_bottom = defaults.padding_bottom;
             state.settings.excluded_executables = defaults.excluded_executables;
             state.settings.excluded_processes = defaults.excluded_processes;
-            state.settings.stash_peek = defaults.stash_peek;
-            state.settings.stash_hit_zone = defaults.stash_hit_zone;
-            state.settings.stash_reveal_delay_ms = defaults.stash_reveal_delay_ms;
         }
     }
 }
@@ -1547,4 +1685,36 @@ fn settings_view(state: &State) -> Element<'_, Message> {
             ..Default::default()
         })
         .into()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::radial_targets::RadialTargetKind;
+
+    #[test]
+    fn radial_target_choices_round_trip_built_in_and_none() {
+        let settings = AppSettings::default();
+
+        let none = radial_target_from_choice(&settings, "No action");
+        assert_eq!(none.kind, RadialTargetKind::None);
+
+        let action = radial_target_from_choice(&settings, "Action: Left half");
+        assert_eq!(action.kind, RadialTargetKind::Action);
+        assert_eq!(action.action, WindowAction::LeftHalf);
+    }
+
+    #[test]
+    fn radial_target_choice_resolves_stable_keybind_id() {
+        let mut settings = AppSettings::default();
+        let bind = crate::settings::Keybind::default();
+        let id = bind.id.clone();
+        let action = bind.action;
+        settings.keybinds.push(bind);
+
+        let target = radial_target_from_choice(&settings, &format!("Keybind: {id} (Space)"));
+        assert_eq!(target.kind, RadialTargetKind::Keybind);
+        assert_eq!(target.keybind_id, id);
+        assert_eq!(target.action, action);
+    }
 }

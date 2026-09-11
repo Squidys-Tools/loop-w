@@ -109,8 +109,9 @@ gates (`cargo fmt --check`, `cargo test --locked`,
   `src/ui/widgets/preview_canvas.rs` as hosted by the settings window
   (`src/ui/views/radial.rs`, `src/ui/views/preview.rs` inside the
   `scrollable` in `src/ui/app.rs` `settings_view`).
-- **What:** canvas geometry rasterizes as a thin vertical sliver instead of
-  the drawn shapes. Measured on 1166x809 @ scale 1.0: a full-bounds
+- **What:** settings-page canvas geometry rasterizes as a thin vertical sliver
+  instead of the drawn shapes, leaving the previews effectively blank.
+  Measured on 1166x809 @ scale 1.0: a full-bounds
   260x260 probe rect at layout `(256, 82.9)` appears as pixels
   `x 512-515, y 196-322` — stable across frames, PIDs, and runs
   (pixel-scanned, not eyeballed). Same program code renders correctly in
@@ -140,9 +141,9 @@ gates (`cargo fmt --check`, `cargo test --locked`,
   and the working overlay.
 - **Update:** the `src/bin` canvas probes (`cprobe`, `dcanvas`, `ovprobe`)
   were removed after this investigation (they were the only clippy/fmt
-  offenders). `preview_canvas::view` now takes a concrete `Fixed`
-  size instead of `Fill` — a `Fill` canvas inside the settings
-  `scrollable` is a second degenerate-sizing suspect and is now ruled
-  out. The radial settings preview (already `Fixed(260)`) still needs
-  the RenderDoc/Pix + second-machine check above before this entry
-  can close.
+  offenders). Both settings previews now receive concrete fixed sizes:
+  `radial_canvas` uses `Fixed(260)`, and `preview_canvas` uses `Fixed(320x200)`.
+  This rules out the `Fill` canvas inside the settings `scrollable` as one
+  degenerate-sizing suspect, but it does not close the bug. The radial settings
+  preview still needs the RenderDoc/Pix and second-machine checks above, or a
+  confirmed fix, before this entry can close.
