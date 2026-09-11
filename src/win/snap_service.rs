@@ -48,6 +48,7 @@ struct SnapState {
     window: u64,
     original_frame: Rect,
     start_point: Point,
+    drag_snap_threshold: i32,
     dragging: bool,
     target: Option<(WindowAction, Rect)>,
     had_candidate: bool,
@@ -76,7 +77,8 @@ pub fn note_button(down: bool) {
 
 /// UI-thread drag start: caption hit-test + eligibility gates.
 pub fn begin_at_cursor(cursor: Point) {
-    if !super::shared::snapshot().drag_snap_enabled {
+    let settings = super::shared::snapshot();
+    if !settings.drag_snap_enabled {
         return;
     }
     if state().lock().map(|s| s.is_some()).unwrap_or(true) {
@@ -104,6 +106,7 @@ pub fn begin_at_cursor(cursor: Point) {
             window: raw,
             original_frame: frame,
             start_point: cursor,
+            drag_snap_threshold: settings.drag_snap_threshold,
             dragging: false,
             target: None,
             had_candidate: false,
@@ -146,13 +149,12 @@ pub fn track(cursor: Point) -> (SnapTrack, Option<SnapFinish>) {
         }
         drag.dragging = true;
     }
-    let settings = super::shared::snapshot();
     let target = super::monitor_service::for_point(cursor).and_then(|snapshot| {
         try_resolve(
             snapshot.monitor,
             snapshot.work,
             cursor,
-            settings.drag_snap_threshold,
+            drag.drag_snap_threshold,
         )
         .map(|zone| {
             let action = zone.action();
@@ -262,6 +264,7 @@ mod tests {
             window: 42,
             original_frame: Rect::new(10, 20, 210, 220),
             start_point: Point::new(100, 100),
+            drag_snap_threshold: 10,
             dragging,
             target,
             had_candidate,

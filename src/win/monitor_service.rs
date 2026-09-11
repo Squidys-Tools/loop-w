@@ -48,6 +48,7 @@ pub fn invalidate() {
         guard.snapshots.clear();
         guard.all = None;
     }
+    super::target_frame::invalidate_cache();
 }
 
 /// Snapshot for the monitor containing a window (raw HWND as u64).

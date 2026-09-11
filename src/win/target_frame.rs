@@ -6,15 +6,61 @@
 use super::monitor_service;
 use super::native;
 use super::policy;
+use std::sync::{Mutex, OnceLock};
+
 use crate::core::actions::WindowAction;
 use crate::core::frame_math;
 use crate::core::monitor::{translate_frame, MonitorMoveSizePolicy, MonitorSnapshot};
 use crate::core::rect::Rect;
 
+#[derive(Clone)]
+struct CacheEntry {
+    hwnd: u64,
+    action: WindowAction,
+    generation: u64,
+    current: Rect,
+    result: Result<Rect, String>,
+}
+
+static CACHE: OnceLock<Mutex<Option<CacheEntry>>> = OnceLock::new();
+
+fn cache() -> &'static Mutex<Option<CacheEntry>> {
+    CACHE.get_or_init(|| Mutex::new(None))
+}
+
+/// Clear preview geometry after monitor or padding settings change.
+pub fn invalidate_cache() {
+    if let Ok(mut entry) = cache().lock() {
+        *entry = None;
+    }
+}
+
+fn cacheable(action: WindowAction) -> bool {
+    // This action depends on every other top-level window and must observe
+    // their live movement instead of reusing a frame from the prior tick.
+    action != WindowAction::FillAvailableSpace
+}
+
 /// Ideal (pre-clamp) frame for `action` on `hwnd`.
 pub fn target_frame(hwnd: u64, action: WindowAction) -> Result<Rect, String> {
-    if hwnd == 0 || !native::is_window(native::from_raw(hwnd as isize)) {
+    if hwnd == 0 {
         return Err("The target window is no longer available.".to_string());
+    }
+    let native_hwnd = native::from_raw(hwnd as isize);
+    let current = native::window_rect(native_hwnd)
+        .ok_or_else(|| "The target window is no longer available.".to_string())?;
+    let generation = monitor_service::generation();
+    if cacheable(action) {
+        if let Ok(entry) = cache().lock() {
+            if let Some(entry) = entry.as_ref().filter(|entry| {
+                entry.hwnd == hwnd
+                    && entry.action == action
+                    && entry.generation == generation
+                    && entry.current == current
+            }) {
+                return entry.result.clone();
+            }
+        }
     }
     if let Err(diagnostic) = policy::try_authorize_action(hwnd, action) {
         return Err(diagnostic.to_string());
@@ -23,10 +69,7 @@ pub fn target_frame(hwnd: u64, action: WindowAction) -> Result<Rect, String> {
         .ok_or_else(|| "Could not determine the target monitor.".to_string())?;
     let work = snapshot.work;
     let monitor_rect = snapshot.monitor;
-    let current =
-        native::window_rect(native::from_raw(hwnd as isize)).unwrap_or(Rect::new(0, 0, 0, 0));
-
-    match action {
+    let result = match action {
         WindowAction::Maximize => Ok(work),
         WindowAction::Fullscreen => Ok(monitor_rect),
         WindowAction::MaximizeHeight => Ok(frame_math::maximize_height_frame(work, current)),
@@ -80,7 +123,19 @@ pub fn target_frame(hwnd: u64, action: WindowAction) -> Result<Rect, String> {
         )),
         _ if is_zone(action) => Ok(frame_math::zone_frame(work, action)),
         _ => Err(format!("Unsupported action: {}", action.display_name())),
+    };
+    if cacheable(action) {
+        if let Ok(mut entry) = cache().lock() {
+            *entry = Some(CacheEntry {
+                hwnd,
+                action,
+                generation,
+                current,
+                result: result.clone(),
+            });
+        }
     }
+    result
 }
 
 fn is_zone(action: WindowAction) -> bool {
