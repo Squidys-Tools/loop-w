@@ -86,6 +86,13 @@ pub fn maximize_width_frame(work: Rect, current: Rect) -> Rect {
 /// Ports the C# candidate-boundary search: candidate edges come from the work
 /// area, the current frame, and obstacle-projected bounds.
 pub fn fill_available_frame(work: Rect, current: Rect, obstacles: &[Rect]) -> Rect {
+    // With no obstacles, the largest valid rectangle is always the work area
+    // itself. Avoid building the temporary relevant-obstacle list and the
+    // 36-candidate search on the common fast path.
+    if obstacles.is_empty() && !work.is_empty() {
+        return work;
+    }
+
     let mut min_x = work.left;
     let mut min_y = work.top;
     let mut max_x = work.right;
@@ -535,6 +542,13 @@ mod tests {
         let filled = fill_available_frame(work, current, &obstacles);
         assert!(filled.left >= 600);
         assert!(!filled.intersects(obstacles[0]) || filled == current);
+    }
+
+    #[test]
+    fn fill_without_obstacles_returns_work_area() {
+        let work = Rect::new(100, 50, 1300, 850);
+        let current = Rect::new(-500, -400, -100, -50);
+        assert_eq!(fill_available_frame(work, current, &[]), work);
     }
 
     #[test]

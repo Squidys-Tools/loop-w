@@ -18,11 +18,13 @@ pub enum LoopCommand {
 
 /// Parse one raw command token.
 pub fn parse_command(raw: &str) -> Result<LoopCommand, String> {
-    let parts: Vec<&str> = raw.split_whitespace().collect();
-    if parts.len() != 1 {
+    let mut parts = raw.split_whitespace();
+    let Some(token) = parts.next() else {
+        return Err("Expected one command, such as direction/right or list/actions.".to_string());
+    };
+    if parts.next().is_some() {
         return Err("Expected one command, such as direction/right or list/actions.".to_string());
     }
-    let token = parts[0];
     if token.eq_ignore_ascii_case("activate") {
         return Ok(LoopCommand::Activate);
     }
@@ -35,9 +37,9 @@ pub fn parse_command(raw: &str) -> Result<LoopCommand, String> {
     if token.eq_ignore_ascii_case("list/all") {
         return Ok(LoopCommand::ListAll);
     }
-    // Case-insensitive direction/action prefix check.
-    let lower = token.to_lowercase();
-    if let Some(body) = lower.strip_prefix("direction/") {
+    // Case-insensitive direction/action prefix check without allocating a
+    // lowercased copy of the command token.
+    if let Some(body) = strip_ascii_prefix(token, "direction/") {
         if let Some(action) = parse_direction(body) {
             return Ok(LoopCommand::Apply(action));
         }
@@ -46,8 +48,7 @@ pub fn parse_command(raw: &str) -> Result<LoopCommand, String> {
             &token["direction/".len()..]
         ));
     }
-    if let Some(_body) = lower.strip_prefix("action/") {
-        let name = &token["action/".len()..];
+    if let Some(name) = strip_ascii_prefix(token, "action/") {
         if let Some(action) = WindowAction::parse_token(name) {
             return Ok(LoopCommand::Apply(action));
         }
@@ -61,19 +62,37 @@ pub fn parse_command(raw: &str) -> Result<LoopCommand, String> {
 }
 
 fn parse_direction(name: &str) -> Option<WindowAction> {
-    let key = name.to_lowercase();
-    match key.as_str() {
-        "left" => Some(WindowAction::LeftHalf),
-        "right" => Some(WindowAction::RightHalf),
-        "top" => Some(WindowAction::TopHalf),
-        "bottom" => Some(WindowAction::BottomHalf),
-        "next" => Some(WindowAction::NextScreen),
-        "previous" | "prev" => Some(WindowAction::PreviousScreen),
-        "left-screen" => Some(WindowAction::LeftScreen),
-        "right-screen" => Some(WindowAction::RightScreen),
-        "top-screen" => Some(WindowAction::TopScreen),
-        "bottom-screen" => Some(WindowAction::BottomScreen),
-        _ => None,
+    if name.eq_ignore_ascii_case("left") {
+        Some(WindowAction::LeftHalf)
+    } else if name.eq_ignore_ascii_case("right") {
+        Some(WindowAction::RightHalf)
+    } else if name.eq_ignore_ascii_case("top") {
+        Some(WindowAction::TopHalf)
+    } else if name.eq_ignore_ascii_case("bottom") {
+        Some(WindowAction::BottomHalf)
+    } else if name.eq_ignore_ascii_case("next") {
+        Some(WindowAction::NextScreen)
+    } else if name.eq_ignore_ascii_case("previous") || name.eq_ignore_ascii_case("prev") {
+        Some(WindowAction::PreviousScreen)
+    } else if name.eq_ignore_ascii_case("left-screen") {
+        Some(WindowAction::LeftScreen)
+    } else if name.eq_ignore_ascii_case("right-screen") {
+        Some(WindowAction::RightScreen)
+    } else if name.eq_ignore_ascii_case("top-screen") {
+        Some(WindowAction::TopScreen)
+    } else if name.eq_ignore_ascii_case("bottom-screen") {
+        Some(WindowAction::BottomScreen)
+    } else {
+        None
+    }
+}
+
+fn strip_ascii_prefix<'a>(value: &'a str, prefix: &str) -> Option<&'a str> {
+    let head = value.get(..prefix.len())?;
+    if head.eq_ignore_ascii_case(prefix) {
+        value.get(prefix.len()..)
+    } else {
+        None
     }
 }
 
@@ -165,6 +184,18 @@ mod tests {
         assert!(parse_command("a b").is_err());
         assert!(parse_command("direction/upside-down").is_err());
         assert!(parse_command("bogus").is_err());
+    }
+
+    #[test]
+    fn accepts_mixed_case_without_lowercasing_the_command() {
+        assert_eq!(
+            parse_command("DiReCtIoN/RiGhT"),
+            Ok(LoopCommand::Apply(WindowAction::RightHalf))
+        );
+        assert_eq!(
+            parse_command("AcTiOn/LeFt-HaLf"),
+            Ok(LoopCommand::Apply(WindowAction::LeftHalf))
+        );
     }
 
     #[test]

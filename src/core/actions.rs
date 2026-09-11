@@ -319,11 +319,10 @@ impl WindowAction {
 
     /// Parse a CLI token back into an action (case/separator insensitive).
     pub fn parse_token(value: &str) -> Option<WindowAction> {
-        let needle = normalize_token(value);
         Self::ALL
             .iter()
             .copied()
-            .find(|a| normalize_token(a.variant_name()) == needle)
+            .find(|a| normalized_eq(value, a.variant_name()))
     }
 
     /// Numeric discriminant used in persisted JSON.
@@ -340,6 +339,24 @@ pub fn normalize_token(value: &str) -> String {
         .filter(|c| *c != '-' && *c != '_')
         .collect::<String>()
         .to_ascii_lowercase()
+}
+
+/// Compare action names without allocating a normalized copy for each action.
+///
+/// Action parsing runs on the command path, where the old implementation
+/// allocated once for the input and once for every candidate in `ALL`.
+/// Keeping the separator-insensitive comparison streaming preserves the
+/// public parsing behavior while making the successful path allocation free.
+fn normalized_eq(left: &str, right: &str) -> bool {
+    let mut left = left.chars().filter(|c| *c != '-' && *c != '_');
+    let mut right = right.chars().filter(|c| *c != '-' && *c != '_');
+    loop {
+        match (left.next(), right.next()) {
+            (Some(left), Some(right)) if left.eq_ignore_ascii_case(&right) => {}
+            (None, None) => return true,
+            _ => return false,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -377,5 +394,11 @@ mod tests {
             WindowAction::parse_token("focus_next_in_stack"),
             Some(WindowAction::FocusNextInStack)
         );
+    }
+
+    #[test]
+    fn token_parsing_rejects_extra_or_non_ascii_text_without_panicking() {
+        assert_eq!(WindowAction::parse_token("left-half-extra"), None);
+        assert_eq!(WindowAction::parse_token("é-left-half"), None);
     }
 }
