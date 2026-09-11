@@ -22,6 +22,28 @@ pub struct PreviewCanvas {
     pub target: Option<Rectangle>,
 }
 
+/// Persistent state owned by the Canvas widget tree.
+///
+/// The application rebuilds `PreviewCanvas` values whenever iced rebuilds a
+/// window view. Keeping the cache in the Canvas state lets the renderer reuse
+/// geometry across those view rebuilds instead of allocating a new frame for
+/// every redraw request. The key is synchronized from `Program::update` so a
+/// moved target or edited style still invalidates the cached geometry.
+#[derive(Debug, Default)]
+pub struct PreviewCanvasState {
+    cache: canvas::Cache,
+    key: Option<RenderKey>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct RenderKey {
+    padding: f32,
+    corner_radius: f32,
+    border_width: f32,
+    border: Color,
+    target: Option<Rectangle>,
+}
+
 impl PreviewCanvas {
     pub fn from_settings(settings: &crate::settings::AppSettings) -> Self {
         Self {
@@ -36,17 +58,52 @@ impl PreviewCanvas {
 }
 
 impl<Message> canvas::Program<Message> for PreviewCanvas {
-    type State = ();
+    type State = PreviewCanvasState;
+
+    fn update(
+        &self,
+        state: &mut Self::State,
+        _event: &canvas::Event,
+        _bounds: Rectangle,
+        _cursor: mouse::Cursor,
+    ) -> Option<canvas::Action<Message>> {
+        let key = self.render_key();
+        if state.key != Some(key) {
+            state.cache.clear();
+            state.key = Some(key);
+        }
+
+        None
+    }
 
     fn draw(
         &self,
-        _state: &Self::State,
+        state: &Self::State,
         renderer: &Renderer,
         _theme: &Theme,
         bounds: Rectangle,
         _cursor: mouse::Cursor,
     ) -> Vec<Geometry> {
-        let mut frame = Frame::new(renderer, bounds.size());
+        let geometry = state.cache.draw(renderer, bounds.size(), |frame| {
+            self.draw_geometry(frame, bounds);
+        });
+
+        vec![geometry]
+    }
+}
+
+impl PreviewCanvas {
+    fn render_key(&self) -> RenderKey {
+        RenderKey {
+            padding: self.padding,
+            corner_radius: self.corner_radius,
+            border_width: self.border_width,
+            border: self.border,
+            target: self.target,
+        }
+    }
+
+    fn draw_geometry(&self, frame: &mut Frame, bounds: Rectangle) {
         let target = self.target.unwrap_or(Rectangle {
             x: 0.0,
             y: 0.0,
@@ -78,7 +135,6 @@ impl<Message> canvas::Program<Message> for PreviewCanvas {
                     .with_color(self.border),
             );
         }
-        vec![frame.into_geometry()]
     }
 }
 
@@ -98,4 +154,35 @@ where
         .width(Length::Fixed(width))
         .height(Length::Fixed(height))
         .into()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::settings::AppSettings;
+
+    #[test]
+    fn render_key_invalidates_when_preview_target_moves() {
+        let mut canvas = PreviewCanvas::from_settings(&AppSettings::default());
+        let initial = canvas.render_key();
+
+        canvas.target = Some(Rectangle {
+            x: 8.0,
+            y: 12.0,
+            width: 320.0,
+            height: 200.0,
+        });
+
+        assert_ne!(initial, canvas.render_key());
+    }
+
+    #[test]
+    fn render_key_invalidates_when_preview_style_changes() {
+        let mut canvas = PreviewCanvas::from_settings(&AppSettings::default());
+        let initial = canvas.render_key();
+
+        canvas.corner_radius += 1.0;
+
+        assert_ne!(initial, canvas.render_key());
+    }
 }
