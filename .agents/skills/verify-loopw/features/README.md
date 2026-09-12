@@ -38,10 +38,12 @@ feature file to drive.
 ## Features
 
 - [Resident lifecycle](./resident-lifecycle.md) covers launch, activation,
-  settings close, second-instance forwarding, and cleanup.
+  settings close, second-instance forwarding, tray popup lifecycle, and
+  cleanup.
 - [Window actions](./window-actions.md) covers command discovery, maximize,
   half-window placement, and observable target geometry.
 - [Radial and preview overlays](./radial-overlays.md) covers overlay creation,
   ownership, styles, preview lifecycle, and trigger-path limits.
 - [Settings entry point](./settings-entry.md) covers the user-visible Settings
-  activation and close lifecycle without overstating desktop rendering proof.
+  activation and close lifecycle, including the custom tray popup, without
+  overstating desktop rendering proof.

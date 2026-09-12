@@ -21,22 +21,22 @@ struct TargetChoiceKey {
 
 struct TargetChoiceCache {
     keybinds: Vec<TargetChoiceKey>,
-    choices: Arc<[String]>,
+    choices: Arc<[Arc<str>]>,
 }
 
 thread_local! {
     static TARGET_CHOICE_CACHE: RefCell<Option<TargetChoiceCache>> = const { RefCell::new(None) };
 }
 
-fn action_choices() -> &'static Arc<[String]> {
-    static CHOICES: std::sync::OnceLock<Arc<[String]>> = std::sync::OnceLock::new();
+fn action_choices() -> &'static Arc<[Arc<str>]> {
+    static CHOICES: std::sync::OnceLock<Arc<[Arc<str>]>> = std::sync::OnceLock::new();
 
     CHOICES.get_or_init(|| {
-        let mut choices = vec!["No action".to_string()];
+        let mut choices: Vec<Arc<str>> = vec![Arc::from("No action")];
         choices.extend(
             WindowAction::ALL
                 .iter()
-                .map(|action| format!("Action: {}", action.display_name())),
+                .map(|action| Arc::from(format!("Action: {}", action.display_name()))),
         );
         choices.into()
     })
@@ -57,7 +57,9 @@ pub fn view(state: &State) -> Element<'_, Message> {
             row![
                 text(format!("{} ", slot.label)).size(13),
                 pick_list(choices.clone(), Some(name), {
-                    move |choice: String| Message::SetRadialTarget(Some(index), choice)
+                    move |choice: Arc<str>| {
+                        Message::SetRadialTarget(Some(index), choice.to_string())
+                    }
                 }),
                 toggler(target.is_some_and(|target| target.cycle_enabled))
                     .on_toggle(move |_| Message::ToggleRadialCycle(Some(index))),
@@ -72,8 +74,8 @@ pub fn view(state: &State) -> Element<'_, Message> {
         (GEOMETRY.len() + 1) as u8,
         row![
             text("Center").size(13),
-            pick_list(choices, Some(center), |choice: String| {
-                Message::SetRadialTarget(None, choice)
+            pick_list(choices, Some(center), |choice: Arc<str>| {
+                Message::SetRadialTarget(None, choice.to_string())
             },),
             toggler(settings.center_target.cycle_enabled)
                 .on_toggle(|_| Message::ToggleRadialCycle(None)),
@@ -125,7 +127,7 @@ pub fn view(state: &State) -> Element<'_, Message> {
         .into()
 }
 
-fn target_choices(settings: &StateSettings) -> Arc<[String]> {
+fn target_choices(settings: &StateSettings) -> Arc<[Arc<str>]> {
     if settings.keybinds.is_empty() {
         return Arc::clone(action_choices());
     }
@@ -150,7 +152,7 @@ fn target_choices(settings: &StateSettings) -> Arc<[String]> {
 
         let mut choices = action_choices().iter().cloned().collect::<Vec<_>>();
         choices.extend(settings.keybinds.iter().map(|bind| {
-            format!(
+            Arc::from(format!(
                 "Keybind: {} ({})",
                 bind.id,
                 crate::core::hotkey::hotkey_name(
@@ -158,9 +160,9 @@ fn target_choices(settings: &StateSettings) -> Arc<[String]> {
                     bind.vk,
                     crate::core::hotkey::TriggerModifierSide::Any,
                 )
-            )
+            ))
         }));
-        let choices: Arc<[String]> = choices.into();
+        let choices: Arc<[Arc<str>]> = choices.into();
         let keybinds = settings
             .keybinds
             .iter()
@@ -183,21 +185,21 @@ type StateSettings = crate::settings::AppSettings;
 fn target_choice(
     settings: &StateSettings,
     target: Option<&crate::core::radial_targets::RadialTargetSettings>,
-) -> String {
+) -> Arc<str> {
     let Some(target) = target else {
-        return "No action".to_string();
+        return Arc::from("No action");
     };
     match target.kind {
-        crate::core::radial_targets::RadialTargetKind::None => "No action".to_string(),
+        crate::core::radial_targets::RadialTargetKind::None => Arc::from("No action"),
         crate::core::radial_targets::RadialTargetKind::Action => {
-            format!("Action: {}", target.action.display_name())
+            Arc::from(format!("Action: {}", target.action.display_name()))
         }
         crate::core::radial_targets::RadialTargetKind::Keybind => settings
             .keybinds
             .iter()
             .find(|bind| bind.id == target.keybind_id)
             .map(|bind| {
-                format!(
+                Arc::from(format!(
                     "Keybind: {} ({})",
                     bind.id,
                     crate::core::hotkey::hotkey_name(
@@ -205,8 +207,8 @@ fn target_choice(
                         bind.vk,
                         crate::core::hotkey::TriggerModifierSide::Any,
                     )
-                )
+                ))
             })
-            .unwrap_or_else(|| "No action".to_string()),
+            .unwrap_or_else(|| Arc::from("No action")),
     }
 }

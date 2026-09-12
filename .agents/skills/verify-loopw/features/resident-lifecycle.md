@@ -11,6 +11,8 @@ existing instance.
 - `resident-close` closes Settings while the resident process remains alive.
 - `resident-forward` forwards a second activation to the first instance.
 - `resident-cleanup` stops the exact process created by the run.
+- `tray-popup` opens the dark iced tray popup, positions it near the tray, and
+  closes it when it loses focus.
 
 ## How to get to it (user POV)
 
@@ -18,7 +20,8 @@ existing instance.
 - Open Settings from the tray or run `LoopW.exe activate`.
 - Close the Settings window with its window control.
 - Start `LoopW.exe activate` a second time while LoopW is resident.
-- Choose Quit from the tray for a real user shutdown check.
+- Right-click the LoopW tray icon, choose `Open settings`, then repeat and
+  choose `Quit` for a real user shutdown check.
 
 ## Driving it with loopw-agent.ps1
 
@@ -40,6 +43,11 @@ Preconditions:
   resident`.
 - **Proof.** Preserve the suite JSON and raw log, then inspect the tracked
   launch with `status --run-id <run-id> --json` before cleanup.
+- **Tray popup.** The current wrapper does not synthesize a native tray
+  right-click or inspect iced pixels. Use the manual route above to confirm
+  that the popup appears, stays inside the monitor, dismisses on focus loss,
+  and routes `Open settings` and `Quit` correctly. The popup open/close state
+  and monitor-frame calculations are covered by Rust unit tests.
 
 ## Gotchas
 
@@ -48,4 +56,6 @@ Preconditions:
 - Closing Settings is not the same as quitting the resident process.
 - A taskbar icon or hidden helper window requires the manual taskbar checks in
   `docs\QA.md`; the harness cannot prove visual taskbar appearance.
+- The tray popup is a separate iced window. A successful tray event does not
+  prove its visual position or dark styling without the manual check.
 - The suite owns its own process. Do not stop it by process name.

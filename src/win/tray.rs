@@ -5,15 +5,11 @@
 //! on dark) so no binary assets are needed. Events are polled from the UI
 //! frame tick and translated to [`RuntimeEvent`]s.
 
-use tray_icon::menu::{Menu, MenuEvent, MenuId, MenuItem, PredefinedMenuItem};
-
 use super::events::{push, RuntimeEvent};
+use crate::core::rect::Point;
 
 pub struct Tray {
     _icon: tray_icon::TrayIcon,
-    open: MenuId,
-    settings: MenuId,
-    quit: MenuId,
 }
 
 /// Actions surfaced to the iced runtime (kept for compat).
@@ -25,35 +21,18 @@ pub enum TrayAction {
 
 /// Build the resident tray icon + menu. Must be called on the main thread.
 pub fn build() -> Result<Tray, String> {
-    // tray-icon delegates this popup to Windows' native TrackPopupMenu. The
-    // tray-icon/muda API exposes MenuTheme only for menu bars attached to a
-    // caller-owned window, and explicitly does not apply it to context menus.
-    // The tray's owner window is private to tray-icon, so keep the native menu
-    // rendering here; Windows will apply the user's configured menu theme.
-    let menu = Menu::new();
-    let open = MenuItem::new("Open LoopW", true, None);
-    let settings = MenuItem::new("Open settings", true, None);
-    let quit = MenuItem::new("Quit", true, None);
-    menu.append_items(&[&open, &settings, &PredefinedMenuItem::separator(), &quit])
-        .map_err(|error| format!("Could not build the tray menu: {error}"))?;
     let icon = tray_icon::TrayIconBuilder::new()
         .with_menu_on_left_click(false)
         .with_tooltip("LoopW")
         .with_title("LoopW")
-        .with_menu(Box::new(menu))
         .with_icon(loop_icon())
         .build()
         .map_err(|error| format!("Could not create the tray icon: {error}"))?;
-    Ok(Tray {
-        _icon: icon,
-        open: open.id().clone(),
-        settings: settings.id().clone(),
-        quit: quit.id().clone(),
-    })
+    Ok(Tray { _icon: icon })
 }
 
 /// Poll tray + menu events (call once per frame). Never blocks.
-pub fn poll(tray: &Tray) {
+pub fn poll(_tray: &Tray) {
     use tray_icon::{MouseButton, MouseButtonState, TrayIconEvent};
     while let Ok(event) = TrayIconEvent::receiver().try_recv() {
         match event {
@@ -63,17 +42,17 @@ pub fn poll(tray: &Tray) {
             } => {
                 push(RuntimeEvent::TrayShowSettings);
             }
-            TrayIconEvent::Click { .. } => {
-                let _ = MouseButtonState::Up;
+            TrayIconEvent::Click {
+                button: MouseButton::Right,
+                button_state: MouseButtonState::Up,
+                position,
+                ..
+            } => {
+                push(RuntimeEvent::TrayMenuRequested {
+                    position: Point::new(position.x.round() as i32, position.y.round() as i32),
+                });
             }
             _ => {}
-        }
-    }
-    while let Ok(event) = MenuEvent::receiver().try_recv() {
-        if event.id == tray.open || event.id == tray.settings {
-            push(RuntimeEvent::TrayShowSettings);
-        } else if event.id == tray.quit {
-            push(RuntimeEvent::TrayQuit);
         }
     }
 }

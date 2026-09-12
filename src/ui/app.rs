@@ -11,6 +11,7 @@ use iced::widget::{button, column, container, row, scrollable, text};
 use iced::{window, Color, Element, Length, Rectangle, Task, Theme};
 use std::sync::{Mutex, OnceLock};
 
+use crate::core::actions::WindowAction;
 use crate::core::cycle::CycleState;
 use crate::core::hotkey::{hotkey_name, TriggerModifierSide};
 use crate::core::radial::{index_at_vector, GEOMETRY};
@@ -121,7 +122,11 @@ pub enum Message {
     MainOpened(window::Id),
     RadialOpened(window::Id),
     PreviewOpened(window::Id),
+    TrayMenuOpened(window::Id),
     WindowClosed(window::Id),
+    WindowUnfocused(window::Id),
+    TrayMenuSettings,
+    TrayMenuQuit,
     OverlayKey(keyboard::Key),
     OverlayCommit,
     RunStartupCommand,
@@ -143,6 +148,12 @@ pub(super) struct RadialSession {
     pub(super) window_size: (f32, f32),
     /// DPI scale at open: converts physical geometry to logical for iced.
     pub(super) scale: f64,
+    preview_cache: Vec<Option<PreviewFrameCache>>,
+}
+
+struct PreviewFrameCache {
+    generation: u64,
+    result: Result<Rect, String>,
 }
 
 /// Open preview overlay session.
@@ -181,6 +192,8 @@ pub struct State {
     pub(super) main_id: Option<window::Id>,
     pub(super) radial: Option<RadialSession>,
     pub(super) preview: Option<PreviewSession>,
+    pub(super) tray_menu: Option<window::Id>,
+    pub(super) tray_menu_patch_tries: u8,
     pub(super) tray: Option<win::tray::Tray>,
     pub(super) cycle: CycleState,
     // Held for process lifetime: dropping it would release the instance
@@ -222,12 +235,16 @@ pub fn run(
                 "LoopW Radial".to_string()
             } else if state.preview.as_ref().map(|session| session.id) == Some(id) {
                 "LoopW Preview".to_string()
+            } else if state.tray_menu == Some(id) {
+                "LoopW Tray Menu".to_string()
             } else {
                 format!("LoopW Settings — {}", state.section.label())
             }
         })
-        .theme(|state: &State, _window: window::Id| {
-            Some(if state.settings.is_light() {
+        .theme(|state: &State, window| {
+            Some(if state.tray_menu == Some(window) {
+                Theme::Dark
+            } else if state.settings.is_light() {
                 Theme::Light
             } else {
                 Theme::Dark
@@ -310,6 +327,8 @@ impl State {
                 main_id: None,
                 radial: None,
                 preview: None,
+                tray_menu: None,
+                tray_menu_patch_tries: 0,
                 tray,
                 cycle: CycleState::new(),
                 instance,
@@ -366,6 +385,12 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
             }
             Task::none()
         }
+        Message::TrayMenuOpened(id) => {
+            if state.tray_menu != Some(id) {
+                return Task::none();
+            }
+            Task::none()
+        }
         Message::WindowClosed(id) => {
             if state.main_id == Some(id) {
                 // The settings window opts out of iced's automatic close so
@@ -388,7 +413,32 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
             if state.preview.as_ref().map(|s| s.id) == Some(id) {
                 state.preview = None;
             }
+            if state.tray_menu == Some(id) {
+                state.tray_menu = None;
+                state.tray_menu_patch_tries = 0;
+                return window::close(id);
+            }
             Task::none()
+        }
+        Message::WindowUnfocused(id) => {
+            if state.tray_menu == Some(id) {
+                state.tray_menu = None;
+                state.tray_menu_patch_tries = 0;
+                return window::close(id);
+            }
+            Task::none()
+        }
+        Message::TrayMenuSettings => {
+            let mut tasks = Vec::new();
+            close_tray_menu(state, &mut tasks);
+            super::windows::show_main(state, &mut tasks);
+            Task::batch(tasks)
+        }
+        Message::TrayMenuQuit => {
+            let mut tasks = Vec::new();
+            close_tray_menu(state, &mut tasks);
+            win::events::push(win::events::RuntimeEvent::TrayQuit);
+            Task::batch(tasks)
         }
         Message::OverlayKey(key) => {
             let mut tasks = Vec::new();
@@ -427,7 +477,7 @@ pub(super) fn open_radial(state: &mut State, tasks: &mut Vec<Task<Message>>, tar
             label: hotkey_name(bind.modifiers, bind.vk, TriggerModifierSide::Any),
         })
         .collect();
-    let targets = settings
+    let targets: Vec<RadialTarget> = settings
         .radial_slots
         .iter()
         .map(|slot| resolve_slot(slot, &keybinds))
@@ -443,6 +493,7 @@ pub(super) fn open_radial(state: &mut State, tasks: &mut Vec<Task<Message>>, tar
         // creates a new z-order relationship which needs one settling pass.
         preview.order_tries = 0;
     }
+    let preview_cache = (0..targets.len()).map(|_| None).collect();
     state.radial = Some(RadialSession {
         id,
         target_hwnd,
@@ -455,6 +506,7 @@ pub(super) fn open_radial(state: &mut State, tasks: &mut Vec<Task<Message>>, tar
         patch_tries: 0,
         window_size: (lw, lh),
         scale,
+        preview_cache,
     });
     tasks.push(task.map(Message::RadialOpened));
 }
@@ -515,17 +567,52 @@ fn refresh_preview_for_hover(state: &mut State, tasks: &mut Vec<Task<Message>>) 
         close_preview(state, tasks);
         return;
     }
-    let frame = state.radial.as_ref().and_then(|session| {
-        let target = session
-            .hovered
-            .and_then(|index| session.targets.get(index))?;
-        let action = target.action()?;
-        win::target_frame::target_frame(session.target_hwnd, action).ok()
-    });
+    let frame = state.radial.as_mut().and_then(radial_preview_frame);
     match frame {
         Some(frame) => ensure_preview(state, tasks, frame),
         None => close_preview(state, tasks),
     }
+}
+
+fn radial_preview_frame(session: &mut RadialSession) -> Option<Rect> {
+    let index = session.hovered?;
+    let target = session.targets.get(index)?;
+    let action = target.action()?;
+    let generation = win::monitor_service::generation();
+    cached_preview_frame(
+        &mut session.preview_cache,
+        index,
+        generation,
+        action,
+        || win::target_frame::target_frame(session.target_hwnd, action),
+    )
+}
+
+fn cached_preview_frame(
+    cache: &mut [Option<PreviewFrameCache>],
+    index: usize,
+    generation: u64,
+    action: WindowAction,
+    resolve: impl FnOnce() -> Result<Rect, String>,
+) -> Option<Rect> {
+    let cacheable = action != WindowAction::FillAvailableSpace;
+    if cacheable {
+        if let Some(cached) = cache.get(index).and_then(Option::as_ref) {
+            if cached.generation == generation {
+                return cached.result.as_ref().ok().copied();
+            }
+        }
+    }
+    let result = resolve();
+    if cacheable {
+        if let Some(slot) = cache.get_mut(index) {
+            *slot = Some(PreviewFrameCache {
+                generation,
+                result: result.clone(),
+            });
+        }
+    }
+    result.ok()
 }
 
 pub(super) fn ensure_preview(state: &mut State, tasks: &mut Vec<Task<Message>>, frame: Rect) {
@@ -722,7 +809,27 @@ fn view(state: &State, window: window::Id) -> Element<'_, Message> {
             );
         }
     }
+    if state.tray_menu == Some(window) {
+        return super::views::tray::view();
+    }
     container(text("")).into()
+}
+
+pub(super) fn open_tray_menu(state: &mut State, tasks: &mut Vec<Task<Message>>, position: Point) {
+    if let Some(id) = state.tray_menu.take() {
+        tasks.push(window::close(id));
+    }
+    let (id, task) = window::open(super::windows::tray_menu_settings(position));
+    state.tray_menu = Some(id);
+    state.tray_menu_patch_tries = 0;
+    tasks.push(task.map(Message::TrayMenuOpened));
+}
+
+fn close_tray_menu(state: &mut State, tasks: &mut Vec<Task<Message>>) {
+    if let Some(id) = state.tray_menu.take() {
+        state.tray_menu_patch_tries = 0;
+        tasks.push(window::close(id));
+    }
 }
 
 fn settings_view(state: &State) -> Element<'_, Message> {
@@ -792,6 +899,8 @@ mod tests {
             main_id: None,
             radial: None,
             preview: None,
+            tray_menu: None,
+            tray_menu_patch_tries: 0,
             tray: None,
             cycle: CycleState::new(),
             instance: None,
@@ -840,6 +949,63 @@ mod tests {
     }
 
     #[test]
+    fn preview_frame_cache_reuses_wedge_result_until_generation_changes() {
+        let mut cache = vec![None];
+        let mut resolutions = 0;
+        let first = cached_preview_frame(&mut cache, 0, 7, WindowAction::LeftHalf, || {
+            resolutions += 1;
+            Ok(Rect::new(0, 0, 500, 400))
+        });
+        let second = cached_preview_frame(&mut cache, 0, 7, WindowAction::LeftHalf, || {
+            resolutions += 1;
+            Ok(Rect::new(1, 1, 501, 401))
+        });
+
+        assert_eq!(first, second);
+        assert_eq!(resolutions, 1);
+
+        let refreshed = cached_preview_frame(&mut cache, 0, 8, WindowAction::LeftHalf, || {
+            resolutions += 1;
+            Ok(Rect::new(2, 2, 502, 402))
+        });
+        assert_eq!(refreshed, Some(Rect::new(2, 2, 502, 402)));
+        assert_eq!(resolutions, 2);
+    }
+
+    #[test]
+    fn fill_available_preview_always_resolves_again() {
+        let mut cache = vec![None];
+        let mut resolutions = 0;
+        for _ in 0..2 {
+            let _ =
+                cached_preview_frame(&mut cache, 0, 7, WindowAction::FillAvailableSpace, || {
+                    resolutions += 1;
+                    Ok(Rect::new(0, 0, 500, 400))
+                });
+        }
+        assert_eq!(resolutions, 2);
+        assert!(cache[0].is_none());
+    }
+
+    #[test]
+    fn radial_settings_view_builds_the_assignment_surface() {
+        let mut state = test_state();
+        state.section = Section::Radial;
+        let _ = crate::ui::views::radial::view(&state);
+    }
+
+    #[test]
+    fn tray_menu_opens_and_closes_when_focus_is_lost() {
+        let mut state = test_state();
+        let mut tasks = Vec::new();
+        open_tray_menu(&mut state, &mut tasks, Point::new(1200, 800));
+        let menu = state.tray_menu.expect("tray menu should open");
+
+        let _ = update(&mut state, Message::WindowUnfocused(menu));
+        assert_eq!(state.tray_menu, None);
+    }
+
+    #[test]
     fn stale_main_open_completion_does_not_resurrect_closed_window() {
         let id = window::Id::unique();
         let mut state = test_state();
@@ -874,6 +1040,7 @@ mod tests {
             patch_tries: 0,
             window_size: (200.0, 200.0),
             scale: 1.0,
+            preview_cache: vec![None],
         });
         state.preview = Some(PreviewSession {
             id: current_preview,

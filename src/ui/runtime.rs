@@ -28,6 +28,10 @@ pub(super) fn subscription(state: &State) -> Subscription<Message> {
     let settings_only = state.main_id.is_some() && !overlay_active && !snap_active;
 
     let mut subscriptions = vec![window::close_requests().map(Message::WindowClosed)];
+    subscriptions.push(iced::event::listen_with(|event, _status, id| match event {
+        iced::Event::Window(iced::window::Event::Unfocused) => Some(Message::WindowUnfocused(id)),
+        _ => None,
+    }));
     if state.radial.is_some() {
         subscriptions.push(iced::event::listen_with(|event, status, _window| {
             if status != iced::event::Status::Ignored {
@@ -153,6 +157,13 @@ pub(super) fn frame_tick(state: &mut State) -> Task<Message> {
             session.patch_tries = OVERLAY_PATCH_ATTEMPTS;
         } else if session.patch_tries < OVERLAY_PATCH_ATTEMPTS {
             session.patch_tries += 1;
+        }
+    }
+    if state.tray_menu.is_some() && state.tray_menu_patch_tries < OVERLAY_PATCH_ATTEMPTS {
+        if win::overlay::patch_tool_window_by_title(win::overlay::TRAY_MENU_TITLE) {
+            state.tray_menu_patch_tries = OVERLAY_PATCH_ATTEMPTS;
+        } else {
+            state.tray_menu_patch_tries += 1;
         }
     }
     // The preview opens and moves after the radial, so it settles above it
@@ -315,6 +326,9 @@ fn handle_runtime(state: &mut State, tasks: &mut Vec<Task<Message>>, event: Runt
         }
         RuntimeEvent::ShowSettings | RuntimeEvent::TrayShowSettings => {
             windows::show_main(state, tasks);
+        }
+        RuntimeEvent::TrayMenuRequested { position } => {
+            app::open_tray_menu(state, tasks, position);
         }
         RuntimeEvent::TrayQuit => {
             // C# OnExit order: pipe stop -> tray dispose -> stash restore ->

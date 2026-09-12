@@ -59,6 +59,9 @@ pub enum RuntimeEvent {
     /// Second-instance activation signal.
     ShowSettings,
     TrayShowSettings,
+    TrayMenuRequested {
+        position: Point,
+    },
     TrayQuit,
     DisplaysChanged,
     SnapBegin {

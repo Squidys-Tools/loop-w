@@ -7,3 +7,4 @@ pub mod general;
 pub mod overlay;
 pub mod preview;
 pub mod radial;
+pub mod tray;

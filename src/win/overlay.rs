@@ -63,6 +63,7 @@ fn window_matches(hwnd: windows::Win32::Foundation::HWND, expected: Rect) -> boo
 /// Unique titles used to find overlay HWNDs for style patching.
 pub const RADIAL_TITLE: &str = "LoopW Radial";
 pub const PREVIEW_TITLE: &str = "LoopW Preview";
+pub const TRAY_MENU_TITLE: &str = "LoopW Tray Menu";
 
 /// Radial overlay square: cursor at center, ring + margin.
 pub fn radial_bounds(cursor: crate::core::rect::Point, outer_radius: f64) -> Rect {
@@ -135,6 +136,23 @@ pub fn patch_tool_window(expected: Rect) -> bool {
         }
         None => false,
     }
+}
+
+/// Add WS_EX_TOOLWINDOW to a short-lived app-owned popup that is not an
+/// overlay and therefore has no stable physical frame cache.
+pub fn patch_tool_window_by_title(title: &str) -> bool {
+    let Some(hwnd) = native::find_window_by_title(title) else {
+        return false;
+    };
+    if native::process_id(hwnd) != native::own_process_id() {
+        return false;
+    }
+    use windows::Win32::UI::WindowsAndMessaging::*;
+    unsafe {
+        let style = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
+        SetWindowLongPtrW(hwnd, GWL_EXSTYLE, style | WS_EX_TOOLWINDOW.0 as isize);
+    }
+    true
 }
 
 /// Keep the radial menu above the target preview in the topmost band.
