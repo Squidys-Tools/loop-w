@@ -1,9 +1,11 @@
-# LoopW known issues (deferred)
+# LoopW known issues and release limits
 
 Minor defects and accepted deviations found during the C# → Rust port
 audits. Each entry records where it lives, why it was deferred, and what would
-trigger revisiting it. These entries are not the current release-gate status:
-the automated baseline is failing, and the desktop QA checklist is still unrun.
+trigger revisiting it. The code-level checks and non-radial Windows harness
+checks are part of the release baseline; environment-sensitive trigger input
+and manual visual desktop checks remain open limits. See `README.md`,
+`docs/QA.md`, and `docs/PERFORMANCE.md` for the current evidence.
 
 ## 1. Hook timer threads pile up under rapid churn — accepted
 
@@ -70,16 +72,19 @@ the automated baseline is failing, and the desktop QA checklist is still unrun.
 - **Revisit if:** UI jank is traced here. Fix direction: move hit-testing to
   the hook thread's async margin (it must never block input) or debounce.
 
-## 6. Hover preview recomputes every frame while open — accepted
+## 6. Hover preview frame resolution is cached per wedge — resolved
 
 - **Where:** `src/ui/app.rs` (`update_radial_hover`).
-- **What:** while the radial overlay is open, each frame re-resolves the
-  hovered wedge's target frame (`GetWindowRect` + monitor lookup) even when
-  the cursor is still, so display/DPI changes move a live preview.
-- **Why deferred:** the overlay lives for seconds at most and the calls are
-  cheap; the alternative (stale preview after display change) is worse.
-- **Revisit if:** profiling flags it. Fix direction: recompute only on
-  cursor movement + display-change generation bump.
+- **What:** the radial session now caches each wedge's target frame by monitor
+  generation. Crossing to another wedge reuses that wedge's cached frame, and
+  display/settings generation changes invalidate it. `FillAvailableSpace`
+  remains uncached because it depends on current obstacles.
+- **Current state:** covered by
+  `preview_frame_cache_reuses_wedge_result_until_generation_changes` and
+  `fill_available_preview_always_resolves_again` in `src/ui/app.rs`.
+- **Revisit if:** a live trace still shows frame-resolution work on every
+  cursor tick. Measure the native calls and redraw path before changing the
+  cache policy.
 
 ## 7. Single pipe instance serializes all clients — parity
 
@@ -102,7 +107,7 @@ the automated baseline is failing, and the desktop QA checklist is still unrun.
 - **Revisit if:** never — only noted so it isn't "fixed" into a
   use-after-free.
 
-## 9. Settings canvas rendering fix needs desktop verification
+## 9. Settings canvas rendering needs a desktop visual sign-off
 
 - **Where:** `src/ui/widgets/radial_canvas.rs` /
   `src/ui/widgets/preview_canvas.rs` as hosted by the settings window
@@ -115,9 +120,10 @@ the automated baseline is failing, and the desktop QA checklist is still unrun.
   260x260 / 320x200 surfaces, and cached geometry that invalidates when visual
   inputs change. A focused coordinate regression test covers the original 2x
   translation symptom.
-- **Why still open:** no desktop visual check has been run in the current
-  workstream. Confirm both settings previews on Windows at the supported scale
-  settings before closing this entry.
+- **Why still open:** the automated renderer and coordinate tests pass, but the
+  Windows visual check is not represented by the harness. Confirm both
+  settings previews on Windows at the supported scale settings before closing
+  this entry.
 - **Revisit if:** a desktop check still shows a sliver. Capture the canvas
   viewport, scissor, and geometry on the affected driver before changing the
   draw math.

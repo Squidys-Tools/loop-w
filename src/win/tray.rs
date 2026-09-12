@@ -1,22 +1,16 @@
-//! System-tray resident icon: tooltip, menu, click behavior.
+//! System-tray resident icon: tooltip, popup requests, and click behavior.
 //!
-//! Ports `TrayIcon`: `Open LoopW` / `Open settings` / separator / `Quit`,
-//! double-click shows settings, icon generated programmatically (blue ring
-//! on dark) so no binary assets are needed. Events are polled from the UI
-//! frame tick and translated to [`RuntimeEvent`]s.
+//! The visible menu is an iced popup owned by the runtime. The tray icon
+//! reports right-click position and double-click events, while the icon is
+//! generated programmatically (blue ring on dark) so no binary assets are
+//! needed. Events are polled from the UI frame tick and translated to
+//! [`RuntimeEvent`]s.
 
 use super::events::{push, RuntimeEvent};
 use crate::core::rect::Point;
 
 pub struct Tray {
     _icon: tray_icon::TrayIcon,
-}
-
-/// Actions surfaced to the iced runtime (kept for compat).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TrayAction {
-    ShowSettings,
-    Quit,
 }
 
 /// Build the resident tray icon + menu. Must be called on the main thread.

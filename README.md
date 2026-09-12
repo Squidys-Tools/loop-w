@@ -4,21 +4,22 @@ LoopW is a Windows window manager built around a radial menu. Hold the trigger,
 move toward a direction, and release to place the active window. It is a native
 Rust + [iced](https://iced.rs) and Win32 app inspired by [Loop for macOS](https://github.com/MrKai77/Loop).
 
-This tree is the Rust port (iced 0.14 UI, self-contained `win-x64` EXE, no
-.NET runtime). The C# / WPF implementation has been replaced at the repo root;
-`git log` retains its history.
+This tree is the current Rust implementation (iced 0.14 UI, self-contained
+`win-x64` EXE, no .NET runtime). The former C# / WPF implementation remains in
+git history for reference.
 
 The core product path, settings model, radial/preview surfaces, settings UI,
-and native Win32 backend are implemented. The project still needs code-level
-hardening and a full manual desktop QA pass across different window types,
-display scales, and Windows configurations. Desktop checks are not complete.
+and native Win32 backend are implemented. Automated checks cover the core
+logic, settings contracts, resident lifecycle, IPC, placement, overlay window
+styles, and tray-popup state. Manual visual checks across window types,
+display scales, and Windows configurations remain tracked in the QA checklist.
 
-The current test inventory is 98 binary tests plus 72 UI/settings contract
-tests, for 170 tests under `cargo test --all-targets --locked`. The locked
-build, formatting check, tests, and warnings-denied Clippy pass. A bounded
-Windows integration harness lives under `tools/` and covers resident lifecycle,
-IPC, disposable-window placement, and overlay HWND styles; broad desktop QA
-remains separate.
+The current test inventory is 105 binary tests plus 72 UI/settings contract
+tests, for 177 tests under `cargo test --all-targets --locked`. The locked
+build, formatting check, tests, and warnings-denied Clippy are the release
+baseline. A bounded Windows integration harness lives under `tools/`; its
+environment-sensitive trigger-input limitation and the measured release
+performance results are recorded in `docs/PERFORMANCE.md`.
 
 ## What it does
 
@@ -68,9 +69,10 @@ cargo build
 cargo run
 ```
 
-The app starts with the Settings window. Tray-resident operation, global hooks,
-and overlays are wired through the Win32 backend; live desktop validation is
-tracked separately in the roadmap and QA checklist.
+The app starts resident in the system tray. Open Settings from the tray popup,
+double-click the tray icon, or run `LoopW.exe activate`. Global hooks and
+overlays are wired through the Win32 backend; manual desktop validation is
+tracked in the QA checklist.
 
 Run the automated checks with:
 
@@ -84,7 +86,7 @@ cargo clippy --all-targets --locked -- -D warnings
 Ship a self-contained release binary with:
 
 ```powershell
-cargo build --release
+cargo build --release --locked
 ```
 
 The EXE at `target\release\LoopW.exe` needs no
@@ -147,6 +149,8 @@ summary. Use `stop --dry-run` when inspecting cleanup before allowing it.
 - [`docs/QA.md`](docs/QA.md) contains the manual Windows test checklist.
 - [`docs/BUGS.md`](docs/BUGS.md) records deferred minor issues with revisit
   triggers, so they are tracked without blocking the release gate.
+- [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md) records release measurements
+  and the limits of the current interaction probe.
 - [`specs/settings-ui-redesign-spec.md`](specs/settings-ui-redesign-spec.md)
   records the settings UI requirements and acceptance scenarios.
 
@@ -156,11 +160,13 @@ summary. Use `stop --dry-run` when inspecting cleanup before allowing it.
 - `src/settings` keeps the exact C# JSON contract (PascalCase keys, integer
   enums) with a tolerant loader.
 - `src/ui` is the iced 0.14 settings surface plus the shared text-free radial
-  and preview canvas renderers. The settings canvases use fixed dimensions and
-  cached geometry; desktop rendering still needs manual verification.
+  and preview canvas renderers. The settings canvases use fixed dimensions,
+  cached geometry, and coordinate regression coverage; visual sign-off remains
+  tracked in `docs/BUGS.md` and `docs/QA.md`.
 - `src/win` owns all Win32 side effects (hooks, window actions, snap, stash,
-  IPC, tray). The backend is implemented; desktop validation and runtime
-  hardening remain. Pure logic it depends on is tested in `src/core`.
+  IPC, tray). The backend is implemented and covered by bounded integration
+  checks; physical-input and broad desktop validation remain environment-bound.
+  Pure logic it depends on is tested in `src/core`.
 - The former `src/ui/app.rs` monolith is split into focused settings, runtime,
   and window modules. `src/win/stash_service.rs`, `src/win/hooks.rs`,
   `src/core/frame_math.rs`, and `src/win/ipc.rs` remain larger follow-up

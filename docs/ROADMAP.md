@@ -35,8 +35,8 @@ The following product areas are implemented:
   delivery.
 - A same-user named-pipe command server supports activation, action listing,
   keybind listing, directional actions, and named actions.
-- The automated suite currently contains 98 binary tests and 72 UI/settings
-  contract tests, for 170 tests in total. It covers frame math, radial
+- The automated suite currently contains 105 binary tests and 72 UI/settings
+  contract tests, for 177 tests in total. It covers frame math, radial
   geometry, cycles, navigation, settings normalization, stash calculations,
   drag snapping, and command parsing.
 
@@ -49,9 +49,9 @@ is the desktop test checklist.
 ### Remaining implementation and hardening
 
 - [x] Apply the settings-canvas rendering fix documented in
-  [`BUGS.md`](BUGS.md#9-settings-canvas-rendering-fix-needs-desktop-verification).
+  [`BUGS.md`](BUGS.md#9-settings-canvas-rendering-needs-a-desktop-visual-sign-off).
   Both canvases now use local coordinates, fixed dimensions, and cached
-  geometry. The desktop rendering result is still unverified.
+  geometry. The remaining desktop visual sign-off is tracked in `BUGS.md`.
 - [x] Split the former `src/ui/app.rs` monolith into focused settings, runtime,
   and window modules. The remaining large Win32/core modules are follow-up
   refactors:

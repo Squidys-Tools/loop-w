@@ -8,13 +8,15 @@ before testing minimize, hide, stash, or focus actions.
 Status: `[ ]` not run, `[x]` passed, `[!]` blocked or not supported on this
 Windows configuration.
 
-The automated baseline is clean: 98 binary tests plus 72 UI/settings contract
-tests pass (170 total), `cargo fmt -- --check` passes, `cargo build --locked`
+The code baseline is clean: 105 binary tests plus 72 UI/settings contract
+tests pass (177 total), `cargo fmt -- --check` passes, `cargo build --locked`
 passes, and warning-denied Clippy passes. The bounded harness under `tools/`
 also covers resident lifecycle, IPC, disposable-window placement, and overlay
-styles. Live taskbar appearance, canvas rendering, input behavior, and broad
-desktop actions still require the manual checks below. Re-run the automated
-baseline after every action-model change.
+styles. Its non-radial checks pass in the current environment; the synthetic
+trigger probe cannot currently open the radial window, so that path remains a
+manual check. Live taskbar appearance, canvas rendering, input behavior, and
+broad desktop actions still require the manual checks below. Re-run the
+automated baseline after every action-model change.
 
 ## 1. Build and resident lifecycle
 

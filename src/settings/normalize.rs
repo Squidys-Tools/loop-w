@@ -10,7 +10,7 @@ use crate::core::hotkey::{TRIGGER_MODIFIER_SIDES, VK_CAPITAL};
 use crate::core::monitor::MonitorMoveSizePolicy;
 use crate::core::radial::SLOT_COUNT;
 use crate::core::radial_targets::{normalize_target, RadialTargetKind, RadialTargetSettings};
-use crate::core::stash::{StashEdge, StashMonitor, StashPlacement, StashPoint, StashRect};
+use crate::core::stash::{StashEdge, StashRect};
 
 use super::color::normalize_color;
 use super::model::{AppSettings, Keybind};
@@ -232,15 +232,6 @@ fn normalize_stash_records(records: &mut Vec<crate::core::stash::StashRecord>) {
 
 fn fix_rect(_rect: &mut StashRect) {
     // StashRect is plain data; nothing to clamp beyond keeping it present.
-}
-
-#[allow(unused_imports)]
-fn _keep_types() {
-    let _ = (
-        std::mem::size_of::<StashMonitor>(),
-        std::mem::size_of::<StashPlacement>(),
-        std::mem::size_of::<StashPoint>(),
-    );
 }
 
 #[cfg(test)]
