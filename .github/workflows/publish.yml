@@ -17,26 +17,22 @@ jobs:
       - name: Check out source
         uses: actions/checkout@v7
 
-      - name: Set up .NET 8
-        uses: actions/setup-dotnet@v6
+      - name: Set up Rust stable
+        uses: dtolnay/rust-toolchain@stable
         with:
-          dotnet-version: 8.0.x
+          components: rustfmt, clippy
 
-      - name: Restore dependencies
-        run: dotnet restore LoopW.Tests/LoopW.Tests.csproj
+      - name: Check formatting
+        run: cargo fmt -- --check
 
       - name: Run automated tests
-        run: dotnet run --project LoopW.Tests/LoopW.Tests.csproj --configuration Release --no-restore
+        run: cargo test --locked
 
-      - name: Publish self-contained executable
-        run: >-
-          dotnet publish LoopW.csproj
-          --configuration Release
-          --runtime win-x64
-          --self-contained true
-          --property:PublishSingleFile=true
-          --no-restore
-          --output publish\LoopW
+      - name: Lint
+        run: cargo clippy --all-targets --locked -- -D warnings
+
+      - name: Build release executable
+        run: cargo build --release --locked
 
       - name: Create archive and checksum
         id: package
@@ -51,6 +47,9 @@ jobs:
           } else {
             "manual-$env:RUN_NUMBER"
           }
+
+          New-Item -ItemType Directory -Force -Path 'publish\LoopW' | Out-Null
+          Copy-Item 'target\release\LoopW.exe' 'publish\LoopW\LoopW.exe'
 
           $archive = "publish\LoopW-$label.zip"
           Compress-Archive -Path 'publish\LoopW\*' -DestinationPath $archive

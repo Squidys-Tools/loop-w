@@ -1,0 +1,803 @@
+//! Global low-level keyboard/mouse hooks + trigger state machine.
+//!
+//! Ports `GlobalHotkey`: WH_KEYBOARD_LL always installed, WH_MOUSE_LL
+//! installed alongside (middle-click gating is by flag), exact swallow
+//! matrix, activation-delay / release-timeout timers guarded by a version
+//! counter, double-click gate, bypass/normal keybind matching with repeat
+//! suppression, and inline capture mode with Esc cancel + Win rejection.
+//!
+//! The installing thread pumps a message loop (required for LL delivery).
+//! App callbacks are never invoked inline — everything goes through the
+//! [`crate::win::events`] queue.
+
+use std::collections::HashSet;
+use std::sync::{Mutex, OnceLock};
+use std::time::Duration;
+
+use windows::Win32::Foundation::*;
+use windows::Win32::System::Threading::GetCurrentThreadId;
+use windows::Win32::UI::WindowsAndMessaging::*;
+
+use super::events::{push, RuntimeEvent};
+use crate::core::hotkey::{TriggerModifierSide, MOD_ALT, MOD_CONTROL, MOD_SHIFT, MOD_WIN};
+use crate::core::keybind_match::{match_keybind, MatchEntry};
+
+const WH_KEYBOARD_LL: i32 = 13;
+const WH_MOUSE_LL: i32 = 14;
+const WM_KEYDOWN: u32 = 0x0100;
+const WM_KEYUP: u32 = 0x0101;
+const WM_SYSKEYDOWN: u32 = 0x0104;
+const WM_SYSKEYUP: u32 = 0x0105;
+const WM_MBUTTONDOWN: u32 = 0x0207;
+const WM_MBUTTONUP: u32 = 0x0208;
+const WM_LBUTTONDOWN: u32 = 0x0201;
+const WM_LBUTTONUP: u32 = 0x0202;
+const WM_QUIT_LOOP: u32 = 0x0012;
+const WM_TIMER: u32 = 0x0113;
+const ACTIVATION_TIMER_ID: usize = 1;
+const TIMEOUT_TIMER_ID: usize = 2;
+
+const VK_SHIFT: i32 = 0x10;
+const VK_CONTROL: i32 = 0x11;
+const VK_MENU: i32 = 0x12;
+const VK_LWIN: i32 = 0x5B;
+const VK_RWIN: i32 = 0x5C;
+const VK_ESCAPE: u32 = 0x1B;
+const VK_LSHIFT: i32 = 0xA0;
+const VK_RSHIFT: i32 = 0xA1;
+const VK_LCONTROL: i32 = 0xA2;
+const VK_RCONTROL: i32 = 0xA3;
+const VK_LMENU: i32 = 0xA4;
+const VK_RMENU: i32 = 0xA5;
+
+/// What a capture result applies to.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CaptureTarget {
+    Trigger,
+    Keybind(String),
+}
+
+struct Config {
+    trigger_vk: u32,
+    trigger_mods: u32,
+    side: TriggerModifierSide,
+    delay_ms: u64,
+    timeout_ms: u64,
+    double_click: bool,
+    middle_click: bool,
+    keybinds: Vec<KeybindSnapshot>,
+    match_entries: Vec<MatchEntry>,
+}
+
+#[derive(Debug, Clone)]
+struct KeybindSnapshot {
+    vk: u32,
+    mods: u32,
+    action: crate::core::actions::WindowAction,
+    cycle: bool,
+    bypass: bool,
+}
+
+struct HookState {
+    config: Config,
+    trigger_down: bool,
+    middle_down: bool,
+    activated: bool,
+    timed_out: bool,
+    capturing: Option<CaptureTarget>,
+    pressed: HashSet<u32>,
+    last_release_at: i64,
+    version: u64,
+    activation_timer_version: Option<u64>,
+    timeout_timer_version: Option<u64>,
+}
+
+struct Handles {
+    keyboard: HHOOK,
+    mouse: HHOOK,
+    thread_id: u32,
+    running: bool,
+}
+
+// HHOOK/HANDLE values are process-wide opaque handles; sharing them through
+// the mutex to install/remove hooks from different threads is safe.
+unsafe impl Send for Handles {}
+
+static STATE: OnceLock<Mutex<HookState>> = OnceLock::new();
+static HANDLES: OnceLock<Mutex<Handles>> = OnceLock::new();
+
+fn state() -> &'static Mutex<HookState> {
+    STATE.get_or_init(|| {
+        Mutex::new(HookState {
+            config: config_from_shared(),
+            trigger_down: false,
+            middle_down: false,
+            activated: false,
+            timed_out: false,
+            capturing: None,
+            pressed: HashSet::new(),
+            last_release_at: -1,
+            version: 0,
+            activation_timer_version: None,
+            timeout_timer_version: None,
+        })
+    })
+}
+
+fn handles() -> &'static Mutex<Handles> {
+    HANDLES.get_or_init(|| {
+        Mutex::new(Handles {
+            keyboard: HHOOK::default(),
+            mouse: HHOOK::default(),
+            thread_id: 0,
+            running: false,
+        })
+    })
+}
+
+fn config_from_shared() -> Config {
+    let settings = super::shared::snapshot();
+    let keybinds: Vec<KeybindSnapshot> = settings
+        .keybinds
+        .iter()
+        .map(|keybind| KeybindSnapshot {
+            vk: keybind.vk,
+            mods: keybind.modifiers,
+            action: keybind.action,
+            cycle: keybind.cycle_enabled,
+            bypass: keybind.bypass_trigger,
+        })
+        .collect();
+    let match_entries = keybinds
+        .iter()
+        .map(|keybind| MatchEntry {
+            vk: keybind.vk,
+            modifiers: keybind.mods,
+            bypass_trigger: keybind.bypass,
+        })
+        .collect();
+    Config {
+        trigger_vk: settings.trigger_vk,
+        trigger_mods: settings.trigger_modifiers,
+        side: settings.trigger_modifier_side,
+        delay_ms: settings.trigger_delay_ms.clamp(0, 1000) as u64,
+        timeout_ms: settings.trigger_timeout_ms.clamp(0, 10_000) as u64,
+        double_click: settings.double_click_to_trigger,
+        middle_click: settings.middle_click_to_trigger,
+        keybinds,
+        match_entries,
+    }
+}
+
+/// Install hooks on a dedicated thread. Returns true when active.
+pub fn start() -> bool {
+    let Ok(mut guards) = handles().lock() else {
+        return false;
+    };
+    if guards.running {
+        return !guards.keyboard.is_invalid();
+    }
+    guards.running = true;
+    drop(guards);
+    std::thread::Builder::new()
+        .name("loopw-hooks".to_string())
+        .spawn(hook_thread)
+        .expect("hook thread spawns");
+    // Give the thread a moment to install before reporting status.
+    for _ in 0..50 {
+        std::thread::sleep(Duration::from_millis(10));
+        if let Ok(guards) = handles().lock() {
+            if !guards.keyboard.is_invalid() || !guards.running {
+                break;
+            }
+        }
+    }
+    is_active()
+}
+
+pub fn is_active() -> bool {
+    handles()
+        .lock()
+        .map(|guards| !guards.keyboard.is_invalid())
+        .unwrap_or(false)
+}
+
+/// Remove hooks and stop the pump thread.
+pub fn stop() {
+    let thread_id = handles().lock().map(|g| g.thread_id).unwrap_or(0);
+    if thread_id != 0 {
+        unsafe {
+            let _ = PostThreadMessageW(thread_id, WM_QUIT_LOOP, WPARAM(0), LPARAM(0));
+        }
+    }
+}
+
+/// Refresh config from shared settings; aborts any in-flight press.
+/// Use only when trigger binding or behavior changed.
+pub fn notify_settings_changed() {
+    let config = config_from_shared();
+    if let Ok(mut guard) = state().lock() {
+        guard.config = config;
+        reset_input_locked(&mut guard, true);
+    }
+}
+
+/// Refresh config without disturbing an in-flight press (keybind edits,
+/// cosmetic changes). Matches C# SetKeybinds, which deliberately skips
+/// the input reset.
+pub fn refresh_config() {
+    let config = config_from_shared();
+    if let Ok(mut guard) = state().lock() {
+        guard.config = config;
+    }
+}
+
+pub fn begin_capture(target: CaptureTarget) {
+    if let Ok(mut guard) = state().lock() {
+        guard.capturing = Some(target);
+        reset_input_locked(&mut guard, true);
+    }
+}
+
+pub fn cancel_capture() {
+    if let Ok(mut guard) = state().lock() {
+        if guard.capturing.take().is_some() {
+            push(RuntimeEvent::CaptureCancelled);
+        }
+    }
+}
+
+pub fn is_capturing() -> bool {
+    state()
+        .lock()
+        .map(|g| g.capturing.is_some())
+        .unwrap_or(false)
+}
+
+fn hook_thread() {
+    unsafe extern "system" fn keyboard_proc(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+        if code < 0 {
+            return CallNextHookEx(None, code, wparam, lparam);
+        }
+        let message = wparam.0 as u32;
+        let is_down = message == WM_KEYDOWN || message == WM_SYSKEYDOWN;
+        let is_up = message == WM_KEYUP || message == WM_SYSKEYUP;
+        if !is_down && !is_up {
+            return CallNextHookEx(None, code, wparam, lparam);
+        }
+        let vk = (*(lparam.0 as *const KBDLLHOOKSTRUCT)).vkCode;
+        let swallow = state()
+            .lock()
+            .map(|mut guard| {
+                if is_down {
+                    handle_key_down_locked(&mut guard, vk)
+                } else {
+                    handle_key_up_locked(&mut guard, vk)
+                }
+            })
+            .unwrap_or(false);
+        if swallow {
+            LRESULT(1)
+        } else {
+            CallNextHookEx(None, code, wparam, lparam)
+        }
+    }
+
+    unsafe extern "system" fn mouse_proc(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+        if code < 0 {
+            return CallNextHookEx(None, code, wparam, lparam);
+        }
+        let message = wparam.0 as u32;
+        let swallow = match message {
+            WM_MBUTTONDOWN | WM_MBUTTONUP => state().lock().map(|mut guard| {
+                if message == WM_MBUTTONDOWN {
+                    handle_middle_down_locked(&mut guard)
+                } else {
+                    handle_middle_up_locked(&mut guard)
+                }
+            }),
+            _ => Ok(false),
+        };
+        // Title-bar drag traffic goes to the snap tracker (never swallowed);
+        // middle-button traffic drives the alternate trigger only.
+        match message {
+            WM_LBUTTONDOWN => super::snap_service::note_button(true),
+            WM_LBUTTONUP => super::snap_service::note_button(false),
+            _ => {}
+        }
+        if swallow.unwrap_or(false) {
+            LRESULT(1)
+        } else {
+            CallNextHookEx(None, code, wparam, lparam)
+        }
+    }
+
+    unsafe {
+        let keyboard = SetWindowsHookExW(
+            WINDOWS_HOOK_ID(WH_KEYBOARD_LL),
+            Some(keyboard_proc),
+            None,
+            0,
+        )
+        .unwrap_or_default();
+        let mouse = SetWindowsHookExW(WINDOWS_HOOK_ID(WH_MOUSE_LL), Some(mouse_proc), None, 0)
+            .unwrap_or_default();
+        if let Ok(mut guards) = handles().lock() {
+            guards.keyboard = keyboard;
+            guards.mouse = mouse;
+            guards.thread_id = GetCurrentThreadId();
+        }
+        if keyboard.is_invalid() {
+            super::diagnostics::report_hook_install("SetWindowsHookExW failed for WH_KEYBOARD_LL");
+        } else if mouse.is_invalid() {
+            super::diagnostics::report_hook_install(
+                "SetWindowsHookExW failed for WH_MOUSE_LL; middle-click trigger unavailable",
+            );
+        }
+        let mut message = MSG::default();
+        while GetMessageW(&mut message, None, 0, 0).as_bool() {
+            if message.message == WM_TIMER {
+                handle_timer(message.wParam.0);
+                continue;
+            }
+            let _ = TranslateMessage(&message);
+            DispatchMessageW(&message);
+        }
+        let _ = KillTimer(None, ACTIVATION_TIMER_ID);
+        let _ = KillTimer(None, TIMEOUT_TIMER_ID);
+        if let Ok(guards) = handles().lock() {
+            if !guards.keyboard.is_invalid() {
+                let _ = UnhookWindowsHookEx(guards.keyboard);
+            }
+            if !guards.mouse.is_invalid() {
+                let _ = UnhookWindowsHookEx(guards.mouse);
+            }
+        }
+        if let Ok(mut guards) = handles().lock() {
+            guards.keyboard = HHOOK::default();
+            guards.mouse = HHOOK::default();
+            guards.thread_id = 0;
+            guards.running = false;
+        }
+        if let Ok(mut guard) = state().lock() {
+            reset_input_locked(&mut guard, false);
+        }
+    }
+}
+
+// --- state machine (all callers hold the lock) ---
+
+fn any_held(guard: &HookState) -> bool {
+    guard.trigger_down || guard.middle_down
+}
+
+fn handle_key_down_locked(guard: &mut HookState, vk: u32) -> bool {
+    let trigger_modifiers = current_modifiers(guard.config.side);
+    let keybind_modifiers = if guard.config.side == TriggerModifierSide::Any {
+        trigger_modifiers
+    } else {
+        current_modifiers(TriggerModifierSide::Any)
+    };
+    handle_key_down_with_modifiers_locked(guard, vk, trigger_modifiers, keybind_modifiers)
+}
+
+/// Testable key-down reducer. The hook callback supplies the two modifier
+/// snapshots because trigger-side matching and keybind matching deliberately
+/// use different side policies.
+fn handle_key_down_with_modifiers_locked(
+    guard: &mut HookState,
+    vk: u32,
+    trigger_modifiers: u32,
+    keybind_modifiers: u32,
+) -> bool {
+    if guard.capturing.is_some() {
+        return handle_capture_locked(guard, vk, keybind_modifiers);
+    }
+    if vk == guard.config.trigger_vk && trigger_modifiers == guard.config.trigger_mods {
+        if !guard.trigger_down {
+            guard.trigger_down = true;
+            if !guard.middle_down {
+                begin_press_locked(guard);
+            }
+        }
+        return true;
+    }
+    let held = any_held(guard);
+    if guard.pressed.contains(&vk) {
+        // Auto-repeat: swallow, fire nothing.
+        return true;
+    }
+    let matched = if held && !guard.timed_out {
+        matched_keybind_index(guard, vk, keybind_modifiers, true)
+    } else if !held {
+        matched_keybind_index(guard, vk, keybind_modifiers, false)
+    } else {
+        None
+    };
+    if let Some(index) = matched {
+        let snapshot = guard.config.keybinds[index].clone();
+        guard.pressed.insert(vk);
+        if snapshot.action == crate::core::actions::WindowAction::RevealStashed {
+            push(RuntimeEvent::RevealStashed);
+        } else {
+            push(RuntimeEvent::KeybindFired {
+                action: snapshot.action,
+                cycle_enabled: snapshot.cycle,
+                bypass_trigger: snapshot.bypass,
+            });
+        }
+        return true;
+    }
+    false
+}
+
+/// Match a keybind without reading Win32 modifier state or emitting events.
+/// This keeps the hook's policy decisions deterministic and directly
+/// testable while the callback remains responsible only for side effects.
+fn matched_keybind_index(
+    guard: &HookState,
+    vk: u32,
+    modifiers: u32,
+    trigger_held: bool,
+) -> Option<usize> {
+    match_keybind(
+        &guard.config.match_entries,
+        vk,
+        modifiers,
+        guard.config.trigger_vk,
+        trigger_held,
+    )
+}
+
+fn handle_key_up_locked(guard: &mut HookState, vk: u32) -> bool {
+    guard.pressed.remove(&vk);
+    if guard.capturing.is_some() {
+        return false;
+    }
+    if vk != guard.config.trigger_vk || !guard.trigger_down {
+        return false;
+    }
+    guard.trigger_down = false;
+    if !any_held(guard) {
+        complete_release_locked(guard);
+    }
+    true
+}
+
+fn handle_middle_down_locked(guard: &mut HookState) -> bool {
+    if guard.capturing.is_some() || !guard.config.middle_click {
+        return false;
+    }
+    if !guard.middle_down {
+        guard.middle_down = true;
+        if !guard.trigger_down {
+            begin_press_locked(guard);
+        }
+    }
+    true
+}
+
+fn handle_middle_up_locked(guard: &mut HookState) -> bool {
+    if !guard.middle_down {
+        return false;
+    }
+    guard.middle_down = false;
+    if !any_held(guard) {
+        complete_release_locked(guard);
+    }
+    true
+}
+
+fn begin_press_locked(guard: &mut HookState) {
+    if !guard.config.double_click {
+        schedule_activation_locked(guard);
+        return;
+    }
+    let now = super::native::tick_count() as i64;
+    let second = guard.last_release_at >= 0
+        && now - guard.last_release_at <= super::native::double_click_time() as i64;
+    guard.last_release_at = -1;
+    if second {
+        schedule_activation_locked(guard);
+    }
+}
+
+fn schedule_activation_locked(guard: &mut HookState) {
+    guard.version += 1;
+    let version = guard.version;
+    if guard.config.delay_ms == 0 {
+        activate_locked(guard, version);
+        return;
+    }
+    let delay = guard.config.delay_ms;
+    guard.activation_timer_version = Some(version);
+    unsafe {
+        let _ = SetTimer(
+            None,
+            ACTIVATION_TIMER_ID,
+            delay.min(u32::MAX as u64) as u32,
+            None,
+        );
+    }
+}
+
+fn activate_locked(guard: &mut HookState, version: u64) {
+    if version != guard.version || !any_held(guard) || guard.activated || guard.timed_out {
+        return;
+    }
+    guard.activation_timer_version = None;
+    unsafe {
+        let _ = KillTimer(None, ACTIVATION_TIMER_ID);
+    }
+    guard.activated = true;
+    push(RuntimeEvent::TriggerPressed);
+    if guard.config.timeout_ms > 0 {
+        let timeout = guard.config.timeout_ms;
+        guard.timeout_timer_version = Some(version);
+        unsafe {
+            let _ = SetTimer(
+                None,
+                TIMEOUT_TIMER_ID,
+                timeout.min(u32::MAX as u64) as u32,
+                None,
+            );
+        }
+    }
+}
+
+fn handle_timer(timer_id: usize) {
+    let Ok(mut guard) = state().lock() else {
+        return;
+    };
+    let version = match timer_id {
+        ACTIVATION_TIMER_ID => guard.activation_timer_version.take(),
+        TIMEOUT_TIMER_ID => guard.timeout_timer_version.take(),
+        _ => None,
+    };
+    unsafe {
+        let _ = KillTimer(None, timer_id);
+    }
+    let Some(version) = version else {
+        return;
+    };
+    if timer_id == ACTIVATION_TIMER_ID {
+        if guard.version == version && any_held(&guard) {
+            activate_locked(&mut guard, version);
+        }
+    } else if timer_id == TIMEOUT_TIMER_ID
+        && guard.version == version
+        && any_held(&guard)
+        && guard.activated
+    {
+        guard.activated = false;
+        guard.timed_out = true;
+        guard.version += 1;
+        guard.pressed.clear();
+        push(RuntimeEvent::TriggerTimedOut);
+    }
+}
+
+fn complete_release_locked(guard: &mut HookState) {
+    guard.version += 1;
+    guard.activation_timer_version = None;
+    guard.timeout_timer_version = None;
+    unsafe {
+        let _ = KillTimer(None, ACTIVATION_TIMER_ID);
+        let _ = KillTimer(None, TIMEOUT_TIMER_ID);
+    }
+    let was_activated = guard.activated;
+    guard.activated = false;
+    guard.timed_out = false;
+    guard.pressed.clear();
+    guard.last_release_at = if guard.config.double_click {
+        super::native::tick_count() as i64
+    } else {
+        -1
+    };
+    if was_activated {
+        push(RuntimeEvent::TriggerReleased);
+    }
+}
+
+fn reset_input_locked(guard: &mut HookState, notify: bool) {
+    let was_active = guard.activated;
+    guard.version += 1;
+    guard.activation_timer_version = None;
+    guard.timeout_timer_version = None;
+    unsafe {
+        let _ = KillTimer(None, ACTIVATION_TIMER_ID);
+        let _ = KillTimer(None, TIMEOUT_TIMER_ID);
+    }
+    guard.trigger_down = false;
+    guard.middle_down = false;
+    guard.activated = false;
+    guard.timed_out = false;
+    guard.last_release_at = -1;
+    guard.pressed.clear();
+    if notify && was_active {
+        push(RuntimeEvent::TriggerCancelled);
+    }
+}
+
+fn handle_capture_locked(guard: &mut HookState, vk: u32, modifiers: u32) -> bool {
+    if is_modifier_vk(vk) {
+        return false;
+    }
+    let target = guard.capturing.take();
+    match capture_decision(target.as_ref(), vk, modifiers) {
+        CaptureDecision::Cancelled => push(RuntimeEvent::CaptureCancelled),
+        CaptureDecision::Rejected => push(RuntimeEvent::CaptureRejected),
+        CaptureDecision::Updated { keybind } => push(RuntimeEvent::CaptureUpdate {
+            modifiers,
+            vk,
+            keybind,
+        }),
+    }
+    true
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum CaptureDecision {
+    Cancelled,
+    Rejected,
+    Updated { keybind: Option<String> },
+}
+
+fn capture_decision(target: Option<&CaptureTarget>, vk: u32, modifiers: u32) -> CaptureDecision {
+    if vk == VK_ESCAPE {
+        return CaptureDecision::Cancelled;
+    }
+    if modifiers & MOD_WIN != 0 {
+        return CaptureDecision::Rejected;
+    }
+    CaptureDecision::Updated {
+        keybind: match target {
+            Some(CaptureTarget::Keybind(id)) => Some(id.clone()),
+            _ => None,
+        },
+    }
+}
+
+fn is_modifier_vk(vk: u32) -> bool {
+    matches!(
+        vk as i32,
+        VK_SHIFT
+            | VK_CONTROL
+            | VK_MENU
+            | VK_LWIN
+            | VK_RWIN
+            | VK_LSHIFT
+            | VK_RSHIFT
+            | VK_LCONTROL
+            | VK_RCONTROL
+            | VK_LMENU
+            | VK_RMENU
+    )
+}
+
+fn current_modifiers(side: TriggerModifierSide) -> u32 {
+    let mut mods = 0u32;
+    let (shift, ctrl, alt) = match side {
+        TriggerModifierSide::Left => (VK_LSHIFT, VK_LCONTROL, VK_LMENU),
+        TriggerModifierSide::Right => (VK_RSHIFT, VK_RCONTROL, VK_RMENU),
+        TriggerModifierSide::Any => (VK_SHIFT, VK_CONTROL, VK_MENU),
+    };
+    if super::native::async_key_down(shift) {
+        mods |= MOD_SHIFT;
+    }
+    if super::native::async_key_down(ctrl) {
+        mods |= MOD_CONTROL;
+    }
+    if super::native::async_key_down(alt) {
+        mods |= MOD_ALT;
+    }
+    let win = match side {
+        TriggerModifierSide::Left => super::native::async_key_down(VK_LWIN),
+        TriggerModifierSide::Right => super::native::async_key_down(VK_RWIN),
+        TriggerModifierSide::Any => {
+            super::native::async_key_down(VK_LWIN) || super::native::async_key_down(VK_RWIN)
+        }
+    };
+    if win {
+        mods |= MOD_WIN;
+    }
+    mods
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn state_with_keybinds(keybinds: Vec<KeybindSnapshot>) -> HookState {
+        let match_entries = keybinds
+            .iter()
+            .map(|keybind| MatchEntry {
+                vk: keybind.vk,
+                modifiers: keybind.mods,
+                bypass_trigger: keybind.bypass,
+            })
+            .collect();
+        HookState {
+            config: Config {
+                trigger_vk: 0x20,
+                trigger_mods: 0,
+                side: TriggerModifierSide::Any,
+                delay_ms: 0,
+                timeout_ms: 0,
+                double_click: false,
+                middle_click: false,
+                keybinds,
+                match_entries,
+            },
+            trigger_down: false,
+            middle_down: false,
+            activated: false,
+            timed_out: false,
+            capturing: None,
+            pressed: HashSet::new(),
+            last_release_at: -1,
+            version: 0,
+            activation_timer_version: None,
+            timeout_timer_version: None,
+        }
+    }
+
+    #[test]
+    fn keybind_matching_keeps_trigger_and_bypass_paths_distinct() {
+        let mut guard = state_with_keybinds(vec![
+            KeybindSnapshot {
+                vk: 0x41,
+                mods: MOD_CONTROL,
+                action: crate::core::actions::WindowAction::LeftHalf,
+                cycle: false,
+                bypass: false,
+            },
+            KeybindSnapshot {
+                vk: 0x42,
+                mods: MOD_ALT,
+                action: crate::core::actions::WindowAction::RightHalf,
+                cycle: false,
+                bypass: true,
+            },
+        ]);
+
+        assert_eq!(
+            matched_keybind_index(&guard, 0x41, MOD_CONTROL, true),
+            Some(0)
+        );
+        assert_eq!(
+            matched_keybind_index(&guard, 0x41, MOD_CONTROL, false),
+            None
+        );
+        assert_eq!(matched_keybind_index(&guard, 0x42, MOD_ALT, false), Some(1));
+        assert_eq!(matched_keybind_index(&guard, 0x42, MOD_ALT, true), None);
+
+        guard.timed_out = true;
+        assert_eq!(
+            matched_keybind_index(&guard, 0x41, MOD_CONTROL, false),
+            None
+        );
+    }
+
+    #[test]
+    fn capture_decisions_cover_cancel_reject_and_update() {
+        assert_eq!(
+            capture_decision(Some(&CaptureTarget::Trigger), VK_ESCAPE, 0),
+            CaptureDecision::Cancelled
+        );
+        assert_eq!(
+            capture_decision(Some(&CaptureTarget::Trigger), 0x41, MOD_WIN),
+            CaptureDecision::Rejected
+        );
+        assert_eq!(
+            capture_decision(
+                Some(&CaptureTarget::Keybind("left".to_string())),
+                0x41,
+                MOD_ALT
+            ),
+            CaptureDecision::Updated {
+                keybind: Some("left".to_string())
+            }
+        );
+    }
+}

@@ -4,7 +4,7 @@ LoopW is a Windows window manager built around a hold-to-open radial menu. The
 main product path is in the code now. This roadmap tracks the work that still
 needs to be verified or hardened before a wider release.
 
-LoopW targets .NET 8, WPF, and native Windows APIs. It runs as a tray resident
+LoopW targets Rust, iced 0.14, and native Windows APIs. It runs as a tray resident
 app and saves settings to `%LOCALAPPDATA%\\LoopW\\settings.json`.
 
 ## Current state
@@ -30,15 +30,33 @@ The following product areas are implemented:
 - Drag snapping, target previews, stash and reveal, monitor move policies,
   screen padding, application exclusions, tray lifecycle, launch at login, and
   single-instance activation are wired into the runtime.
+- The Winit event-target helper is kept out of the taskbar with a tool-window
+  style and a taskbar-tab removal call; it remains visible to Winit for paint
+  delivery.
 - A same-user named-pipe command server supports activation, action listing,
   keybind listing, directional actions, and named actions.
-- Pure tests cover frame math, radial geometry, cycles, navigation, settings
-  normalization, stash calculations, drag snapping, and command parsing.
+- The automated suite currently contains 105 binary tests and 72 UI/settings
+  contract tests, for 177 tests in total. It covers frame math, radial
+  geometry, cycles, navigation, settings normalization, stash calculations,
+  drag snapping, and command parsing.
 
 The design document for the settings surface remains in
 [`specs/settings-ui-redesign-spec.md`](../specs/settings-ui-redesign-spec.md).
-It describes the intended behavior and the manual checks that still need to be
-run. [`QA.md`](QA.md) is the desktop test checklist.
+It records the settings requirements and acceptance scenarios. The current Rust
+and iced implementation status is summarized in this roadmap. [`QA.md`](QA.md)
+is the desktop test checklist.
+
+### Remaining implementation and hardening
+
+- [x] Apply the settings-canvas rendering fix documented in
+  [`BUGS.md`](BUGS.md#9-settings-canvas-rendering-needs-a-desktop-visual-sign-off).
+  Both canvases now use local coordinates, fixed dimensions, and cached
+  geometry. The remaining desktop visual sign-off is tracked in `BUGS.md`.
+- [x] Split the former `src/ui/app.rs` monolith into focused settings, runtime,
+  and window modules. The remaining large Win32/core modules are follow-up
+  refactors:
+  `src/win/stash_service.rs`, `src/win/hooks.rs`, `src/core/frame_math.rs`, and
+  `src/win/ipc.rs`.
 
 ## Next work
 
@@ -52,6 +70,8 @@ run. [`QA.md`](QA.md) is the desktop test checklist.
   elevated, borderless, fullscreen, non-resizable, and minimum-size cases.
 - [ ] Test snapping, stash persistence, exclusions, display changes, and named
   pipe commands after a restart.
+- [ ] Confirm that the Winit helper event target does not appear in the taskbar
+  or Alt+Tab while LoopW remains resident.
 - [ ] Record the Windows version, display layout, DPI settings, and commit used
   for each manual pass.
 
@@ -65,18 +85,21 @@ window action behaves correctly on every Windows setup.
   only after the write succeeds.
 - [x] Return save results to the settings UI instead of treating persistence as
   best-effort and silent.
-- [ ] Keep the edited control value and the saved value in sync when Windows or
-  the filesystem rejects a change.
-- [ ] Add tests for invalid JSON, partial writes, and settings migration.
+- [x] Keep the edited control value and the saved value in sync when Windows or
+  the filesystem rejects a change (revert-on-failure via `settings::sync`,
+  sticky `save_error` in the settings UI).
+- [x] Add tests for invalid JSON, partial writes, and settings migration
+  (`settings::load_report` + `settings::sync` suites).
 
 ### Add useful runtime diagnostics
 
-- [ ] Report hook installation failures, denied window access, failed frame
+- [x] Report hook installation failures, denied window access, failed frame
   changes, unavailable monitor data, and stale stash records in a user-visible
-  diagnostics view or log.
-- [ ] Explain safe no-ops for unsupported or excluded windows without exposing
-  native error codes as the only message.
-- [ ] Add a small diagnostic path for reproducing IPC and settings issues.
+  diagnostics view or log (`win::diagnostics` ring buffer, Advanced section).
+- [x] Explain safe no-ops for unsupported or excluded windows without exposing
+  native error codes as the only message (friendly text + technical detail).
+- [x] Add a small diagnostic path for reproducing IPC and settings issues
+  (repro hints in the Diagnostics view; pipe-command listing deferred).
 
 ### Close the remaining UI quality gaps
 
@@ -99,31 +122,40 @@ window action behaves correctly on every Windows setup.
 
 ## Release gate
 
+The current automated gate is met: 155 tests pass, formatting is clean, the
+locked build passes, and warning-denied Clippy passes. The broader release gate
+is not met because the desktop checklist has not been run.
+
 LoopW is ready for a broader release when:
 
-1. The automated build and pure test suite pass without warnings.
-2. The desktop checklist passes on the supported Windows and display setups, or
-   each exception has a documented reason.
+1. Formatting, the locked build, the all-targets test suite, and
+   warning-denied Clippy pass.
+2. The desktop checklist passes on the supported Windows and display setups.
+   Each exception must have a documented reason.
 3. Trigger, radial, keybind, snapping, stash, monitor, exclusion, tray, and IPC
    behavior are consistent across their supported entry points.
 4. Existing settings files load without losing values, and save failures are
    visible and recoverable.
 5. Unsupported windows fail safely and tell the user what happened.
 
-Packaging is a separate decision after this gate. The current GitHub Actions
-workflow builds a self-contained `win-x64` package for `v*` tags and stores the
-archive and checksum for manual workflow runs.
+Packaging is a separate decision after this gate. The repository currently has
+one GitHub Actions workflow, `publish.yml`; it runs when manually dispatched or
+when a `v*` tag is pushed. It checks formatting, tests, and warning-denied
+Clippy, builds the release EXE, and uploads the ZIP archive and checksum. Tag
+runs additionally create a GitHub Release. There is currently no workflow that
+runs automatically on every pull request.
 
 ## Development commands
 
 Run these commands from the repository root in PowerShell:
 
 ```powershell
-dotnet build LoopW.csproj
-dotnet run --project LoopW.Tests/LoopW.Tests.csproj
-dotnet run --project LoopW.csproj
-dotnet publish LoopW.csproj -c Release -r win-x64 --self-contained -p:PublishSingleFile=true
+cargo fmt -- --check
+cargo build --locked
+cargo test --all-targets --locked
+cargo clippy --all-targets --locked -- -D warnings
+cargo run
+cargo build --release --locked
 ```
 
-The tests are a small executable rather than a test-framework project, so use
-`dotnet run` for the test project.
+The release binary is `target\release\LoopW.exe`.
