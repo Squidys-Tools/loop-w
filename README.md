@@ -144,6 +144,9 @@ summary. Use `stop --dry-run` when inspecting cleanup before allowing it.
 
 ## Project docs
 
+- [`docs/README.md`](docs/README.md) maps the docs: `user/` for how to use
+  it, `internals/` for why it is built this way, `operations/` for how to
+  build and ship it.
 - [`docs/ROADMAP.md`](docs/ROADMAP.md) tracks what is implemented and what is
   next.
 - [`docs/QA.md`](docs/QA.md) contains the manual Windows test checklist.
@@ -151,6 +154,8 @@ summary. Use `stop --dry-run` when inspecting cleanup before allowing it.
   triggers, so they are tracked without blocking the release gate.
 - [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md) records release measurements
   and the limits of the current interaction probe.
+- [`CONTRIBUTING.md`](CONTRIBUTING.md) explains what kinds of PRs merge
+  fastest.
 - [`specs/settings-ui-redesign-spec.md`](specs/settings-ui-redesign-spec.md)
   records the settings UI requirements and acceptance scenarios.
 
