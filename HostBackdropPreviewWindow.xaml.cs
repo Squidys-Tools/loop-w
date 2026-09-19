@@ -149,6 +149,21 @@ public partial class HostBackdropPreviewWindow : Window
         return true;
     }
 
+    internal void ApplySettings()
+    {
+        if (_initializationFailed)
+        {
+            return;
+        }
+
+        _tintBrush.Color = ToCompositionColor(
+            _settings.IsLightAppearance ? "#30FFFFFF" : "#30101827",
+            "#30101827");
+        _borderBrush.Color = ToCompositionColor(
+            _settings.PreviewBorderColor,
+            "#B8007AFF");
+    }
+
     internal void HidePreview(bool destroy = false)
     {
         Opacity = 0;

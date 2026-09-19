@@ -17,7 +17,6 @@ public partial class PreviewOverlayWindow : Window
     private readonly double _blurMargin;
     private HostBackdropPreviewWindow? _livePreview;
     private bool _livePreviewUnavailable;
-    private bool _livePreviewCapabilityLogged;
     private double _workLeft;
     private double _workTop;
     private double _workWidth;
@@ -41,6 +40,12 @@ public partial class PreviewOverlayWindow : Window
     }
 
     internal bool IsPreviewVisible => IsVisible || (_livePreview?.IsVisible ?? false);
+
+    internal void ApplySettings()
+    {
+        PreviewSurface.ApplySettings(_settings);
+        _livePreview?.ApplySettings();
+    }
 
     internal void HidePreview()
     {
@@ -91,13 +96,7 @@ public partial class PreviewOverlayWindow : Window
 
     private void RecordLivePreviewCapability(string detail)
     {
-        if (_livePreviewCapabilityLogged)
-        {
-            return;
-        }
-
-        _livePreviewCapabilityLogged = true;
-        LivePreviewDiagnostics.Record("preview-gate", detail);
+        LivePreviewDiagnostics.RecordOnce("preview-capability", "preview-gate", detail);
     }
 
     internal void ShowFrame(NativeMethods.Rect frame, WindowAction action)

@@ -5,7 +5,26 @@ namespace LoopW;
 
 internal static class LivePreviewDiagnostics
 {
+    private const long MaxLogBytes = 256 * 1024;
     private static readonly object Sync = new();
+    private static readonly HashSet<string> RecordedOnce = new(StringComparer.Ordinal);
+
+    internal static void RecordOnce(
+        string key,
+        string stage,
+        string? detail = null,
+        Exception? exception = null)
+    {
+        lock (Sync)
+        {
+            if (!RecordedOnce.Add(key))
+            {
+                return;
+            }
+        }
+
+        Record(stage, detail, exception);
+    }
 
     internal static void Record(string stage, string? detail = null, Exception? exception = null)
     {
@@ -27,11 +46,17 @@ internal static class LivePreviewDiagnostics
                 line += $" exception={exception}";
             }
 
+            var path = Path.Combine(directory, "live-preview.log");
             lock (Sync)
             {
-                File.AppendAllText(
-                    Path.Combine(directory, "live-preview.log"),
-                    line + Environment.NewLine);
+                if (File.Exists(path) && new FileInfo(path).Length >= MaxLogBytes)
+                {
+                    File.WriteAllText(path, line + Environment.NewLine);
+                }
+                else
+                {
+                    File.AppendAllText(path, line + Environment.NewLine);
+                }
             }
         }
         catch

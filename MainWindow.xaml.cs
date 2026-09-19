@@ -471,6 +471,7 @@ public partial class MainWindow : FluentWindow
             domains.HasFlag(SettingsChangeDomain.Appearance) ||
             domains.HasFlag(SettingsChangeDomain.DragSnap))
         {
+            _dragPreview?.ApplySettings();
             _dragPreview?.HideImmediately();
         }
 
