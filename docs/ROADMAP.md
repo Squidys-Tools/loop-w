@@ -36,7 +36,7 @@ The following product areas are implemented:
 - A same-user named-pipe command server supports activation, action listing,
   keybind listing, directional actions, and named actions.
 - The automated suite currently contains 105 binary tests and 72 UI/settings
-  contract tests, for 179 tests in total. It covers frame math, radial
+  contract tests, for 180 tests in total. It covers frame math, radial
   geometry, cycles, navigation, settings normalization, stash calculations,
   drag snapping, and command parsing.
 
@@ -122,7 +122,7 @@ window action behaves correctly on every Windows setup.
 
 ## Release gate
 
-The current automated gate is met: 179 tests pass, formatting is clean, the
+The current automated gate is met: 180 tests pass, formatting is clean, the
 locked build passes, and warning-denied Clippy passes. The broader release gate
 is not met because the desktop checklist has not been run.
 

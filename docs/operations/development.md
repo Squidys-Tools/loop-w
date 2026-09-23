@@ -15,7 +15,7 @@ cargo build --release --locked
 
 During iteration run the narrowest check that covers the change
 (`cargo test <name>`, one module suite). Before calling work done run the
-full gate above. The full suite (179 tests) is cheap here — it *is* the
+full gate above. The full suite (180 tests) is cheap here — it *is* the
 gate, plus Win32 behavior below.
 
 ## Win32 verification
