@@ -14,7 +14,7 @@ logic, settings contracts, resident lifecycle, IPC, placement, overlay window
 styles, and tray-popup state. Manual visual checks across window types,
 display scales, and Windows configurations remain tracked in the QA checklist.
 
-The current test inventory is 105 binary tests plus 72 UI/settings contract
+The current test inventory is 108 binary tests plus 72 UI/settings contract
 tests, for 180 tests under `cargo test --all-targets --locked`. The locked
 build, formatting check, tests, and warnings-denied Clippy are the release
 baseline. A bounded Windows integration harness lives under `tools/`; its

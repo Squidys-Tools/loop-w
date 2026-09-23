@@ -8,7 +8,7 @@ before testing minimize, hide, stash, or focus actions.
 Status: `[ ]` not run, `[x]` passed, `[!]` blocked or not supported on this
 Windows configuration.
 
-The code baseline is clean: 105 binary tests plus 72 UI/settings contract
+The code baseline is clean: 108 binary tests plus 72 UI/settings contract
 tests pass (180 total), `cargo fmt -- --check` passes, `cargo build --locked`
 passes, and warning-denied Clippy passes. The bounded harness under `tools/`
 also covers resident lifecycle, IPC, disposable-window placement, and overlay
