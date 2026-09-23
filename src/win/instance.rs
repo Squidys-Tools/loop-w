@@ -44,7 +44,9 @@ pub fn acquire(forward: Option<&str>) -> Result<Option<InstanceGuard>, String> {
                     if forward.is_none() {
                         // Pipe first, raw event only as fallback (C# sends one
                         // activation, not two — a double nudge would focus twice).
-                        if super::ipc::try_forward_to_running("activate").is_none() {
+                        // Only fall back when activate never hit the wire; a
+                        // delivered-but-unanswered pipe call must not re-nudge.
+                        if !super::ipc::try_forward_to_running("activate").is_delivered() {
                             signal_event();
                         }
                     }

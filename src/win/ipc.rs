@@ -317,12 +317,40 @@ fn write_line(pipe: HANDLE, reply: &str) {
     }
 }
 
+/// Result of one forward attempt. Distinguishes "never on the wire"
+/// (caller may try another path) from "on the wire, reply lost" (caller
+/// must never send the same non-idempotent command again).
+#[derive(Debug, PartialEq, Eq)]
+pub enum ForwardOutcome {
+    /// Resident answered with a reply line (may be empty on clean EOF).
+    Replied(String),
+    /// Command bytes never left this process (no pipe / open / write fail).
+    NotDelivered,
+    /// Bytes were written; the reply was lost or timed out. Never resend.
+    DeliveredNoReply,
+}
+
+impl ForwardOutcome {
+    pub fn reply(&self) -> Option<&str> {
+        match self {
+            ForwardOutcome::Replied(text) => Some(text),
+            _ => None,
+        }
+    }
+
+    pub fn is_delivered(&self) -> bool {
+        matches!(
+            self,
+            ForwardOutcome::Replied(_) | ForwardOutcome::DeliveredNoReply
+        )
+    }
+}
+
 /// Client: forward one command to the resident instance.
 /// Retries only until the command bytes are written; a lost reply after a
-/// successful write is reported as `None` and never resent (see
-/// [`try_forward_attempts`]). Returns the first reply line on success
-/// (wire quirk preserved).
-pub fn try_forward_to_running(command: &str) -> Option<String> {
+/// successful write is [`ForwardOutcome::DeliveredNoReply`] and never
+/// resent (see [`try_forward_attempts`]).
+pub fn try_forward_to_running(command: &str) -> ForwardOutcome {
     try_forward_attempts(command, 3)
 }
 
@@ -331,11 +359,11 @@ pub fn try_forward_to_running(command: &str) -> Option<String> {
 /// with short sleeps between them. Same no-resend-after-write rule as
 /// [`try_forward_to_running`]: non-idempotent commands (nudge, cycle) must
 /// not run twice if the reply is delayed past the read deadline.
-pub fn try_forward_patiently(command: &str) -> Option<String> {
+pub fn try_forward_patiently(command: &str) -> ForwardOutcome {
     try_forward_attempts(command, 24)
 }
 
-fn try_forward_attempts(command: &str, attempts: u32) -> Option<String> {
+fn try_forward_attempts(command: &str, attempts: u32) -> ForwardOutcome {
     let attempts = attempts.max(1);
     let name = pipe_name_wide();
     for attempt in 0..attempts {
@@ -345,7 +373,7 @@ fn try_forward_attempts(command: &str, attempts: u32) -> Option<String> {
                     std::thread::sleep(Duration::from_millis(50));
                     continue;
                 }
-                return None;
+                return ForwardOutcome::NotDelivered;
             }
             let open = CreateFileW(
                 PCWSTR(name.as_ptr()),
@@ -361,13 +389,13 @@ fn try_forward_attempts(command: &str, attempts: u32) -> Option<String> {
                 // UnauthorizedAccessException straight to false); other
                 // failures retry.
                 if GetLastError() == ERROR_ACCESS_DENIED {
-                    return None;
+                    return ForwardOutcome::NotDelivered;
                 }
                 if attempt + 1 < attempts {
                     std::thread::sleep(Duration::from_millis(50));
                     continue;
                 }
-                return None;
+                return ForwardOutcome::NotDelivered;
             };
             let line = format!("{command}\n").into_bytes();
             let mut written = 0u32;
@@ -377,22 +405,27 @@ fn try_forward_attempts(command: &str, attempts: u32) -> Option<String> {
                     std::thread::sleep(Duration::from_millis(50));
                     continue;
                 }
-                return None;
+                return ForwardOutcome::NotDelivered;
             }
             // Client-side CurrentUserOnly: refuse to talk to a pipe owned
-            // by anyone but the current user.
+            // by anyone but the current user. Bytes may already be written;
+            // report NotDelivered so callers can fall back without treating
+            // this as a successful hand-off to *our* resident.
             if !pipe_owned_by_self(pipe) {
                 let _ = CloseHandle(pipe);
-                return None;
+                return ForwardOutcome::NotDelivered;
             }
             // Bytes are on the wire. Never resend: a delayed or lost reply
             // must not re-run a non-idempotent command on the resident.
             let reply = read_reply_line(pipe);
             let _ = CloseHandle(pipe);
-            return reply;
+            return match reply {
+                Some(text) => ForwardOutcome::Replied(text),
+                None => ForwardOutcome::DeliveredNoReply,
+            };
         }
     }
-    None
+    ForwardOutcome::NotDelivered
 }
 
 /// True when `pipe` is owned by the current user.
@@ -555,5 +588,16 @@ mod tests {
     fn replies_preserve_command_parser_failures_for_the_pipe_client() {
         assert_eq!(reply_for("list/actions"), "OK");
         assert!(reply_for("not-a-command").starts_with("ERROR: "));
+    }
+
+    /// Callers must not treat a lost reply as "safe to retry another path."
+    #[test]
+    fn forward_outcome_separates_delivery_from_reply_loss() {
+        assert_eq!(ForwardOutcome::Replied("OK".into()).reply(), Some("OK"));
+        assert_eq!(ForwardOutcome::DeliveredNoReply.reply(), None);
+        assert_eq!(ForwardOutcome::NotDelivered.reply(), None);
+        assert!(ForwardOutcome::Replied(String::new()).is_delivered());
+        assert!(ForwardOutcome::DeliveredNoReply.is_delivered());
+        assert!(!ForwardOutcome::NotDelivered.is_delivered());
     }
 }
