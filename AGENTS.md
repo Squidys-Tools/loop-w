@@ -96,7 +96,7 @@ cargo clippy --all-targets --locked -- -D warnings
 
 During iteration run the narrowest check that covers the change
 (`cargo test <name>`, one suite). Before calling work done run the full gate
-above — this repo is small enough that the full suite (177 tests) *is* the
+above — this repo is small enough that the full suite (179 tests) *is* the
 gate, plus `verify-loopw` for Win32 behavior and `docs/QA.md` for anything
 involving trigger, overlay, DPI, or real windows. A passing IPC reply without
 a target-geometry or overlay-ownership assertion is incomplete. A skipped

@@ -15,7 +15,7 @@ styles, and tray-popup state. Manual visual checks across window types,
 display scales, and Windows configurations remain tracked in the QA checklist.
 
 The current test inventory is 105 binary tests plus 72 UI/settings contract
-tests, for 177 tests under `cargo test --all-targets --locked`. The locked
+tests, for 179 tests under `cargo test --all-targets --locked`. The locked
 build, formatting check, tests, and warnings-denied Clippy are the release
 baseline. A bounded Windows integration harness lives under `tools/`; its
 environment-sensitive trigger-input limitation and the measured release
