@@ -8,8 +8,8 @@ before testing minimize, hide, stash, or focus actions.
 Status: `[ ]` not run, `[x]` passed, `[!]` blocked or not supported on this
 Windows configuration.
 
-The code baseline is clean: 105 binary tests plus 72 UI/settings contract
-tests pass (177 total), `cargo fmt -- --check` passes, `cargo build --locked`
+The code baseline is clean: 108 binary tests plus 72 UI/settings contract
+tests pass (180 total), `cargo fmt -- --check` passes, `cargo build --locked`
 passes, and warning-denied Clippy passes. The bounded harness under `tools/`
 also covers resident lifecycle, IPC, disposable-window placement, and overlay
 styles. Its non-radial checks pass in the current environment; the synthetic
@@ -191,7 +191,7 @@ does not target its own settings, radial, preview, or tray surfaces.
 
 ## 11. Final gate
 
-- [x] The automated baseline is clean: 155 tests pass, formatting is clean, the
+- [x] The automated baseline is clean: 180 tests pass, formatting is clean, the
   locked build passes, and warning-denied Clippy passes.
 - [ ] Complete sections 1 through 10 on at least one local multi-monitor setup.
 - [ ] Complete mixed-DPI, RDP, elevated-app, and taskbar-layout checks or record

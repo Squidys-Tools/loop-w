@@ -1,14 +1,7 @@
 <!--
-⚠️ READ BEFORE OPENING ⚠️
-
-We are not actively accepting contributions right now.
-
-You can still open a PR, but please do so knowing there is a high chance
-we may close it without merging it, or never review it.
-
-- Small, focused PRs are strongly preferred. Bug fixes are most likely to be merged.
-- New features will most likely just annoy us.
-- 1,000+ line PRs with a bunch of new features will probably get you banned from the repo.
+Keep PRs small and focused. One concern per PR — if the description says
+"also", split it. Large feature PRs without a prior issue will likely be
+closed or asked to shrink. See CONTRIBUTING.md.
 -->
 
 ## What Changed
@@ -17,15 +10,23 @@ we may close it without merging it, or never review it.
 
 ## Why
 
-<!-- Explain the problem being solved and why this approach is the right one. -->
+<!-- The problem in a sentence or two, then why this approach. -->
+
+## Verification
+
+<!-- Commands run + Win32 evidence. E.g. cargo test suite, loopw-agent run
+     with evidence dir, QA.md sections covered or recorded as skipped. -->
 
 ## UI Changes
 
 <!-- If this PR changes UI, include clear before/after screenshots.
      If the change involves motion or interaction, include a short video.
+     Never commit PR-only screenshots or videos to the repo.
      Delete this section if not applicable. -->
 
 ## Checklist
 
+- [ ] Gate passes: fmt, build --locked, test --all-targets --locked, clippy -D warnings
+- [ ] Entry-point parity checked (radial / keybind / IPC) or noted as N/A
 - [ ] Before/after screenshots for any UI changes
 - [ ] Video for animation/interaction changes

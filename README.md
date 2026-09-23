@@ -14,8 +14,8 @@ logic, settings contracts, resident lifecycle, IPC, placement, overlay window
 styles, and tray-popup state. Manual visual checks across window types,
 display scales, and Windows configurations remain tracked in the QA checklist.
 
-The current test inventory is 105 binary tests plus 72 UI/settings contract
-tests, for 177 tests under `cargo test --all-targets --locked`. The locked
+The current test inventory is 108 binary tests plus 72 UI/settings contract
+tests, for 180 tests under `cargo test --all-targets --locked`. The locked
 build, formatting check, tests, and warnings-denied Clippy are the release
 baseline. A bounded Windows integration harness lives under `tools/`; its
 environment-sensitive trigger-input limitation and the measured release
@@ -144,6 +144,9 @@ summary. Use `stop --dry-run` when inspecting cleanup before allowing it.
 
 ## Project docs
 
+- [`docs/README.md`](docs/README.md) maps the docs: `user/` for how to use
+  it, `internals/` for why it is built this way, `operations/` for how to
+  build and ship it.
 - [`docs/ROADMAP.md`](docs/ROADMAP.md) tracks what is implemented and what is
   next.
 - [`docs/QA.md`](docs/QA.md) contains the manual Windows test checklist.
@@ -151,6 +154,8 @@ summary. Use `stop --dry-run` when inspecting cleanup before allowing it.
   triggers, so they are tracked without blocking the release gate.
 - [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md) records release measurements
   and the limits of the current interaction probe.
+- [`CONTRIBUTING.md`](CONTRIBUTING.md) explains what kinds of PRs merge
+  fastest.
 - [`specs/settings-ui-redesign-spec.md`](specs/settings-ui-redesign-spec.md)
   records the settings UI requirements and acceptance scenarios.
 
