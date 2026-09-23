@@ -319,11 +319,23 @@ fn write_line(pipe: HANDLE, reply: &str) {
 /// Client: forward one command to the resident instance (3 attempts).
 /// Returns the first reply line on success (wire quirk preserved).
 pub fn try_forward_to_running(command: &str) -> Option<String> {
+    try_forward_attempts(command, 3)
+}
+
+/// Patient forward for the startup race: the resident may have just won the
+/// instance mutex and not yet bound the pipe. ~6s of WaitNamedPipe windows
+/// with short sleeps between them.
+pub fn try_forward_patiently(command: &str) -> Option<String> {
+    try_forward_attempts(command, 24)
+}
+
+fn try_forward_attempts(command: &str, attempts: u32) -> Option<String> {
+    let attempts = attempts.max(1);
     let name = pipe_name_wide();
-    for attempt in 0..3 {
+    for attempt in 0..attempts {
         unsafe {
             if !WaitNamedPipeW(PCWSTR(name.as_ptr()), 250).as_bool() {
-                if attempt < 2 {
+                if attempt + 1 < attempts {
                     std::thread::sleep(Duration::from_millis(50));
                     continue;
                 }
@@ -345,7 +357,7 @@ pub fn try_forward_to_running(command: &str) -> Option<String> {
                 if GetLastError() == ERROR_ACCESS_DENIED {
                     return None;
                 }
-                if attempt < 2 {
+                if attempt + 1 < attempts {
                     std::thread::sleep(Duration::from_millis(50));
                     continue;
                 }
@@ -355,7 +367,7 @@ pub fn try_forward_to_running(command: &str) -> Option<String> {
             let mut written = 0u32;
             if WriteFile(pipe, Some(&line[..]), Some(&mut written), None).is_err() {
                 let _ = CloseHandle(pipe);
-                if attempt < 2 {
+                if attempt + 1 < attempts {
                     std::thread::sleep(Duration::from_millis(50));
                     continue;
                 }
@@ -372,7 +384,7 @@ pub fn try_forward_to_running(command: &str) -> Option<String> {
             if reply.is_some() {
                 return reply;
             }
-            if attempt < 2 {
+            if attempt + 1 < attempts {
                 std::thread::sleep(Duration::from_millis(50));
             }
         }

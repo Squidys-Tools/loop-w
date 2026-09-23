@@ -15,15 +15,28 @@ pub fn run() -> iced::Result {
             native::print_cli_line(&reply);
             return Ok(());
         }
-        match crate::win::instance::acquire() {
-            Ok(None) => return Ok(()),
+        // Mutex may already be owned while the pipe is still binding — the
+        // resident won the race moments ago. `acquire(Some)` deliberately does
+        // not substitute `activate` for our command; we patient-forward here
+        // so the original command (and its reply) is not dropped.
+        match crate::win::instance::acquire(Some(&command)) {
+            Ok(None) => {
+                if let Some(reply) = crate::win::ipc::try_forward_patiently(&command) {
+                    native::print_cli_line(&reply);
+                } else {
+                    native::print_cli_line(
+                        "LoopW is still starting — the command could not be delivered. Retry in a moment.",
+                    );
+                }
+                return Ok(());
+            }
             Ok(Some(guard)) => {
                 return crate::ui::run_daemon(Some(command), guard);
             }
             Err(_) => return Ok(()),
         }
     }
-    match crate::win::instance::acquire() {
+    match crate::win::instance::acquire(None) {
         Ok(None) => Ok(()),
         Ok(Some(guard)) => crate::ui::run_daemon(None, guard),
         Err(_) => Ok(()),

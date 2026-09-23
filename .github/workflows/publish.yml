@@ -34,6 +34,17 @@ jobs:
       - name: Build release executable
         run: cargo build --release --locked
 
+      # Gate the release on the bounded desktop harness (hooks, IPC, single-
+      # instance forwarding, overlay styles). -SkipRadialInput: CI has no
+      # interactive keyboard/pointer session for the global hook path.
+      - name: Run Windows integration checks
+        shell: pwsh
+        run: |
+          .\tools\windows-integration.ps1 `
+            -ExePath 'target\release\LoopW.exe' `
+            -SkipRadialInput `
+            -TimeoutSeconds 30
+
       - name: Create archive and checksum
         id: package
         shell: pwsh

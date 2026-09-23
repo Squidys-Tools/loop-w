@@ -27,18 +27,26 @@ unsafe impl Send for InstanceGuard {}
 
 /// Try to become the resident instance.
 /// - `Ok(Some(guard))`: we are first; keep `guard` alive for process life.
-/// - `Ok(None)`: another instance owns the mutex (activation already sent).
-pub fn acquire() -> Result<Option<InstanceGuard>, String> {
+/// - `Ok(None)`: another instance owns the mutex.
+///
+/// `forward` is `Some(command)` when the caller owns pipe delivery of a real
+/// CLI command (and needs the reply). In that case this function does **not**
+/// substitute a hard-coded `activate` and does not signal the activate event —
+/// the caller patient-forwards after seeing `Ok(None)`. `None` means bare
+/// activation: pipe `activate` first, then the raw event as fallback.
+pub fn acquire(forward: Option<&str>) -> Result<Option<InstanceGuard>, String> {
     let name = wide_null(MUTEX_NAME);
     unsafe {
         match CreateMutexW(None, true, PCWSTR(name.as_ptr())) {
             Ok(mutex) => {
                 if GetLastError() == ERROR_ALREADY_EXISTS {
                     let _ = CloseHandle(mutex);
-                    // Pipe first, raw event only as fallback (C# sends one
-                    // activation, not two — a double nudge would focus twice).
-                    if super::ipc::try_forward_to_running("activate").is_none() {
-                        signal_event();
+                    if forward.is_none() {
+                        // Pipe first, raw event only as fallback (C# sends one
+                        // activation, not two — a double nudge would focus twice).
+                        if super::ipc::try_forward_to_running("activate").is_none() {
+                            signal_event();
+                        }
                     }
                     Ok(None)
                 } else {
