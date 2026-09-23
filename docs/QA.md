@@ -8,17 +8,26 @@ before testing minimize, hide, stash, or focus actions.
 Status: `[ ]` not run, `[x]` passed, `[!]` blocked or not supported on this
 Windows configuration.
 
-The current automated baseline is a warning-free build and 39 pure tests. Live
-named-pipe responses and desktop actions still require the manual checks below.
-Re-run the automated baseline after every action-model change.
+The code baseline is clean: 105 binary tests plus 72 UI/settings contract
+tests pass (177 total), `cargo fmt -- --check` passes, `cargo build --locked`
+passes, and warning-denied Clippy passes. The bounded harness under `tools/`
+also covers resident lifecycle, IPC, disposable-window placement, and overlay
+styles. Its non-radial checks pass in the current environment; the synthetic
+trigger probe cannot currently open the radial window, so that path remains a
+manual check. Live taskbar appearance, canvas rendering, input behavior, and
+broad desktop actions still require the manual checks below. Re-run the
+automated baseline after every action-model change.
 
 ## 1. Build and resident lifecycle
 
-- [ ] Build `LoopW.csproj` with zero warnings and run all `LoopW.Tests` tests.
+- [ ] Verify the built executable on Windows after the automated baseline above.
 - [ ] Launch LoopW. The main window stays hidden and exactly one tray icon appears.
-- [x] Launch LoopW a second time. The existing instance activates; no second hook,
+- [ ] Launch LoopW a second time. The existing instance activates; no second hook,
   process, or tray icon remains.
-- [x] Close the settings window. It hides to the tray instead of exiting.
+- [ ] Close the settings window. It hides to the tray instead of exiting.
+- [ ] Confirm the Winit event-target helper does not appear in the taskbar or
+  Alt+Tab. The code-level suppression fix is implemented, but this desktop check
+  is unrun.
 - [ ] Choose Quit from the tray. The process and icon disappear and hooks are
   removed.
 - [ ] Enable launch at login, sign out, and sign back in. LoopW starts hidden.
@@ -58,6 +67,8 @@ Re-run the automated baseline after every action-model change.
 - [ ] Disable the radial menu. Keybinds and IPC actions still work.
 - [ ] Change radial radius, preview padding, corner radius, border, colors, and
   appearance mode. Changes apply without restarting the resident process.
+- [ ] Open the Radial and Preview settings pages. Both fixed-size canvases render
+  their shapes instead of a thin sliver at the tested Windows scale.
 - [ ] Configure a custom radial slot and center action. The settings labels may
   describe actions, but the active overlay remains geometry-only.
 - [ ] Test a preview over a dark, light, animated, and high-contrast window. It
@@ -132,7 +143,7 @@ does not target its own settings, radial, preview, or tray surfaces.
 
 ## 8. Settings, persistence, and recovery
 
-- [ ] Navigate Behavior, Radial, Preview, Appearance, and Advanced with mouse and
+- [ ] Navigate General, Radial menu, Preview, Appearance, and Advanced with mouse and
   keyboard. Focus indicators and keyboard navigation remain usable.
 - [ ] Add, rebind, cycle, bypass, and delete keybinds. Duplicate combinations are
   rejected inline and do not reach the runtime hook.
@@ -154,7 +165,7 @@ does not target its own settings, radial, preview, or tray surfaces.
 - [ ] Run `LoopW.exe list/actions` and confirm every exposed action is listed.
 - [ ] Run `LoopW.exe list/keybinds` and confirm the trigger, timing settings, and
   configured binds are returned without secrets or stale entries.
-- [x] Focus an external window, run `LoopW.exe direction/right`, and confirm the
+- [ ] Focus an external window, run `LoopW.exe direction/right`, and confirm the
   exact right-half frame.
 - [ ] Run each named action through `action/<name>` and compare it with the
   radial/keybind result.
@@ -180,12 +191,12 @@ does not target its own settings, radial, preview, or tray surfaces.
 
 ## 11. Final gate
 
-- [ ] Run the automated build and test commands from this document's companion
-  implementation plan.
+- [x] The automated baseline is clean: 155 tests pass, formatting is clean, the
+  locked build passes, and warning-denied Clippy passes.
 - [ ] Complete sections 1 through 10 on at least one local multi-monitor setup.
 - [ ] Complete mixed-DPI, RDP, elevated-app, and taskbar-layout checks or record
   explicit product limitations.
-- [ ] Update the implementation plan with the verified status and any remaining
+- [ ] Update `docs/ROADMAP.md` with the verified status and any remaining
   Windows-specific limitations.
 
 Packaging, signing, installer choice, update channels, and distribution are not
