@@ -16,6 +16,7 @@ pub enum Restriction {
     Invalid,
     LoopW,
     Hidden,
+    Minimized,
     Child,
     Tool,
     Owned,
@@ -52,6 +53,14 @@ pub fn evaluate(hwnd: u64) -> Decision {
     }
     if !native::is_visible(hwnd_native) {
         return denied(Restriction::Hidden, "The target window is hidden.");
+    }
+    // Minimized windows still report as visible; GetWindowRect returns a
+    // fake off-screen frame, so refuse before any geometry path reads it.
+    if native::is_iconic(hwnd_native) {
+        return denied(
+            Restriction::Minimized,
+            "The target window is minimized. Restore it before applying an action.",
+        );
     }
     let pid = native::process_id(hwnd_native);
     if pid == 0 || pid == native::own_process_id() {
@@ -97,20 +106,24 @@ pub fn evaluate(hwnd: u64) -> Decision {
 
 pub fn try_authorize_action(hwnd: u64, action: WindowAction) -> Result<(), &'static str> {
     let decision = evaluate(hwnd);
+    authorize_decision(&decision, action).inspect_err(|diagnostic| {
+        super::diagnostics::report_policy(diagnostic, action);
+    })
+}
+
+/// Pure mapping from a policy decision to an authorization result, split
+/// out from the Win32 inspection so it can be tested without a window.
+fn authorize_decision(decision: &Decision, action: WindowAction) -> Result<(), &'static str> {
     if !decision.allowed {
-        super::diagnostics::report_policy(decision.diagnostic, action);
         return Err(decision.diagnostic);
     }
     if decision.borderless_fullscreen && !allows_borderless_action(action) {
-        let diagnostic =
-            "The target is borderless fullscreen. Exit fullscreen in the app before applying a layout.";
-        super::diagnostics::report_policy(diagnostic, action);
-        return Err(diagnostic);
+        return Err(
+            "The target is borderless fullscreen. Exit fullscreen in the app before applying a layout.",
+        );
     }
     if !decision.resizable && requires_resize(action) {
-        let diagnostic = "The target window is non-resizable, so this layout action was skipped.";
-        super::diagnostics::report_policy(diagnostic, action);
-        return Err(diagnostic);
+        return Err("The target window is non-resizable, so this layout action was skipped.");
     }
     Ok(())
 }
@@ -260,5 +273,50 @@ mod tests {
         assert!(allows_borderless_action(WindowAction::Undo));
         assert!(!allows_borderless_action(WindowAction::LeftHalf));
         assert!(!allows_borderless_action(WindowAction::Fullscreen));
+    }
+
+    #[test]
+    fn minimized_decision_refuses_every_action() {
+        let minimized = denied(
+            Restriction::Minimized,
+            "The target window is minimized. Restore it before applying an action.",
+        );
+        let actions = [
+            WindowAction::LeftHalf,
+            WindowAction::Maximize,
+            WindowAction::Fullscreen,
+            WindowAction::Minimize,
+            WindowAction::Hide,
+            WindowAction::FocusUp,
+            WindowAction::FocusNextInStack,
+            WindowAction::Stash,
+            WindowAction::Undo,
+            WindowAction::RestoreInitialFrame,
+            WindowAction::Center,
+            WindowAction::NextScreen,
+        ];
+        for action in actions {
+            assert_eq!(
+                authorize_decision(&minimized, action),
+                Err("The target window is minimized. Restore it before applying an action."),
+                "minimized target must refuse {action:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn minimized_refusal_leaves_normal_decisions_untouched() {
+        let allowed = Decision {
+            allowed: true,
+            diagnostic: "",
+            restriction: Restriction::None,
+            resizable: true,
+            borderless_fullscreen: false,
+        };
+        assert!(authorize_decision(&allowed, WindowAction::LeftHalf).is_ok());
+        assert_eq!(
+            authorize_decision(&allowed, WindowAction::LeftHalf).err(),
+            None
+        );
     }
 }
