@@ -32,5 +32,6 @@ sensitive.
 
 The file uses the same path and keys as the previous C# build, so existing
 files load without loss. Edits in the settings window save automatically.
-A failed save keeps the last complete file and shows the error in the UI
-instead of silently dropping it.
+A failed save keeps the last complete file; the control reverts to that
+last saved value and a sticky error stays in the UI instead of silently
+dropping the attempt.
