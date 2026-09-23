@@ -16,8 +16,9 @@ the loader never panics on the desktop path.
 `settings::persistence` writes to a temp file in the same directory and
 renames over the original only after the write succeeds, so a crash
 mid-write keeps the last complete file. `settings::sync` pushes the save
-result back into the settings UI: on failure the control keeps its edited
-value visible alongside a sticky `save_error` instead of silently reverting.
+result back into the settings UI: on failure the control reverts to the
+last saved value and surfaces a sticky `save_error` instead of leaving an
+unsaved edit sitting in the shared mirror.
 
 Covered by the `load_report` + `sync` suites (invalid JSON, partial writes,
 migration). When the contract changes, update the normalizer and its tests
