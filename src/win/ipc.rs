@@ -1,10 +1,11 @@
 //! Same-user named-pipe command server + client.
 //!
 //! Ports `LoopCommandServer`/`LoopCommandClient`: pipe `LoopW-Commands`,
-//! byte mode, UTF-8 no-BOM lines, 256-char / 2 s limits, 3-attempt client
-//! with 250 ms connects, and the single-`ReadLine` wire quirk (multi-line
-//! list replies arrive first-line-only over the pipe; the local console
-//! path prints them in full).
+//! byte mode, UTF-8 no-BOM lines, 256-char / 2 s limits, a client that
+//! retries only until the command is written (never after), and the
+//! single-`ReadLine` wire quirk (multi-line list replies arrive
+//! first-line-only over the pipe; the local console path prints them in
+//! full).
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Condvar, OnceLock};
@@ -316,15 +317,20 @@ fn write_line(pipe: HANDLE, reply: &str) {
     }
 }
 
-/// Client: forward one command to the resident instance (3 attempts).
-/// Returns the first reply line on success (wire quirk preserved).
+/// Client: forward one command to the resident instance.
+/// Retries only until the command bytes are written; a lost reply after a
+/// successful write is reported as `None` and never resent (see
+/// [`try_forward_attempts`]). Returns the first reply line on success
+/// (wire quirk preserved).
 pub fn try_forward_to_running(command: &str) -> Option<String> {
     try_forward_attempts(command, 3)
 }
 
 /// Patient forward for the startup race: the resident may have just won the
 /// instance mutex and not yet bound the pipe. ~6s of WaitNamedPipe windows
-/// with short sleeps between them.
+/// with short sleeps between them. Same no-resend-after-write rule as
+/// [`try_forward_to_running`]: non-idempotent commands (nudge, cycle) must
+/// not run twice if the reply is delayed past the read deadline.
 pub fn try_forward_patiently(command: &str) -> Option<String> {
     try_forward_attempts(command, 24)
 }
@@ -379,14 +385,11 @@ fn try_forward_attempts(command: &str, attempts: u32) -> Option<String> {
                 let _ = CloseHandle(pipe);
                 return None;
             }
+            // Bytes are on the wire. Never resend: a delayed or lost reply
+            // must not re-run a non-idempotent command on the resident.
             let reply = read_reply_line(pipe);
             let _ = CloseHandle(pipe);
-            if reply.is_some() {
-                return reply;
-            }
-            if attempt + 1 < attempts {
-                std::thread::sleep(Duration::from_millis(50));
-            }
+            return reply;
         }
     }
     None
