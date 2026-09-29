@@ -1,0 +1,46 @@
+name: Rust gates
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A newer push to the same branch makes the in-flight run irrelevant.
+concurrency:
+  group: rust-gates-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gates:
+    # The crate declares `pub mod win;` unconditionally and its Win32
+    # dependencies are `[target.'cfg(windows)']`, so Windows is the only
+    # host that can compile it. Not a preference.
+    runs-on: windows-latest
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Set up Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache cargo build and registry
+        uses: Swatinem/rust-cache@v2
+
+      - name: Check formatting
+        run: cargo fmt -- --check
+
+      - name: Build
+        run: cargo build --locked
+
+      - name: Test
+        run: cargo test --all-targets --locked
+
+      - name: Lint
+        run: cargo clippy --all-targets --locked -- -D warnings
