@@ -138,12 +138,14 @@ LoopW is ready for a broader release when:
    visible and recoverable.
 5. Unsupported windows fail safely and tell the user what happened.
 
-Packaging is a separate decision after this gate. The repository currently has
-one GitHub Actions workflow, `publish.yml`; it runs when manually dispatched or
-when a `v*` tag is pushed. It checks formatting, tests, and warning-denied
-Clippy, builds the release EXE, and uploads the ZIP archive and checksum. Tag
-runs additionally create a GitHub Release. There is currently no workflow that
-runs automatically on every pull request.
+Packaging is a separate decision after this gate. There are two GitHub
+Actions workflows. `ci.yml` runs formatting, the locked build, the
+all-targets test suite, and warning-denied Clippy on `windows-latest` for
+pushes to `main`, for every pull request, and on manual dispatch.
+`publish.yml` runs when manually dispatched or when a `v*` tag is pushed. It
+checks formatting, tests, and warning-denied Clippy, builds the release EXE,
+and uploads the ZIP archive and checksum. Tag runs additionally create a
+GitHub Release.
 
 ## Development commands
 

@@ -1,10 +1,12 @@
 # Release
 
-There is one workflow, `.github/workflows/publish.yml`. It runs on manual
-dispatch or a `v*` tag push. It checks formatting, tests, and warning-denied
-Clippy, builds the release EXE, and uploads `LoopW-<label>.zip` plus its
-`.sha256`. Tag runs additionally create a GitHub Release. Nothing runs
-automatically on every pull request.
+There are two workflows. `ci.yml` runs on pushes to `main`, on every pull
+request, and on manual dispatch: it checks formatting, the locked build, the
+all-targets test suite, and warning-denied Clippy. `publish.yml` runs on
+manual dispatch or a `v*` tag push. It checks formatting, tests, and
+warning-denied Clippy, builds the release EXE, and uploads
+`LoopW-<label>.zip` plus its `.sha256`. Tag runs additionally create a
+GitHub Release.
 
 ## Ship when
 

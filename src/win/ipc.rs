@@ -137,7 +137,7 @@ impl Drop for PipeSecurity {
 
 fn current_user_sa() -> Option<PipeSecurity> {
     unsafe {
-        // Current user SID -> string -> SDDL "D:P(A;;GA;;;SY)(A;;GA;;;sid)".
+        // Current user SID -> string -> SDDL "O:<sid>D:P(A;;GA;;;SY)(A;;GA;;;<sid>)".
         let mut token = HANDLE::default();
         if OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut token).is_err() {
             return None;
@@ -168,7 +168,11 @@ fn current_user_sa() -> Option<PipeSecurity> {
         if sid.is_empty() {
             return None;
         }
-        let sddl = format!("D:P(A;;GA;;;SY)(A;;GA;;;{sid})");
+        // `O:` pins the owner to the user SID. Without it the pipe inherits the
+        // creating token's default owner, which is BUILTIN\Administrators on an
+        // elevated token, and the client's TokenUser comparison below would
+        // reject our own pipe.
+        let sddl = format!("O:{sid}D:P(A;;GA;;;SY)(A;;GA;;;{sid})");
         let sddl_wide = wide_null(&sddl);
         let mut descriptor = PSECURITY_DESCRIPTOR::default();
         let mut descriptor_size = 0u32;
@@ -532,14 +536,11 @@ pub fn reply_for(command: &str) -> String {
 mod tests {
     use super::*;
 
-    /// Same-user pipe ownership roundtrip: a pipe we create must verify
-    /// as self-owned (guards the CurrentUserOnly client check).
+    /// Same-user pipe ownership roundtrip: a pipe carrying the production
+    /// `current_user_sa` descriptor must verify as self-owned (guards the
+    /// CurrentUserOnly client check).
     #[test]
     fn pipe_owner_verifies_self_owned_pipe() {
-        use windows::Win32::Security::PSID;
-        let sid = self_user_sid();
-        assert!(sid.is_some(), "self_user_sid is None");
-        // Roundtrip against a freshly created pipe owned by us.
         let name = format!(
             r"\\.\pipe\LoopW-Debug-{}",
             std::time::SystemTime::now()
@@ -548,7 +549,8 @@ mod tests {
                 .as_nanos()
         );
         let wide = wide_null(&name);
-        unsafe {
+        let security = current_user_sa().expect("current-user security descriptor");
+        let owned = unsafe {
             let server = CreateNamedPipeW(
                 PCWSTR(wide.as_ptr()),
                 PIPE_ACCESS_DUPLEX,
@@ -557,7 +559,7 @@ mod tests {
                 4096,
                 4096,
                 0,
-                None,
+                Some(&security.attributes as *const SECURITY_ATTRIBUTES),
             );
             assert!(!server.is_invalid(), "create pipe");
             let client = CreateFileW(
@@ -573,9 +575,11 @@ mod tests {
             let owned = pipe_owned_by_self(client);
             let _ = CloseHandle(client);
             let _ = CloseHandle(server);
-            assert!(owned, "owner check fails on own pipe");
-        }
-        let _ = PSID::default();
+            owned
+        };
+        // The descriptor pins the owner, so this holds on an elevated token
+        // where the default owner would be BUILTIN\Administrators.
+        assert!(owned, "owner check fails on our own production pipe");
     }
 
     #[test]
