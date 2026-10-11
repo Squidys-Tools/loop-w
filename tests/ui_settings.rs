@@ -121,6 +121,42 @@ fn failed_commit_reverts_the_ui_candidate_and_sets_sticky_error() {
 }
 
 #[test]
+fn reduce_motion_defaults_to_following_windows() {
+    let defaults = AppSettings::default();
+    assert_eq!(
+        defaults.reduce_motion,
+        core::motion::MotionPreference::FollowWindows
+    );
+
+    // An older settings file without the key keeps the default: the Windows
+    // preference is honored out of the box.
+    let older: AppSettings = serde_json::from_str("{\"TriggerVk\": 65}").expect("tolerant loader");
+    assert_eq!(
+        older.reduce_motion,
+        core::motion::MotionPreference::FollowWindows
+    );
+}
+
+#[test]
+fn reduce_motion_decision_follows_the_persisted_preference() {
+    use core::motion::{motion_reduced, MotionPreference};
+
+    // The persisted value and the live Windows flag fold into one decision.
+    assert!(motion_reduced(MotionPreference::FollowWindows, false));
+    assert!(!motion_reduced(MotionPreference::FollowWindows, true));
+    assert!(motion_reduced(MotionPreference::Reduced, true));
+    assert!(!motion_reduced(MotionPreference::FullMotion, false));
+
+    // The value the UI round-trips through `commit` normalizes intact. The
+    // Windows flag is `true` (motion allowed), so only the persisted
+    // preference can drive the decision here.
+    let mut settings = AppSettings::default();
+    settings.reduce_motion = MotionPreference::Reduced;
+    settings.normalize();
+    assert!(motion_reduced(settings.reduce_motion, true));
+}
+
+#[test]
 fn matching_preset_tracks_the_appearance_page_state() {
     let preset = &ui::theme::PRESETS[1];
     assert_eq!(

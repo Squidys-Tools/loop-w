@@ -3,10 +3,12 @@
 use iced::widget::{button, column, container, pick_list, row, text, text_input};
 use iced::{Element, Length};
 
+use crate::core::motion::MotionPreference;
 use crate::ui::app::{Message, Section, State};
 use crate::ui::theme::{matching_preset, PRESET_NAMES};
 
 const APPEARANCE_MODES: [&str; 3] = ["Dark", "FollowWindows", "Light"];
+const MOTION_MODES: [&str; 3] = ["Follow Windows", "Reduced motion", "Full motion"];
 
 pub fn view(state: &State) -> Element<'_, Message> {
     let settings = &state.settings;
@@ -31,6 +33,16 @@ pub fn view(state: &State) -> Element<'_, Message> {
             ),
         ]
         .spacing(12),
+        row![
+            text("Motion").size(14),
+            pick_list(
+                &MOTION_MODES[..],
+                Some(settings.reduce_motion.label()),
+                |mode: &str| Message::SetMotionPreference(mode.to_string()),
+            ),
+        ]
+        .spacing(12),
+        text(motion_note(state)).size(12),
         row![
             text(format!("Preset: {current}")).size(14),
             pick_list(&PRESET_NAMES[..], Some(current), |preset: &str| {
@@ -76,6 +88,29 @@ pub fn view(state: &State) -> Element<'_, Message> {
         .into()
 }
 
+/// Resolved motion state in one sentence-case line.
+///
+/// LoopW's surfaces are instant today, so the line reports what the
+/// preference resolves to rather than implying a live effect. Nonessential
+/// transitions consult `reduced_motion` as they are added.
+fn motion_note(state: &State) -> String {
+    match state.settings.reduce_motion {
+        MotionPreference::FollowWindows => {
+            if crate::ui::runtime::reduced_motion(state) {
+                "Windows is set to reduce motion; LoopW follows it.".to_string()
+            } else {
+                "Windows allows motion; LoopW follows it.".to_string()
+            }
+        }
+        MotionPreference::Reduced => {
+            "Motion stays reduced even when Windows allows it.".to_string()
+        }
+        MotionPreference::FullMotion => {
+            "Motion stays full even when Windows asks to reduce it.".to_string()
+        }
+    }
+}
+
 fn color_row<'a>(
     label: &'static str,
     value: &str,
@@ -97,4 +132,19 @@ fn color_row<'a>(
     ]
     .spacing(10)
     .into()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::motion::MOTION_PREFERENCES;
+
+    #[test]
+    fn motion_modes_match_the_persisted_labels() {
+        // The pick list shows these strings; `MotionPreference::from_label`
+        // parses them back. A rename in core would silently blank the control
+        // without this guard.
+        let labels: Vec<&str> = MOTION_PREFERENCES.iter().map(|p| p.label()).collect();
+        assert_eq!(MOTION_MODES.to_vec(), labels);
+    }
 }

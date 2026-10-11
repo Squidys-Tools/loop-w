@@ -14,8 +14,8 @@ logic, settings contracts, resident lifecycle, IPC, placement, overlay window
 styles, and tray-popup state. Manual visual checks across window types,
 display scales, and Windows configurations remain tracked in the QA checklist.
 
-The current test inventory is 108 binary tests plus 72 UI/settings contract
-tests, for 180 tests under `cargo test --all-targets --locked`. The locked
+The current test inventory is 118 binary tests plus 82 UI/settings contract
+tests, for 200 tests under `cargo test --all-targets --locked`. The locked
 build, formatting check, tests, and warnings-denied Clippy are the release
 baseline. A bounded Windows integration harness lives under `tools/`; its
 environment-sensitive trigger-input limitation and the measured release
@@ -173,9 +173,9 @@ summary. Use `stop --dry-run` when inspecting cleanup before allowing it.
   checks; physical-input and broad desktop validation remain environment-bound.
   Pure logic it depends on is tested in `src/core`.
 - The former `src/ui/app.rs` monolith is split into focused settings, runtime,
-  and window modules. `src/win/stash_service.rs`, `src/win/hooks.rs`,
-  `src/core/frame_math.rs`, and `src/win/ipc.rs` remain larger follow-up
-  candidates; new code should stay modular.
+  and window modules. `src/ui/app.rs`, `src/win/stash_service.rs`,
+  `src/win/hooks.rs`, `src/core/frame_math.rs`, and `src/win/ipc.rs` remain
+  larger follow-up candidates; new code should stay modular.
 
 ## License
 

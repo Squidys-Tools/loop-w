@@ -332,6 +332,29 @@ pub fn double_click_time() -> u32 {
     unsafe { GetDoubleClickTime() }
 }
 
+/// Whether Windows currently has "show animations" enabled.
+///
+/// Reports the client-area animation preference with
+/// `SPI_GETCLIENTAREAANIMATION`, which returns the BOOL through the
+/// `pvParam` out-parameter. A failed call reports `true` so an unreadable
+/// preference never suppresses motion the OS still allows.
+pub fn animations_enabled() -> bool {
+    unsafe {
+        let mut enabled = BOOL(1);
+        let ok = SystemParametersInfoW(
+            SPI_GETCLIENTAREAANIMATION,
+            0,
+            Some(&mut enabled as *mut BOOL as *mut core::ffi::c_void),
+            SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS(0),
+        );
+        if ok.is_ok() {
+            enabled.as_bool()
+        } else {
+            true
+        }
+    }
+}
+
 pub fn dpi_for_window(hwnd: HWND) -> u32 {
     unsafe {
         let dpi = GetDpiForWindow(hwnd);

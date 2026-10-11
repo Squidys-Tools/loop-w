@@ -67,8 +67,9 @@ The raw sample JSON from this run is preserved at
 The cleanup pass was verified on 2026-09-11 with the same release artifact:
 
 - `cargo fmt --all -- --check`: passed.
-- `cargo test --locked`: 180 passed (108 binary tests and 72 UI/settings
-  contract tests).
+- `cargo test --locked`: the 2026-09-11 run recorded 180 (108 binary tests
+  and 72 UI/settings contract tests). The suite has grown since; the current
+  gate is 200 (118 binary tests and 82 UI/settings contract tests).
 - `cargo clippy --all-targets --locked -- -D warnings`: passed.
 - `cargo build --release --locked`: passed.
 - `tools/performance-measurement.ps1`: parsed successfully.

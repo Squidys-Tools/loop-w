@@ -35,8 +35,8 @@ The following product areas are implemented:
   delivery.
 - A same-user named-pipe command server supports activation, action listing,
   keybind listing, directional actions, and named actions.
-- The automated suite currently contains 108 binary tests and 72 UI/settings
-  contract tests, for 180 tests in total. It covers frame math, radial
+- The automated suite currently contains 118 binary tests and 82 UI/settings
+  contract tests, for 200 tests in total. It covers frame math, radial
   geometry, cycles, navigation, settings normalization, stash calculations,
   drag snapping, and command parsing.
 
@@ -53,10 +53,9 @@ is the desktop test checklist.
   Both canvases now use local coordinates, fixed dimensions, and cached
   geometry. The remaining desktop visual sign-off is tracked in `BUGS.md`.
 - [x] Split the former `src/ui/app.rs` monolith into focused settings, runtime,
-  and window modules. The remaining large Win32/core modules are follow-up
-  refactors:
-  `src/win/stash_service.rs`, `src/win/hooks.rs`, `src/core/frame_math.rs`, and
-  `src/win/ipc.rs`.
+  and window modules. The remaining large modules are follow-up refactors:
+  `src/ui/app.rs`, `src/win/stash_service.rs`, `src/win/hooks.rs`,
+  `src/core/frame_math.rs`, and `src/win/ipc.rs`.
 
 ## Next work
 
@@ -105,7 +104,12 @@ window action behaves correctly on every Windows setup.
 
 - [ ] Verify contrast and focus visibility for dark, light, Windows-following,
   and custom accent settings.
-- [ ] Honor the Windows reduced-motion preference for nonessential UI motion.
+- [x] Honor the Windows reduced-motion preference for nonessential UI motion.
+  The Windows animation flag is read through
+  `win::native::animations_enabled`, and the persisted preference (follow
+  Windows, reduced, full) is resolved by `core::motion::motion_reduced` with a
+  toggle in the Appearance section. LoopW's surfaces are instant today, so the
+  preference currently gates future transitions rather than existing ones.
 - [ ] Confirm that all section resets leave unrelated settings and external
   windows untouched.
 - [ ] Keep the active radial overlay text-free while settings assignments and
@@ -122,7 +126,7 @@ window action behaves correctly on every Windows setup.
 
 ## Release gate
 
-The current automated gate is met: 180 tests pass, formatting is clean, the
+The current automated gate is met: 200 tests pass, formatting is clean, the
 locked build passes, and warning-denied Clippy passes. The broader release gate
 is not met because the desktop checklist has not been run.
 

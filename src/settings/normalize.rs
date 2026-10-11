@@ -8,6 +8,7 @@ use std::collections::{HashMap, HashSet};
 use crate::core::actions::WindowAction;
 use crate::core::hotkey::{TRIGGER_MODIFIER_SIDES, VK_CAPITAL};
 use crate::core::monitor::MonitorMoveSizePolicy;
+use crate::core::motion::{MotionPreference, MOTION_PREFERENCES};
 use crate::core::radial::SLOT_COUNT;
 use crate::core::radial_targets::{normalize_target, RadialTargetKind, RadialTargetSettings};
 use crate::core::stash::{StashEdge, StashRect};
@@ -62,6 +63,10 @@ impl AppSettings {
             MonitorMoveSizePolicy::PreservePixels | MonitorMoveSizePolicy::PreserveLogicalSize
         ) {
             self.monitor_move_policy = MonitorMoveSizePolicy::PreservePixels;
+        }
+
+        if !MOTION_PREFERENCES.contains(&self.reduce_motion) {
+            self.reduce_motion = MotionPreference::default();
         }
 
         self.global_padding = self.global_padding.clamp(0, 128);
@@ -263,5 +268,17 @@ mod tests {
         settings.radial_slots[0].keybind_id = "missing".to_string();
         settings.normalize();
         assert_eq!(settings.radial_slots[0].kind, RadialTargetKind::None);
+    }
+
+    #[test]
+    fn valid_motion_preference_survives_normalization() {
+        // Out-of-range integers cannot be constructed in Rust; serde_repr's
+        // catch-all variant repairs them at parse time (see persistence tests).
+        let mut settings = AppSettings {
+            reduce_motion: MotionPreference::Reduced,
+            ..AppSettings::default()
+        };
+        settings.normalize();
+        assert_eq!(settings.reduce_motion, MotionPreference::Reduced);
     }
 }

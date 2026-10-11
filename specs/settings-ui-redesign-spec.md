@@ -115,6 +115,7 @@ Recommended primary sections:
    - Curated visual presets
    - Accent and radial/preview visual treatment
    - Advanced custom color editor in the same section
+   - Nonessential-motion preference: follow Windows, reduced, or full
 5. **Advanced**
    - Keybind list: add, rebind, action selection, cycle behavior, bypass-trigger behavior, delete
    - Raw theme token editing if it is too dense for the default Appearance view; the entry point must remain clear and remain within the broader appearance/advanced model
@@ -419,7 +420,10 @@ Important preservation rules:
 - [ ] Contrast remains readable in supported appearance modes and with safe/custom accent values.
 - [ ] The UI is usable at 100%, 125%, 150%, and 200% Windows scaling.
 - [ ] Important state is not conveyed by color alone.
-- [ ] Nonessential motion can be reduced or disabled.
+- [ ] Nonessential motion can be reduced or disabled. (The preference ships —
+  Appearance has a follow-Windows/reduced/full control backed by
+  `core::motion` — but no surface animates yet, so there is nothing to
+  observe by hand. Check this when the first transition consults it.)
 
 ### Regression protection
 

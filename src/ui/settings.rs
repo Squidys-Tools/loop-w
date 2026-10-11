@@ -3,6 +3,7 @@ use iced::Task;
 use crate::core::actions::WindowAction;
 use crate::core::hotkey::TriggerModifierSide;
 use crate::core::monitor::MonitorMoveSizePolicy;
+use crate::core::motion::MotionPreference;
 use crate::settings::persistence;
 use crate::settings::AppSettings;
 use crate::win;
@@ -88,6 +89,9 @@ pub(super) fn try_update(state: &mut State, message: Message) -> Result<Task<Mes
             }
             state.section = section;
             state.confirming_reset_all = false;
+            // The resolved motion line reads the live Windows flag; sampling
+            // here keeps it truthful without a per-frame syscall.
+            super::runtime::refresh_windows_motion(state);
             Ok(Task::none())
         }
         Message::BeginTriggerCapture => {
@@ -309,6 +313,17 @@ pub(super) fn try_update(state: &mut State, message: Message) -> Result<Task<Mes
         Message::SetAppearanceMode(mode) => {
             state.settings.appearance_mode = mode;
             commit(state, "Saved");
+            Ok(Task::none())
+        }
+        Message::SetMotionPreference(label) => {
+            // The pick list sends the user-facing label; an unrecognized one
+            // leaves the persisted value untouched instead of writing
+            // something the normalizer has to repair.
+            if let Some(preference) = MotionPreference::from_label(&label) {
+                state.settings.reduce_motion = preference;
+                super::runtime::refresh_windows_motion(state);
+                commit(state, "Saved");
+            }
             Ok(Task::none())
         }
         Message::ApplyPreset(name) => {
@@ -579,6 +594,7 @@ fn reset_section(state: &mut State, section: Section) {
         }
         Section::Appearance => {
             state.settings.appearance_mode = defaults.appearance_mode;
+            state.settings.reduce_motion = defaults.reduce_motion;
             state.settings.accent_color = defaults.accent_color;
             state.settings.radial_sector_fill = defaults.radial_sector_fill;
             state.settings.radial_sector_stroke = defaults.radial_sector_stroke;

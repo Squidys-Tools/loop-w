@@ -19,6 +19,10 @@ pub enum FallbackReason {
     /// Malformed JSON syntax.
     InvalidJson,
     /// Well-formed JSON with wrong types or unknown enum discriminants.
+    ///
+    /// `ReduceMotion` is the exception: its catch-all variant repairs an
+    /// unknown in-range integer on that field alone, so such a file still
+    /// parses and classifies normally.
     InvalidTypes,
 }
 
@@ -66,7 +70,7 @@ pub struct LoadReport {
 }
 
 /// Every persisted top-level PascalCase key. Absence means an older file.
-pub const EXPECTED_KEYS: [&str; 41] = [
+pub const EXPECTED_KEYS: [&str; 42] = [
     "TriggerVk",
     "TriggerModifiers",
     "TriggerModifierSide",
@@ -79,6 +83,7 @@ pub const EXPECTED_KEYS: [&str; 41] = [
     "CenterTarget",
     "LaunchAtLogin",
     "AppearanceMode",
+    "ReduceMotion",
     "RadialEnabled",
     "CursorInteractionEnabled",
     "RadialOuterRadius",
@@ -126,6 +131,8 @@ pub fn fallback(reason: FallbackReason, detail: Option<String>) -> LoadReport {
 
 /// `is_eof` catches truncated/partial writes; `is_data` catches wrong JSON
 /// types and out-of-range enum discriminants; the rest is syntax.
+/// `ReduceMotion` never reaches this path for an in-range unknown integer
+/// (its catch-all variant repairs it before parsing can fail).
 pub fn reason_for_parse_error(error: &serde_json::Error) -> FallbackReason {
     if error.is_eof() {
         FallbackReason::Truncated
@@ -272,6 +279,10 @@ mod tests {
         let report = load_detailed_from(&path);
         assert_eq!(report.outcome, LoadOutcome::Migrated);
         assert_eq!(report.settings.trigger_vk, 65);
+        assert_eq!(
+            report.settings.reduce_motion,
+            crate::core::motion::MotionPreference::FollowWindows
+        );
         assert_eq!(
             report.settings.appearance_mode,
             expected_defaults().appearance_mode

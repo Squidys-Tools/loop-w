@@ -96,7 +96,7 @@ cargo clippy --all-targets --locked -- -D warnings
 
 During iteration run the narrowest check that covers the change
 (`cargo test <name>`, one suite). Before calling work done run the full gate
-above — this repo is small enough that the full suite (180 tests) *is* the
+above — this repo is small enough that the full suite (200 tests) *is* the
 gate, plus `verify-loopw` for Win32 behavior and `docs/QA.md` for anything
 involving trigger, overlay, DPI, or real windows. A passing IPC reply without
 a target-geometry or overlay-ownership assertion is incomplete. A skipped
@@ -108,9 +108,9 @@ radial probe is a skip, not a pass.
   New code follows that split. Do not put hit-testing, hook logic, or pipe
   I/O into renderers, and do not put drawing math into the hook thread.
 - Keep files small and modular. No 1000+ line files. The known split
-  candidates are `src/win/stash_service.rs`, `src/win/hooks.rs`,
-  `src/core/frame_math.rs`, and `src/win/ipc.rs` — shrink new code instead of
-  growing them.
+  candidates are `src/ui/app.rs`, `src/win/stash_service.rs`,
+  `src/win/hooks.rs`, `src/core/frame_math.rs`, and `src/win/ipc.rs` — shrink
+  new code instead of growing them.
 - Prefer total functions and explicit fallbacks: unknown actions, missing
   keybinds, stale stash records, and bad settings fall back to a safe no-op,
   never to garbage placement or a panic on the desktop path.
