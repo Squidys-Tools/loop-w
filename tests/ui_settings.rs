@@ -147,13 +147,25 @@ fn reduce_motion_decision_follows_the_persisted_preference() {
     assert!(motion_reduced(MotionPreference::Reduced, true));
     assert!(!motion_reduced(MotionPreference::FullMotion, false));
 
-    // The value the UI round-trips through `commit` normalizes intact. The
-    // Windows flag is `true` (motion allowed), so only the persisted
-    // preference can drive the decision here.
-    let mut settings = AppSettings::default();
-    settings.reduce_motion = MotionPreference::Reduced;
-    settings.normalize();
-    assert!(motion_reduced(settings.reduce_motion, true));
+    // The value the UI persists through `commit` drives the decision even
+    // when Windows allows motion.
+    let mut candidate = AppSettings::default();
+    candidate.reduce_motion = MotionPreference::Reduced;
+    let mut persisted = None;
+    let report = sync::commit(
+        candidate,
+        AppSettings::default(),
+        |to_save| {
+            persisted = Some(to_save.clone());
+            true
+        },
+        "Saved",
+    );
+
+    assert!(report.succeeded);
+    let persisted = persisted.expect("commit should persist the candidate");
+    assert_eq!(persisted, report.settings);
+    assert!(motion_reduced(persisted.reduce_motion, true));
 }
 
 #[test]

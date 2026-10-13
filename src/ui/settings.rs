@@ -595,6 +595,7 @@ fn reset_section(state: &mut State, section: Section) {
         Section::Appearance => {
             state.settings.appearance_mode = defaults.appearance_mode;
             state.settings.reduce_motion = defaults.reduce_motion;
+            super::runtime::refresh_windows_motion(state);
             state.settings.accent_color = defaults.accent_color;
             state.settings.radial_sector_fill = defaults.radial_sector_fill;
             state.settings.radial_sector_stroke = defaults.radial_sector_stroke;

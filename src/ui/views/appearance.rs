@@ -97,9 +97,9 @@ fn motion_note(state: &State) -> String {
     match state.settings.reduce_motion {
         MotionPreference::FollowWindows => {
             if crate::ui::runtime::reduced_motion(state) {
-                "Windows is set to reduce motion; LoopW follows it.".to_string()
+                "LoopW is set to reduce motion while following Windows.".to_string()
             } else {
-                "Windows allows motion; LoopW follows it.".to_string()
+                "LoopW is set to allow motion while following Windows.".to_string()
             }
         }
         MotionPreference::Reduced => {

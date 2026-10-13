@@ -104,12 +104,13 @@ window action behaves correctly on every Windows setup.
 
 - [ ] Verify contrast and focus visibility for dark, light, Windows-following,
   and custom accent settings.
-- [x] Honor the Windows reduced-motion preference for nonessential UI motion.
-  The Windows animation flag is read through
+- [ ] Apply the reduced-motion preference to nonessential UI motion.
+  Preference plumbing is complete: the Windows animation flag is
+  read through
   `win::native::animations_enabled`, and the persisted preference (follow
   Windows, reduced, full) is resolved by `core::motion::motion_reduced` with a
-  toggle in the Appearance section. LoopW's surfaces are instant today, so the
-  preference currently gates future transitions rather than existing ones.
+  control in the Appearance section. LoopW's surfaces are instant today, so
+  this preference does not yet change an existing transition.
 - [ ] Confirm that all section resets leave unrelated settings and external
   windows untouched.
 - [ ] Keep the active radial overlay text-free while settings assignments and
