@@ -76,6 +76,27 @@ pub(super) fn subscription(state: &State) -> Subscription<Message> {
     Subscription::batch(subscriptions)
 }
 
+/// Whether nonessential motion must be suppressed right now.
+///
+/// Folds the persisted preference with the sampled Windows flag so renderers
+/// never combine the two values themselves. Lives beside the other
+/// runtime-owned state refresh helpers.
+pub(super) fn reduced_motion(state: &State) -> bool {
+    crate::core::motion::motion_reduced(
+        state.settings.reduce_motion,
+        state.windows_animations_enabled,
+    )
+}
+
+/// Re-read the Windows animation flag. Called at boot, on settings-window
+/// open, on section navigation, and when the preference changes — never per
+/// frame, so a view build never issues a syscall.
+pub(super) fn refresh_windows_motion(state: &mut State) {
+    state.windows_animations_enabled = native::animations_enabled();
+}
+
+// --- per-frame pump ---
+
 /// Once-per-frame pump: events, tray, stash, snap, overlay hover, patching.
 pub(super) fn frame_tick(state: &mut State) -> Task<Message> {
     let mut tasks: Vec<Task<Message>> = Vec::new();

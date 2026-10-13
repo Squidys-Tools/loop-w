@@ -12,6 +12,7 @@ pub mod hotkey;
 pub mod identity;
 pub mod keybind_match;
 pub mod monitor;
+pub mod motion;
 pub mod nav;
 pub mod radial;
 pub mod radial_targets;

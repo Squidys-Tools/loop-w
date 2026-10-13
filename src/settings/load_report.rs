@@ -6,6 +6,7 @@
 //! "reset to defaults" without changing the C# JSON contract.
 
 use super::model::AppSettings;
+use crate::core::motion::MOTION_PREFERENCES;
 
 /// Why a load fell back to defaults instead of using the file.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -19,6 +20,10 @@ pub enum FallbackReason {
     /// Malformed JSON syntax.
     InvalidJson,
     /// Well-formed JSON with wrong types or unknown enum discriminants.
+    ///
+    /// `ReduceMotion` is the exception: its catch-all variant repairs an
+    /// unknown in-range integer on that field alone, so such a file still
+    /// parses and classifies normally.
     InvalidTypes,
 }
 
@@ -29,7 +34,7 @@ pub enum LoadOutcome {
     Clean,
     /// An older file: one or more expected keys absent, filled with defaults.
     Migrated,
-    /// All keys present but `normalize` clamped or repaired a value.
+    /// All keys present but parsing or `normalize` repaired a value.
     Repaired,
     /// The file was unusable; normalized defaults were returned.
     Fallback(FallbackReason),
@@ -66,7 +71,7 @@ pub struct LoadReport {
 }
 
 /// Every persisted top-level PascalCase key. Absence means an older file.
-pub const EXPECTED_KEYS: [&str; 41] = [
+pub const EXPECTED_KEYS: [&str; 42] = [
     "TriggerVk",
     "TriggerModifiers",
     "TriggerModifierSide",
@@ -79,6 +84,7 @@ pub const EXPECTED_KEYS: [&str; 41] = [
     "CenterTarget",
     "LaunchAtLogin",
     "AppearanceMode",
+    "ReduceMotion",
     "RadialEnabled",
     "CursorInteractionEnabled",
     "RadialOuterRadius",
@@ -126,6 +132,8 @@ pub fn fallback(reason: FallbackReason, detail: Option<String>) -> LoadReport {
 
 /// `is_eof` catches truncated/partial writes; `is_data` catches wrong JSON
 /// types and out-of-range enum discriminants; the rest is syntax.
+/// `ReduceMotion` never reaches this path for an in-range unknown integer
+/// (its catch-all variant repairs it before parsing can fail).
 pub fn reason_for_parse_error(error: &serde_json::Error) -> FallbackReason {
     if error.is_eof() {
         FallbackReason::Truncated
@@ -137,17 +145,25 @@ pub fn reason_for_parse_error(error: &serde_json::Error) -> FallbackReason {
 }
 
 /// Classify a successfully parsed file: missing keys mean an older version
-/// (migrated); otherwise a `normalize` diff means repaired values.
+/// (migrated); otherwise parse-time or `normalize` repairs are reported.
 pub fn outcome_for(text: &str, parsed: &AppSettings, normalized: &AppSettings) -> LoadOutcome {
-    let migrated = match serde_json::from_str::<serde_json::Value>(text) {
-        Ok(serde_json::Value::Object(map)) => {
-            EXPECTED_KEYS.iter().any(|key| !map.contains_key(*key))
-        }
-        _ => false,
-    };
+    let document = serde_json::from_str::<serde_json::Value>(text).ok();
+    let migrated = document
+        .as_ref()
+        .and_then(serde_json::Value::as_object)
+        .is_some_and(|map| EXPECTED_KEYS.iter().any(|key| !map.contains_key(*key)));
+    let repaired_motion_preference = document
+        .as_ref()
+        .and_then(|value| value.get("ReduceMotion"))
+        .and_then(serde_json::Value::as_u64)
+        .is_some_and(|raw| {
+            !MOTION_PREFERENCES
+                .iter()
+                .any(|preference| u64::from(*preference as u8) == raw)
+        });
     if migrated {
         LoadOutcome::Migrated
-    } else if normalized != parsed {
+    } else if normalized != parsed || repaired_motion_preference {
         LoadOutcome::Repaired
     } else {
         LoadOutcome::Clean
@@ -265,6 +281,23 @@ mod tests {
     }
 
     #[test]
+    fn unknown_reduce_motion_is_reported_as_repaired() {
+        let (dir, path) = temp_path();
+        let mut value = serde_json::to_value(AppSettings::default()).unwrap();
+        value["ReduceMotion"] = serde_json::json!(99);
+        std::fs::write(&path, serde_json::to_string_pretty(&value).unwrap()).unwrap();
+
+        let report = load_detailed_from(&path);
+
+        assert_eq!(report.outcome, LoadOutcome::Repaired);
+        assert_eq!(
+            report.settings.reduce_motion,
+            crate::core::motion::MotionPreference::FollowWindows
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn old_version_missing_fields_migrate() {
         let (dir, path) = temp_path();
         // An old file with only the trigger: new fields fill from defaults.
@@ -272,6 +305,10 @@ mod tests {
         let report = load_detailed_from(&path);
         assert_eq!(report.outcome, LoadOutcome::Migrated);
         assert_eq!(report.settings.trigger_vk, 65);
+        assert_eq!(
+            report.settings.reduce_motion,
+            crate::core::motion::MotionPreference::FollowWindows
+        );
         assert_eq!(
             report.settings.appearance_mode,
             expected_defaults().appearance_mode

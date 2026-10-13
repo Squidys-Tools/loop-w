@@ -55,7 +55,7 @@ impl Section {
             Section::General => "Trigger and launch",
             Section::Radial => "Menu shape and slots",
             Section::Preview => "Target preview and snapping",
-            Section::Appearance => "Theme and colors",
+            Section::Appearance => "Theme, motion, and colors",
             Section::Advanced => "Keybinds and recovery",
         }
     }
@@ -95,6 +95,7 @@ pub enum Message {
     NudgeStashHitZone(i32),
     NudgeStashDelay(i32),
     SetAppearanceMode(String),
+    SetMotionPreference(String),
     ApplyPreset(String),
     EditAccent(String),
     EditSectorFill(String),
@@ -179,6 +180,11 @@ pub(super) struct PreviewSession {
 /// Mutable UI + runtime state.
 pub struct State {
     pub settings: AppSettings,
+    /// Live Windows animation flag, sampled at boot and whenever the settings
+    /// surface opens or the preference changes — never per frame, so a view
+    /// build never issues a syscall and the 16 ms overlay cadence never polls
+    /// it 60 times a second.
+    pub(super) windows_animations_enabled: bool,
     pub section: Section,
     pub status: String,
     pub color_error: Option<String>,
@@ -321,6 +327,7 @@ impl State {
                 status,
                 color_error: None,
                 save_error,
+                windows_animations_enabled: native::animations_enabled(),
                 confirming_reset_all: false,
                 capturing_trigger: false,
                 capturing_keybind: None,
@@ -359,6 +366,10 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
             if state.main_id != Some(id) {
                 return Task::none();
             }
+            // Sample the Windows animation flag each time the settings window
+            // opens: the user may have changed the OS preference while LoopW
+            // stayed tray-resident.
+            super::runtime::refresh_windows_motion(state);
             Task::none()
         }
         Message::RadialOpened(id) => {
@@ -893,6 +904,7 @@ mod tests {
             status: String::new(),
             color_error: None,
             save_error: None,
+            windows_animations_enabled: true,
             confirming_reset_all: false,
             capturing_trigger: false,
             capturing_keybind: None,
@@ -908,6 +920,26 @@ mod tests {
             pending_target: None,
             settings_revision: 0,
         }
+    }
+
+    #[test]
+    fn motion_preference_resolves_against_the_windows_flag() {
+        use crate::core::motion::MotionPreference;
+
+        let mut state = test_state();
+        state.windows_animations_enabled = false;
+
+        // Follow Windows mirrors the OS flag.
+        state.settings.reduce_motion = MotionPreference::FollowWindows;
+        assert!(crate::ui::runtime::reduced_motion(&state));
+
+        // An explicit choice wins in both directions.
+        state.settings.reduce_motion = MotionPreference::FullMotion;
+        assert!(!crate::ui::runtime::reduced_motion(&state));
+        state.windows_animations_enabled = true;
+        assert!(!crate::ui::runtime::reduced_motion(&state));
+        state.settings.reduce_motion = MotionPreference::Reduced;
+        assert!(crate::ui::runtime::reduced_motion(&state));
     }
 
     #[test]

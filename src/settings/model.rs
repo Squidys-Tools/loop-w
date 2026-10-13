@@ -11,6 +11,7 @@ use crate::core::hotkey::{
     TriggerModifierSide, MOD_ALT, MOD_CONTROL, MOD_SHIFT, MOD_WIN, VK_CAPITAL, VK_SPACE,
 };
 use crate::core::monitor::MonitorMoveSizePolicy;
+use crate::core::motion::MotionPreference;
 use crate::core::radial_targets::{default_center, default_slots, RadialTargetSettings};
 use crate::core::stash::StashRecord;
 
@@ -89,6 +90,8 @@ pub struct AppSettings {
     pub launch_at_login: bool,
     #[serde(default = "default_appearance", rename = "AppearanceMode")]
     pub appearance_mode: String,
+    #[serde(default, rename = "ReduceMotion")]
+    pub reduce_motion: MotionPreference,
     #[serde(default = "default_true", rename = "RadialEnabled")]
     pub radial_enabled: bool,
     #[serde(default = "default_true", rename = "CursorInteractionEnabled")]
@@ -222,6 +225,7 @@ impl Default for AppSettings {
             center_target: default_center(),
             launch_at_login: false,
             appearance_mode: default_appearance(),
+            reduce_motion: MotionPreference::default(),
             radial_enabled: true,
             cursor_interaction_enabled: true,
             radial_outer_radius: default_outer(),

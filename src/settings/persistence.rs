@@ -126,6 +126,43 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
     }
 
+    #[test]
+    fn reduce_motion_round_trips_through_the_file() {
+        let dir =
+            std::env::temp_dir().join(format!("loopw-test-{}", uuid::Uuid::new_v4().simple()));
+        let path = dir.join("settings.json");
+        let mut settings = AppSettings {
+            reduce_motion: crate::core::motion::MotionPreference::Reduced,
+            ..AppSettings::default()
+        };
+        assert!(save_to(&mut settings, &path));
+        let loaded = load_from(&path);
+        assert_eq!(
+            loaded.reduce_motion,
+            crate::core::motion::MotionPreference::Reduced
+        );
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn out_of_range_reduce_motion_repairs_only_that_field() {
+        let dir =
+            std::env::temp_dir().join(format!("loopw-test-{}", uuid::Uuid::new_v4().simple()));
+        let path = dir.join("settings.json");
+        std::fs::create_dir_all(&dir).unwrap();
+        // serde_repr's catch-all variant repairs an unknown in-range
+        // integer, so the rest of the file survives instead of falling
+        // back wholesale.
+        std::fs::write(&path, r#"{"TriggerVk": 65, "ReduceMotion": 99}"#).unwrap();
+        let loaded = load_from(&path);
+        assert_eq!(
+            loaded.reduce_motion,
+            crate::core::motion::MotionPreference::FollowWindows
+        );
+        assert_eq!(loaded.trigger_vk, 65);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
     /// A `settings.json` exactly as the C# build writes it (indented JSON,
     /// PascalCase keys, integer enums, `N`-format GUIDs) must load with zero
     /// loss: every value below is already in normalized form, so the loader
@@ -187,6 +224,10 @@ mod tests {
 
         assert!(loaded.launch_at_login);
         assert_eq!(loaded.appearance_mode, "Light");
+        assert_eq!(
+            loaded.reduce_motion,
+            crate::core::motion::MotionPreference::FollowWindows
+        );
         assert!(!loaded.radial_enabled);
         assert!(loaded.cursor_interaction_enabled);
         assert_eq!(loaded.radial_outer_radius, 100.0);
