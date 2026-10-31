@@ -172,10 +172,9 @@ summary. Use `stop --dry-run` when inspecting cleanup before allowing it.
   IPC, tray). The backend is implemented and covered by bounded integration
   checks; physical-input and broad desktop validation remain environment-bound.
   Pure logic it depends on is tested in `src/core`.
-- The former `src/ui/app.rs` monolith is split into focused settings, runtime,
-  and window modules. `src/ui/app.rs`, `src/win/stash_service.rs`,
-  `src/win/hooks.rs`, `src/core/frame_math.rs`, and `src/win/ipc.rs` remain
-  larger follow-up candidates; new code should stay modular.
+- The former large files (`src/ui/app`, `src/win/stash_service`,
+  `src/win/hooks`, `src/win/ipc`, `src/core/frame_math`) are now directory
+  modules of focused submodules; new code should stay modular.
 
 ## License
 

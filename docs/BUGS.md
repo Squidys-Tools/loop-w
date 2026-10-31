@@ -9,7 +9,7 @@ and manual visual desktop checks remain open limits. See `README.md`,
 
 ## 1. Hook timer threads pile up under rapid churn — accepted
 
-- **Where:** `src/win/hooks.rs` (`schedule_activation_locked`, timeout arm in
+- **Where:** `src/win/hooks/` (`schedule_activation_locked`, timeout arm in
   `activate_locked`).
 - **What:** every trigger press spawns a sleeping thread for the activation
   delay, and every activation spawns another for the release timeout. Rapid
@@ -24,7 +24,7 @@ and manual visual desktop checks remain open limits. See `README.md`,
 
 ## 2. Pipe 256 limit counts bytes, C# counts chars — accepted
 
-- **Where:** `src/win/ipc.rs` (`read_command`).
+- **Where:** `src/win/ipc/` (`read_command`).
 - **What:** over-limit input is dropped at 256 UTF-8 bytes; C# drops at 256
   `char`s. A non-ASCII command near the limit can be cut mid-codepoint and
   decodes with a replacement character instead of being measured precisely.
@@ -74,21 +74,21 @@ and manual visual desktop checks remain open limits. See `README.md`,
 
 ## 6. Hover preview frame resolution is cached per wedge — resolved
 
-- **Where:** `src/ui/app.rs` (`update_radial_hover`).
+- **Where:** `src/ui/app/` (`update_radial_hover`).
 - **What:** the radial session now caches each wedge's target frame by monitor
   generation. Crossing to another wedge reuses that wedge's cached frame, and
   display/settings generation changes invalidate it. `FillAvailableSpace`
   remains uncached because it depends on current obstacles.
 - **Current state:** covered by
   `preview_frame_cache_reuses_wedge_result_until_generation_changes` and
-  `fill_available_preview_always_resolves_again` in `src/ui/app.rs`.
+  `fill_available_preview_always_resolves_again` in `src/ui/app/`.
 - **Revisit if:** a live trace still shows frame-resolution work on every
   cursor tick. Measure the native calls and redraw path before changing the
   cache policy.
 
 ## 7. Single pipe instance serializes all clients — parity
 
-- **Where:** `src/win/ipc.rs` (`server_loop`, `maxInstances = 1`).
+- **Where:** `src/win/ipc/` (`server_loop`, `maxInstances = 1`).
 - **What:** a second client that arrives while the server waits up to 2 s
   for the UI to answer a first command retries instead of queueing (same as
   C#). A hung UI frame stalls every CLI caller for the same window.
@@ -99,7 +99,7 @@ and manual visual desktop checks remain open limits. See `README.md`,
 
 ## 8. Server SA descriptor intentionally leaks — accepted
 
-- **Where:** `src/win/ipc.rs` (`current_user_sa`, `server_loop`).
+- **Where:** `src/win/ipc/` (`current_user_sa`, `server_loop`).
 - **What:** the `SECURITY_ATTRIBUTES` + SID buffer are boxed and never freed
   for process lifetime (one small allocation).
 - **Why deferred:** the descriptor must outlive every accepted pipe instance;
@@ -112,7 +112,7 @@ and manual visual desktop checks remain open limits. See `README.md`,
 - **Where:** `src/ui/widgets/radial_canvas.rs` /
   `src/ui/widgets/preview_canvas.rs` as hosted by the settings window
   (`src/ui/views/radial.rs`, `src/ui/views/preview.rs` inside the
-  `scrollable` in `src/ui/app.rs` `settings_view`).
+  `scrollable` in `src/ui/app/` `settings_view`).
 - **What:** the earlier settings-page sliver came from applying the widget's
   absolute layout translation inside iced's already-local canvas coordinate
   system, effectively doubling the translation.

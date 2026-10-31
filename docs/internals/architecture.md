@@ -11,9 +11,9 @@ window, iced draws settings and overlays. The split is deliberate —
 - `src/settings/` — the JSON contract plus its loader. Tolerant read,
   normalize, temp-file + rename write, revert-on-failure sync. Details in
   `settings-contract.md`.
-- `src/win/` — every side effect. Hooks (`hooks.rs`), placement
-  (`placement.rs`), snap (`snap_service.rs`), stash (`stash_service.rs`),
-  IPC pipe (`ipc.rs`), tray, startup, instance mutex, diagnostics. Each file
+- `src/win/` — every side effect. Hooks (`hooks/`), placement
+  (`placement.rs`), snap (`snap_service.rs`), stash (`stash_service/`),
+  IPC pipe (`ipc/`), tray, startup, instance mutex, diagnostics. Each file
   is a thin wrapper: resolve the decision in `core`, then call Win32 once.
 - `src/ui/` — the iced daemon. Settings views, radial/preview canvas
   renderers, runtime wiring. Renderers draw the frame they are given; they
