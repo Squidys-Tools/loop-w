@@ -107,10 +107,10 @@ radial probe is a skip, not a pass.
 - Decisions live in `core`, effects live in `win`, drawing lives in `ui`.
   New code follows that split. Do not put hit-testing, hook logic, or pipe
   I/O into renderers, and do not put drawing math into the hook thread.
-- Keep files small and modular. No 1000+ line files. The known split
-  candidates are `src/ui/app.rs`, `src/win/stash_service.rs`,
-  `src/win/hooks.rs`, `src/core/frame_math.rs`, and `src/win/ipc.rs` — shrink
-  new code instead of growing them.
+- Keep files small and modular. No 1000+ line files. The former god files
+  (`ui/app`, `win/stash_service`, `win/hooks`, `win/ipc`,
+  `core/frame_math`) are now directory modules; add to the focused
+  submodule instead of growing `mod.rs`.
 - Prefer total functions and explicit fallbacks: unknown actions, missing
   keybinds, stale stash records, and bad settings fall back to a safe no-op,
   never to garbage placement or a panic on the desktop path.

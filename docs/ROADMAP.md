@@ -52,10 +52,9 @@ is the desktop test checklist.
   [`BUGS.md`](BUGS.md#9-settings-canvas-rendering-needs-a-desktop-visual-sign-off).
   Both canvases now use local coordinates, fixed dimensions, and cached
   geometry. The remaining desktop visual sign-off is tracked in `BUGS.md`.
-- [x] Split the former `src/ui/app.rs` monolith into focused settings, runtime,
-  and window modules. The remaining large modules are follow-up refactors:
-  `src/ui/app.rs`, `src/win/stash_service.rs`, `src/win/hooks.rs`,
-  `src/core/frame_math.rs`, and `src/win/ipc.rs`.
+- [x] Split the former god files into directory modules: `src/ui/app/`,
+  `src/win/stash_service/`, `src/win/hooks/`, `src/core/frame_math/`, and
+  `src/win/ipc/`. Pure code motion; no behavior change.
 
 ## Next work
 

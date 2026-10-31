@@ -2,7 +2,7 @@
 
 ## Input hook
 
-`src/win/hooks.rs` installs the global keyboard/mouse hook. The hook thread
+`src/win/hooks/` installs the global keyboard/mouse hook. The hook thread
 does the cheapest possible gating (feature on, no session active, eligible
 window) and never blocks on Win32. Activation delay and release timeout are
 guarded by a state version: stale timer threads wake, see the mismatch, and
